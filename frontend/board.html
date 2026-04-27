@@ -179,6 +179,21 @@
     .write-msg.hidden { display: none; }
     .write-preview-img { max-height: 120px; border-radius: 8px; margin-top: -4px; }
 
+    /* ── Post action buttons (edit / delete) ── */
+    .detail-actions { display: flex; gap: 8px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .btn-edit {
+      padding: 8px 18px; border-radius: 8px; font-size: 0.84rem; font-weight: 600;
+      background: rgba(168,85,247,0.12); border: 1px solid rgba(168,85,247,0.35);
+      color: #c084fc; cursor: pointer; font-family: inherit; transition: all 0.2s;
+    }
+    .btn-edit:hover { background: rgba(168,85,247,0.22); color: #fff; }
+    .btn-delete {
+      padding: 8px 18px; border-radius: 8px; font-size: 0.84rem; font-weight: 600;
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+      color: #f87171; cursor: pointer; font-family: inherit; transition: all 0.2s;
+    }
+    .btn-delete:hover { background: rgba(239,68,68,0.2); color: #fff; }
+
     /* ── Loading spinner ── */
     .spinner { text-align: center; padding: 60px; color: var(--gray2); font-size: 0.9rem; }
 
@@ -262,7 +277,7 @@
 <div class="write-overlay hidden" id="write-overlay">
   <div class="write-panel">
     <button class="write-close" id="write-close">✕</button>
-    <h3>Write a Post</h3>
+    <h3 id="write-panel-title">Write a Post</h3>
     <div class="write-msg error hidden" id="write-error"></div>
     <form class="write-form" id="write-form" onsubmit="submitPost(event)">
       <select class="write-select" id="post-category" required>

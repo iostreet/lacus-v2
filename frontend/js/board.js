@@ -5,9 +5,12 @@
 
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  let currentSession = null;
-  let activeCategory = '';
-  let allPosts = [];
+  let currentSession     = null;
+  let currentUserProfile = null;
+  let currentDetailPost  = null;
+  let editingPostId      = null;
+  let activeCategory     = '';
+  let allPosts           = [];
 
   // ── Auth state ────────────────────────────────────────────────────────────
   sb.auth.onAuthStateChange((event, session) => {
@@ -44,6 +47,14 @@
     await sb.auth.signOut();
     window.location.reload();
   };
+
+  // ── Permission helpers ────────────────────────────────────────────────────
+  function isAdmin() {
+    return currentUserProfile?.name === 'iostreet';
+  }
+  function isAuthor(post) {
+    return currentSession?.user?.id === post.user_id;
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function esc(str) {
@@ -138,6 +149,10 @@
 
   // ── Post detail ───────────────────────────────────────────────────────────
   function openDetail(post) {
+    currentDetailPost = post;
+    const canEdit   = isAuthor(post);
+    const canDelete = isAuthor(post) || isAdmin();
+
     const body = document.getElementById('detail-body');
     body.innerHTML = `
       ${post.image_url ? `<img class="detail-img" src="${esc(post.image_url)}" alt="" />` : ''}
@@ -148,6 +163,11 @@
       <div class="detail-title">${esc(post.title)}</div>
       <div class="detail-author">${esc(post.user_profiles?.name || 'Anonymous')}</div>
       <div class="detail-content">${esc(post.content)}</div>
+      ${canEdit || canDelete ? `
+        <div class="detail-actions">
+          ${canEdit   ? `<button class="btn-edit"   onclick="openEdit()">Edit</button>`     : ''}
+          ${canDelete ? `<button class="btn-delete" onclick="deletePost()">Delete</button>` : ''}
+        </div>` : ''}
     `;
     document.getElementById('detail-overlay').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
@@ -179,6 +199,9 @@
     document.getElementById('post-image-preview').style.display = 'none';
     document.getElementById('post-image-label').textContent = 'Attach an image (optional, max 5 MB)';
     document.getElementById('write-error').classList.add('hidden');
+    editingPostId = null;
+    document.getElementById('write-panel-title').textContent = 'Write a Post';
+    document.getElementById('write-submit').textContent = 'Publish Post';
   }
 
   // Image preview
@@ -191,6 +214,31 @@
     reader.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; };
     reader.readAsDataURL(file);
   });
+
+  // ── Edit post ─────────────────────────────────────────────────────────────
+  window.openEdit = function () {
+    const post = currentDetailPost;
+    if (!post) return;
+    closeDetail();
+    editingPostId = post.id;
+    document.getElementById('post-category').value = post.category;
+    document.getElementById('post-title').value     = post.title;
+    document.getElementById('post-content').value   = post.content;
+    document.getElementById('write-panel-title').textContent = 'Edit Post';
+    document.getElementById('write-submit').textContent      = 'Save Changes';
+    document.getElementById('write-overlay').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  // ── Delete post ───────────────────────────────────────────────────────────
+  window.deletePost = async function () {
+    if (!currentDetailPost) return;
+    if (!confirm('이 글을 삭제하시겠습니까?')) return;
+    const { error } = await sb.from('board_posts').delete().eq('id', currentDetailPost.id);
+    if (error) { alert('삭제 실패: ' + error.message); return; }
+    closeDetail();
+    loadPosts();
+  };
 
   // Submit
   window.submitPost = async function (e) {
@@ -231,14 +279,19 @@
       image_url = urlData.publicUrl;
     }
 
-    const { error } = await sb
-      .from('board_posts')
-      .insert({ user_id: currentSession.user.id, category, title, content, image_url });
+    let error;
+    if (editingPostId) {
+      const updates = { category, title, content };
+      if (image_url) updates.image_url = image_url;
+      ({ error } = await sb.from('board_posts').update(updates).eq('id', editingPostId));
+    } else {
+      ({ error } = await sb.from('board_posts').insert({ user_id: currentSession.user.id, category, title, content, image_url }));
+    }
 
     if (error) {
       errEl.textContent = error.message;
       errEl.classList.remove('hidden');
-      btn.disabled = false; btn.textContent = 'Publish Post';
+      btn.disabled = false; btn.textContent = editingPostId ? 'Save Changes' : 'Publish Post';
       return;
     }
 
@@ -247,8 +300,12 @@
   };
 
   // ── Init ──────────────────────────────────────────────────────────────────
-  sb.auth.getSession().then(({ data: { session } }) => {
+  sb.auth.getSession().then(async ({ data: { session } }) => {
     currentSession = session;
+    if (session) {
+      const { data } = await sb.from('user_profiles').select('name').eq('id', session.user.id).single();
+      currentUserProfile = data;
+    }
     updateNavAuth(session);
     updateWriteBtn(session);
     loadPosts();
