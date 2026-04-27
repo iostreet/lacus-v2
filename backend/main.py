@@ -50,21 +50,27 @@ _SUPABASE_HEADERS = {"apikey": _SUPABASE_ANON_CONST, "Content-Type": "applicatio
 _request_token: contextvars.ContextVar[str] = contextvars.ContextVar('request_token', default='')
 
 def _sb():
-    """Return a Supabase client authenticated with the current request's user JWT."""
-    from supabase import create_client
-    client = create_client(_SUPABASE_URL_CONST, _SUPABASE_ANON_CONST)
+    """Return a postgrest client authenticated with the current request's user JWT."""
+    from postgrest import SyncPostgrestClient
     token = _request_token.get()
-    if token:
-        client.postgrest.auth(token)
-    return client
+    return SyncPostgrestClient(
+        base_url=f"{_SUPABASE_URL_CONST}/rest/v1",
+        headers={
+            "apikey": _SUPABASE_ANON_CONST,
+            "Authorization": f"Bearer {token}" if token else f"Bearer {_SUPABASE_ANON_CONST}",
+        },
+    )
 
 def _sb_with(token: str):
-    """Return a Supabase client authenticated with an explicit token (for background tasks)."""
-    from supabase import create_client
-    client = create_client(_SUPABASE_URL_CONST, _SUPABASE_ANON_CONST)
-    if token:
-        client.postgrest.auth(token)
-    return client
+    """Return a postgrest client authenticated with an explicit token (for background tasks)."""
+    from postgrest import SyncPostgrestClient
+    return SyncPostgrestClient(
+        base_url=f"{_SUPABASE_URL_CONST}/rest/v1",
+        headers={
+            "apikey": _SUPABASE_ANON_CONST,
+            "Authorization": f"Bearer {token}" if token else f"Bearer {_SUPABASE_ANON_CONST}",
+        },
+    )
 
 def _increment_visitors() -> int:
     try:
