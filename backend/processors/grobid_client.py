@@ -46,7 +46,7 @@ def _fix_garbled_text(text: str) -> str:
 # ---------------------------------------------------------------------------
 def check_grobid() -> bool:
     with contextlib.suppress(Exception):
-        r = requests.get(f"{GROBID_URL}/api/isalive", timeout=3)
+        r = requests.get(f"{GROBID_URL}/api/isalive", timeout=10)
         return r.status_code == 200
     return False
 
@@ -64,7 +64,7 @@ def extract_with_grobid(pdf_path: str) -> dict:
             f"{GROBID_URL}/api/processHeaderDocument",
             files={"input": f},
             data={"consolidateHeader": "1"},
-            timeout=60,
+            timeout=120,
         )
     resp.raise_for_status()
     return _parse_tei(resp.text)
