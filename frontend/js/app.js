@@ -1375,74 +1375,52 @@ const hideMapNodePanel = () => {
   _mnpPaperId = null;
 };
 
-const showMapNodePanel = async ({ type, paperId, nodeData }) => {
+const showMapNodePanel = async ({ paperId, kwId, nodeData }) => {
   const panel = document.getElementById('map-node-panel');
   const body  = document.getElementById('map-node-panel-body');
   const lbl   = document.getElementById('mnp-type-label');
   if (!panel || !body) return;
 
-  _mnpPaperId = paperId;
   panel.classList.remove('hidden');
   body.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:4px 0">Loading…</div>';
-  if (lbl) lbl.textContent = type === 'keyword' ? 'Keyword' : 'Paper';
+  if (lbl) lbl.textContent = 'Metric';
+  _mnpPaperId = paperId;
 
   try {
-    const paper = await apiFetch(`/papers/${paperId}`);
+    const metrics = await apiFetch(`/papers/${paperId}/metrics`);
+    const kwName  = (nodeData.label || '').toLowerCase().trim();
 
-    if (type === 'keyword') {
-      const d   = nodeData;
-      const col = _CAT_COLORS[d.category] || '#64748b';
-      const pct = Math.round((d.confidence || 0) * 100);
-      body.innerHTML = `
-        <span class="mnp-badge" style="background:${col}22;color:${col};border:1px solid ${col}44">${escHtml(d.category)}</span>
-        <div class="mnp-kw-name">${escHtml(d.label)}</div>
-        ${d.normalized && d.normalized !== d.label
-          ? `<div class="mnp-meta" style="margin-top:-2px">${escHtml(d.normalized)}</div>` : ''}
-        <div class="mnp-conf-wrap">
-          <div class="mnp-conf-track"><div class="mnp-conf-bar" style="width:${pct}%;background:${col}"></div></div>
-          <span class="mnp-conf-pct">${pct}%</span>
-        </div>
-        <hr class="mnp-divider">
-        <div class="mnp-section-label">논문</div>
-        <div class="mnp-title">${escHtml(paper.title || 'Untitled')}</div>
-        ${paper.year || paper.journal ? `
-        <div class="mnp-meta">
-          ${[paper.year, paper.journal].filter(Boolean).map(escHtml).join(' · ')}
-        </div>` : ''}
-      `;
-    } else {
-      const authors  = Array.isArray(paper.authors) ? paper.authors.join(', ') : (paper.authors || '');
-      const abstract = (paper.abstract || '').trim();
-      const snippet  = abstract.length > 220 ? abstract.slice(0, 220) + '…' : abstract;
+    // Match metrics by linked_keyword_id or by name
+    const matched = metrics.filter(m => {
+      if (kwId && m.linked_keyword_id === kwId) return true;
+      const mname = (m.metric_name || '').toLowerCase().trim();
+      return mname === kwName || kwName.includes(mname) || mname.includes(kwName);
+    });
 
-      let kwHtml = '';
-      try {
-        const kws = await apiFetch(`/papers/${paperId}/keywords`);
-        if (kws.length) {
-          kwHtml = `
-            <hr class="mnp-divider">
-            <div class="mnp-section-label">키워드</div>
-            <div class="mnp-kw-chips">
-              ${kws.slice(0, 8).map(k => {
-                const c = _CAT_COLORS[k.category] || '#64748b';
-                return `<span class="mnp-kw-chip" style="border-color:${c}33;color:${c}">${escHtml(k.keyword_name)}</span>`;
-              }).join('')}
+    if (matched.length === 0) { hideMapNodePanel(); return; }
+
+    const col = _CAT_COLORS['Metric'];
+    body.innerHTML = `
+      <span class="mnp-badge" style="background:${col}22;color:${col};border:1px solid ${col}44">Metric</span>
+      <div class="mnp-kw-name">${escHtml(nodeData.label)}</div>
+      <hr class="mnp-divider">
+      ${matched.map(m => `
+        <div style="margin-bottom:10px">
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px">
+            <span style="font-size:1.4rem;font-weight:700;color:${col}">${escHtml(m.value)}</span>
+            ${m.unit ? `<span style="font-size:0.85rem;color:var(--text-dim)">${escHtml(m.unit)}</span>` : ''}
+          </div>
+          ${m.condition ? `<div class="mnp-meta" style="margin-bottom:0">조건: ${escHtml(m.condition)}</div>` : ''}
+          ${m.confidence != null ? (() => {
+            const pct = Math.round(m.confidence * 100);
+            return `<div class="mnp-conf-wrap" style="margin-top:6px">
+              <div class="mnp-conf-track"><div class="mnp-conf-bar" style="width:${pct}%;background:${col}"></div></div>
+              <span class="mnp-conf-pct">${pct}%</span>
             </div>`;
-        }
-      } catch (_) {}
-
-      body.innerHTML = `
-        <div class="mnp-title">${escHtml(paper.title || 'Untitled')}</div>
-        ${authors ? `<div class="mnp-meta">${escHtml(authors)}</div>` : ''}
-        ${paper.year || paper.journal ? `
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">
-          ${paper.year    ? `<span class="mnp-kw-chip">${escHtml(paper.year)}</span>`    : ''}
-          ${paper.journal ? `<span class="mnp-kw-chip">${escHtml(paper.journal)}</span>` : ''}
-        </div>` : ''}
-        ${snippet ? `<div class="mnp-abstract">${escHtml(snippet)}</div>` : ''}
-        ${kwHtml}
-      `;
-    }
+          })() : ''}
+        </div>
+      `).join('<hr class="mnp-divider">')}
+    `;
   } catch (e) {
     body.innerHTML = `<div style="color:var(--danger);font-size:0.78rem">${escHtml(e.message)}</div>`;
   }

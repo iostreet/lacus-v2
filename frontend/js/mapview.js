@@ -832,7 +832,7 @@ window.MapView = (() => {
       else _expandPaper(node);
     });
 
-    // Tap keyword node → open paper detail (or complete edge in connect mode)
+    // Tap keyword node — only Metric category triggers panel; others: connect mode only
     cy.on('tap', 'node[type="keyword"]', (evt) => {
       const tgt = evt.target;
       if (_connectMode) {
@@ -848,33 +848,28 @@ window.MapView = (() => {
         evt.stopPropagation();
         return;
       }
-      const paperId = tgt.data('paperId');
-      if (paperId && _onNodeClick) _onNodeClick({ type: 'keyword', paperId, nodeData: tgt.data() });
-      evt.stopPropagation();
+      if (tgt.data('category') === 'Metric') {
+        const paperId = tgt.data('paperId');
+        const kwId    = parseInt(tgt.id().replace('kw_', ''));
+        if (paperId && _onNodeClick) _onNodeClick({ type: 'metric', paperId, kwId, nodeData: tgt.data() });
+        evt.stopPropagation();
+      }
     });
 
-    // Tap paper node → show summary panel on single-click, expand/collapse on double-click
+    // Tap paper node — connect mode only (double-click handles expand/collapse)
     cy.on('tap', 'node[type="paper"]', (evt) => {
+      if (!_connectMode) return;
       const tgt = evt.target;
-      if (_connectMode) {
-        if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
-        const srcNode  = cy.getElementById(_connectSrcId);
-        const tempEdge = cy.add([{ data: {
-          id: `tmp_${Date.now()}`,
-          source: _connectSrcId, target: tgt.id(),
-          edgeType: 'user', relation: 'related_to',
-        }}])[0];
-        _cancelConnectMode();
-        _showRelDialog(tempEdge, srcNode, tgt);
-        evt.stopPropagation();
-        return;
-      }
-      if (_tapTimer) { clearTimeout(_tapTimer); _tapTimer = null; return; }
-      _tapTimer = setTimeout(() => {
-        _tapTimer = null;
-        const paperId = tgt.data('paperId');
-        if (paperId && _onNodeClick) _onNodeClick({ type: 'paper', paperId, nodeData: tgt.data() });
-      }, 280);
+      if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
+      const srcNode  = cy.getElementById(_connectSrcId);
+      const tempEdge = cy.add([{ data: {
+        id: `tmp_${Date.now()}`,
+        source: _connectSrcId, target: tgt.id(),
+        edgeType: 'user', relation: 'related_to',
+      }}])[0];
+      _cancelConnectMode();
+      _showRelDialog(tempEdge, srcNode, tgt);
+      evt.stopPropagation();
     });
 
     // Tap custom node → complete edge in connect mode only
