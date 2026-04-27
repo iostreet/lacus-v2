@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lacus — Paper Analysis</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=5" />
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- Cytoscape.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+  <!-- Cytoscape layout plugins -->
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+  <!-- Auth guard: redirect to landing if not logged in -->
+  <script>
+  (function () {
+    const SUPABASE_URL  = 'https://pzodkufrnnjkbghyfwth.supabase.co';
+    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2RrdWZybm5qa2JnaHlmd3RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzg2ODAsImV4cCI6MjA5MjgxNDY4MH0.Z_WF2-VVFKTiGF2V4DEcabZYgdxeW_feO4eqcfu1rqU';
+    window._sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+    window._sb.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        window.location.href = '/?signin=1';
+      } else {
+        window._authToken = session.access_token;
+        window._authUser  = session.user;
+        // Show user email in header
+        const emailEl = document.getElementById('header-user-email');
+        if (emailEl) emailEl.textContent = session.user.email || '';
+      }
+    });
+    window._sb.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) window.location.href = '/';
+      else {
+        window._authToken = session.access_token;
+        window._authUser  = session.user;
+      }
+    });
+  })();
+  </script>
+</head>
+<body>
+
+<!-- ═══════════════════════════ NAV ═══════════════════════════ -->
+<nav class="site-nav">
+  <a href="/" class="site-nav-brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" width="26" height="26">
+      <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+    </svg>
+    <span class="site-nav-brand-name">Lacus</span>
+  </a>
+  <div class="site-nav-links">
+    <a href="/"          class="site-nav-link">Home</a>
+    <a href="/#features" class="site-nav-link">Features</a>
+    <a href="/#privacy"  class="site-nav-link">Privacy</a>
+    <a href="/board"     class="site-nav-link">Community</a>
+    <a href="/app"       class="site-nav-link active">Papers</a>
+  </div>
+  <div class="site-nav-auth">
+    <span id="header-user-email" class="site-nav-email"></span>
+    <button class="site-nav-link" id="header-signout-btn">Sign Out</button>
+  </div>
+</nav>
+
+<!-- file input (hidden, referenced by app.js) -->
+<input type="file" id="file-input" accept=".pdf" style="display:none" />
+
+<!-- ════════════════════════ MAIN LAYOUT ════════════════════════ -->
+<main class="app-main">
+
+  <!-- Drag-drop overlay (whole main area accepts drops) -->
+  <div class="drop-overlay hidden" id="drop-overlay">
+    <div class="drop-overlay-inner">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="1.5">
+        <path d="M12 16V4m0 0L8 8m4-4 4 4"/><rect x="3" y="16" width="18" height="6" rx="2" ry="2"/>
+      </svg>
+      <p>Drop PDF to import</p>
+    </div>
+  </div>
+
+  <!-- Paper list -->
+  <section class="papers-section">
+    <div class="section-header">
+      <div class="section-title-row">
+        <label class="select-all-wrap" title="Select all">
+          <input type="checkbox" id="select-all-checkbox" />
+        </label>
+        <h2 class="section-title" id="section-title">Papers</h2>
+      </div>
+      <div class="section-controls">
+        <div class="header-upload-area" id="header-upload-area">
+          <button class="btn btn-sm btn-primary header-upload-btn" id="upload-header-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 16V4m0 0L8 8m4-4 4 4"/><rect x="3" y="16" width="18" height="5" rx="2"/>
+            </svg>
+            Add Paper
+          </button>
+          <div class="header-progress hidden" id="upload-progress">
+            <span id="progress-label" class="header-progress-label">Importing…</span>
+            <div class="header-progress-bar-wrap">
+              <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <span id="progress-pct" class="progress-pct-text">0%</span>
+          </div>
+        </div>
+        <span class="paper-count-badge" id="paper-count-badge">0 papers</span>
+        <input class="search-input" id="search-input" type="text" placeholder="Search papers..." />
+        <div class="view-toggle" id="view-toggle">
+          <button class="view-toggle-btn active" id="view-card-btn" title="Card View">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+            </svg>
+          </button>
+          <button class="view-toggle-btn" id="view-map-btn" title="Map View">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="5" cy="12" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="19" cy="19" r="2.2"/>
+              <line x1="7" y1="11" x2="17" y2="6"/><line x1="7" y1="13" x2="17" y2="18"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="bulk-bar hidden" id="bulk-bar">
+      <span id="bulk-count">0 selected</span>
+      <button class="btn btn-sm btn-danger" id="bulk-delete-btn">Delete Selected</button>
+      <button class="btn btn-sm" id="bulk-clear-btn">Clear</button>
+    </div>
+    <div class="papers-grid" id="papers-grid">
+      <!-- Paper cards injected here -->
+    </div>
+    <!-- Keyword filter bar (Map View only) -->
+    <div class="kw-filter-bar hidden" id="kw-filter-bar">
+      <span class="kw-filter-label">Filter:</span>
+      <div class="kw-filter-chips" id="kw-filter-chips"></div>
+      <div class="kw-filter-custom-wrap">
+        <input type="text" class="kw-filter-input" id="kw-custom-input" placeholder="Add keyword…" />
+        <button class="btn btn-sm" id="kw-custom-add">+</button>
+      </div>
+      <button class="btn btn-sm kw-filter-clear" id="kw-filter-clear">Clear</button>
+    </div>
+    <!-- Map View container -->
+    <div class="papers-map hidden" id="papers-map"></div>
+    <div class="empty-state hidden" id="empty-state">
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="12" y="8" width="40" height="48" rx="3"/><line x1="20" y1="20" x2="44" y2="20"/>
+        <line x1="20" y1="28" x2="44" y2="28"/><line x1="20" y1="36" x2="36" y2="36"/>
+      </svg>
+      <p>No papers yet. Import a PDF to get started.</p>
+    </div>
+  </section>
+</main>
+
+<!-- ══════════════════════════ DETAIL MODAL ══════════════════════════ -->
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal" id="detail-modal">
+    <button class="modal-close" id="modal-close" title="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+
+    <div class="modal-header">
+      <div class="modal-paper-meta">
+        <h2 class="modal-title" id="modal-title">—</h2>
+        <p class="modal-authors" id="modal-authors">—</p>
+        <div class="modal-badges">
+          <span class="meta-badge" id="modal-year"></span>
+          <span class="meta-badge" id="modal-journal"></span>
+          <a class="meta-badge meta-badge-link" id="modal-doi" href="#" target="_blank"></a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="overview">Overview</button>
+      <button class="tab-btn" data-tab="keywords">Keywords</button>
+      <button class="tab-btn" data-tab="relations">Relations</button>
+      <button class="tab-btn" data-tab="metrics">Metrics</button>
+      <button class="tab-btn" data-tab="storymap">Story Map</button>
+      <button class="tab-btn" data-tab="summary">Summary</button>
+    </nav>
+
+    <div class="tab-content">
+
+      <!-- Overview tab -->
+      <div class="tab-pane active" id="tab-overview">
+        <div class="overview-grid">
+          <div class="overview-card">
+            <h3>Basic Information</h3>
+            <table class="info-table" id="overview-info-table">
+              <thead><tr><th style="width:90px">Field</th><th>Value</th><th style="width:70px">Save</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="overview-card">
+            <h3>Analysis Stats</h3>
+            <div class="stats-row" id="stats-row"></div>
+          </div>
+          <div class="overview-card" id="overview-summaries-card">
+            <h3>Key Findings</h3>
+            <ul class="summary-list editable-findings" id="overview-key-findings"></ul>
+          </div>
+          <div class="overview-card">
+            <h3>Memo</h3>
+            <textarea class="memo-textarea" id="overview-memo" placeholder="Personal notes about this paper…"></textarea>
+            <div style="margin-top:6px">
+              <button class="btn btn-sm btn-primary" id="save-memo-btn">Save Memo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keywords tab -->
+      <div class="tab-pane" id="tab-keywords">
+        <div class="table-toolbar">
+          <span class="toolbar-label" id="kw-count-label">Keywords</span>
+          <button class="btn btn-sm btn-primary" id="add-keyword-btn">+ Add Keyword</button>
+        </div>
+        <div class="table-bulk-bar hidden" id="kw-bulk-bar">
+          <span id="kw-bulk-count">0 selected</span>
+          <button class="btn btn-sm btn-danger" id="kw-bulk-delete-btn">Delete Selected</button>
+          <button class="btn btn-sm" id="kw-bulk-clear-btn">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="keywords-table">
+            <thead>
+              <tr>
+                <th style="width:28px"></th>
+                <th style="width:28px"><input type="checkbox" id="kw-select-all" title="Select all" style="accent-color:var(--accent);cursor:pointer" /></th>
+                <th>Keyword</th>
+                <th>Normalized Name</th>
+                <th>Category</th>
+                <th>Confidence</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="keywords-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Relations tab -->
+      <div class="tab-pane" id="tab-relations">
+        <div class="table-toolbar">
+          <span class="toolbar-label" id="rel-count-label">Relations</span>
+          <button class="btn btn-sm btn-primary" id="add-relation-btn">+ Add Relation</button>
+        </div>
+        <div class="table-bulk-bar hidden" id="rel-bulk-bar">
+          <span id="rel-bulk-count">0 selected</span>
+          <button class="btn btn-sm btn-danger" id="rel-bulk-delete-btn">Delete Selected</button>
+          <button class="btn btn-sm" id="rel-bulk-clear-btn">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="relations-table">
+            <thead>
+              <tr>
+                <th style="width:28px"></th>
+                <th style="width:28px"><input type="checkbox" id="rel-select-all" title="Select all" style="accent-color:var(--accent);cursor:pointer" /></th>
+                <th>Source</th>
+                <th>Relation</th>
+                <th>Target</th>
+                <th>Confidence</th>
+                <th>Section</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="relations-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Metrics tab -->
+      <div class="tab-pane" id="tab-metrics">
+        <div class="table-toolbar">
+          <span class="toolbar-label" id="met-count-label">Performance Metrics</span>
+          <button class="btn btn-sm btn-primary" id="add-metric-btn">+ Add Metric</button>
+        </div>
+        <div class="table-bulk-bar hidden" id="met-bulk-bar">
+          <span id="met-bulk-count">0 selected</span>
+          <button class="btn btn-sm btn-danger" id="met-bulk-delete-btn">Delete Selected</button>
+          <button class="btn btn-sm" id="met-bulk-clear-btn">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="metrics-table">
+            <thead>
+              <tr>
+                <th style="width:28px"></th>
+                <th style="width:28px"><input type="checkbox" id="met-select-all" title="Select all" style="accent-color:var(--accent);cursor:pointer" /></th>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>Unit</th>
+                <th>Condition</th>
+                <th>Confidence</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="metrics-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Story Map tab -->
+      <div class="tab-pane" id="tab-storymap">
+        <div class="storymap-toolbar">
+          <div class="legend" id="storymap-legend"></div>
+          <div class="storymap-btns">
+            <button class="btn btn-sm" id="fit-graph-btn">Fit</button>
+            <button class="btn btn-sm" id="reset-layout-btn">Re-layout</button>
+            <button class="btn btn-sm btn-primary" id="refresh-graph-btn" title="Reload graph from latest saved data">↻ Refresh</button>
+          </div>
+        </div>
+        <div class="storymap-container" id="storymap-container"></div>
+      </div>
+
+      <!-- Summary tab -->
+      <div class="tab-pane" id="tab-summary">
+        <div class="summary-section">
+          <h3>Main Summary</h3>
+          <div id="main-summary" class="summary-main-text">—</div>
+        </div>
+        <div class="summary-section">
+          <h3>Relation-based Sentences</h3>
+          <ul id="rel-summaries" class="summary-list"></ul>
+        </div>
+        <div class="summary-section">
+          <h3>Metric-based Sentences</h3>
+          <ul id="met-summaries" class="summary-list"></ul>
+        </div>
+      </div>
+
+    </div><!-- /tab-content -->
+  </div><!-- /modal -->
+</div><!-- /overlay -->
+
+<!-- Add-relation mini-form -->
+<div class="mini-modal hidden" id="add-rel-modal">
+  <div class="mini-modal-box">
+    <h4>Add Relation</h4>
+    <label>Source keyword<input id="arel-source" class="mini-input" placeholder="e.g. PbTiO3"/></label>
+    <label>Relation type
+      <select id="arel-type" class="mini-input">
+        <option>related_to</option><option>has_structure</option><option>has_property</option>
+        <option>affects</option><option>increases</option><option>decreases</option>
+        <option>fabricated_by</option><option>measured_by</option><option>used_for</option>
+        <option>subtype_of</option><option>equivalent</option><option>has_value</option>
+        <option value="__custom__">✚ Add custom type…</option>
+      </select>
+    </label>
+    <div id="arel-custom-wrap" style="display:none">
+      <label>Custom type name<input id="arel-custom-type" class="mini-input" placeholder="e.g. inhibits, catalyzes…"/></label>
+    </div>
+    <label>Target keyword<input id="arel-target" class="mini-input" placeholder="e.g. nanotube"/></label>
+    <label>Evidence (optional)<input id="arel-evidence" class="mini-input" placeholder="Sentence from paper..."/></label>
+    <div class="mini-modal-actions">
+      <button class="btn btn-sm" id="arel-cancel">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="arel-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add-keyword modal -->
+<div class="mini-modal hidden" id="add-kw-modal">
+  <div class="mini-modal-box">
+    <h4>Add Keyword</h4>
+    <label>Keyword name<input id="akw-name" class="mini-input" placeholder="e.g. PbTiO3"/></label>
+    <label>Normalized name (optional)<input id="akw-norm" class="mini-input" placeholder="Leave blank to copy from above"/></label>
+    <label>Category
+      <select id="akw-cat" class="mini-input">
+        <option>Material</option><option>Structure</option><option>Property</option>
+        <option>Method</option><option>Application</option><option>Metric</option><option>Other</option>
+      </select>
+    </label>
+    <label>Confidence (0–1)<input id="akw-conf" class="mini-input" type="number" min="0" max="1" step="0.05" value="0.70"/></label>
+    <div class="mini-modal-actions">
+      <button class="btn btn-sm" id="akw-cancel">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="akw-save">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add-metric modal -->
+<div class="mini-modal hidden" id="add-met-modal">
+  <div class="mini-modal-box">
+    <h4>Add Metric</h4>
+    <label>Metric name<input id="amet-name" class="mini-input" placeholder="e.g. d33, Curie temperature"/></label>
+    <label>Value<input id="amet-value" class="mini-input" placeholder="e.g. 120"/></label>
+    <label>Unit<input id="amet-unit" class="mini-input" placeholder="e.g. pm/V, °C"/></label>
+    <label>Condition (optional)<input id="amet-cond" class="mini-input" placeholder="e.g. 10 nm wall thickness"/></label>
+    <div class="mini-modal-actions">
+      <button class="btn btn-sm" id="amet-cancel">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="amet-save">Add</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Admin overlay -->
+<div class="admin-overlay hidden" id="admin-overlay">
+  <div class="admin-panel">
+    <div class="admin-header">
+      <h2>Admin — Raw Extraction Data</h2>
+      <div style="display:flex;align-items:center;gap:10px">
+        <select class="mini-input" id="admin-paper-select" style="min-width:260px"></select>
+        <button class="btn btn-sm" id="admin-close">✕ Close</button>
+      </div>
+    </div>
+    <div class="admin-body" id="admin-body">
+      <p style="color:var(--text-muted)">Select a paper above.</p>
+    </div>
+  </div>
+</div>
+
+<div class="hover-tooltip hidden" id="hover-tooltip"></div>
+<script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
+<script src="/static/js/storymap.js?v=3"></script>
+<script src="/static/js/mapview.js?v=3"></script>
+<script src="/static/js/app.js?v=3"></script>
+</body>
+</html>

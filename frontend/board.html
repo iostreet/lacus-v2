@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lacus — Community</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --accent:  #a855f7;
+      --accent2: #7c3aed;
+      --bg:      #000;
+      --bg2:     #0a0a12;
+      --bg-card: rgba(255,255,255,0.03);
+      --border:  rgba(255,255,255,0.08);
+      --white:   #ffffff;
+      --gray1:   #f1f5f9;
+      --gray2:   #94a3b8;
+      --gray3:   #475569;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--white); }
+
+    /* ── Page header ── */
+    .page-header {
+      padding: 56px 48px 32px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+    }
+    .page-header-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+    .page-title-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+    .page-title { font-size: 2.4rem; font-weight: 800; letter-spacing: -1px; }
+    .page-sub { font-size: 0.95rem; color: var(--gray2); margin-top: 8px; }
+    .write-btn { padding: 11px 24px; background: var(--accent); color: var(--white); font-size: 0.9rem; font-weight: 600; border: none; border-radius: 10px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 8px; transition: background 0.2s, transform 0.15s; white-space: nowrap; }
+    .write-btn:hover { background: var(--accent2); transform: translateY(-1px); }
+    .write-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    /* ── Filter bar ── */
+    .filter-bar { max-width: 1100px; margin: 28px auto 0; padding: 0 48px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-chip { padding: 6px 16px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 999px; font-size: 0.82rem; font-weight: 500; color: var(--gray2); cursor: pointer; font-family: inherit; transition: all 0.2s; }
+    .filter-chip:hover { border-color: rgba(168,85,247,0.4); color: var(--white); }
+    .filter-chip.active { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.5); color: var(--white); }
+
+    /* ── Board grid ── */
+    .board-body { max-width: 1100px; margin: 32px auto 80px; padding: 0 48px; }
+    .board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; }
+
+    /* ── Post card ── */
+    .post-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.3s, transform 0.25s, box-shadow 0.25s;
+      display: flex; flex-direction: column;
+    }
+    .post-card:hover { border-color: rgba(168,85,247,0.35); transform: translateY(-4px); box-shadow: 0 20px 50px rgba(168,85,247,0.08); }
+    .post-img { width: 100%; height: 180px; object-fit: cover; background: rgba(168,85,247,0.05); display: block; }
+    .post-img-placeholder { height: 180px; background: linear-gradient(135deg, rgba(168,85,247,0.08) 0%, rgba(124,58,237,0.04) 100%); display: flex; align-items: center; justify-content: center; }
+    .post-img-placeholder svg { width: 36px; height: 36px; color: rgba(168,85,247,0.25); }
+    .post-body { padding: 20px 20px 18px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+    .post-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .post-category { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; }
+    .cat-notice   { background: rgba(59,130,246,0.12);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+    .cat-feedback { background: rgba(16,185,129,0.1);   color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+    .cat-qna      { background: rgba(245,158,11,0.1);   color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
+    .post-date { font-size: 0.75rem; color: var(--gray3); margin-left: auto; }
+    .post-title { font-size: 1rem; font-weight: 700; color: var(--white); line-height: 1.4; }
+    .post-preview { font-size: 0.84rem; color: var(--gray2); line-height: 1.6; flex: 1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+    .post-footer { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+    .post-author { font-size: 0.78rem; color: var(--gray3); }
+
+    /* ── Empty state ── */
+    .board-empty { text-align: center; padding: 80px 20px; color: var(--gray2); }
+    .board-empty svg { width: 48px; height: 48px; margin: 0 auto 16px; display: block; color: rgba(168,85,247,0.2); }
+
+    /* ── Post detail overlay ── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(10px);
+      z-index: 200;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 40px 20px;
+      overflow-y: auto;
+    }
+    .overlay.hidden { display: none; }
+    .overlay-panel {
+      background: #0c0c16;
+      border: 1px solid rgba(168,85,247,0.25);
+      border-radius: 20px;
+      width: 100%; max-width: 700px;
+      padding: 36px 36px 40px;
+      position: relative;
+    }
+    .overlay-close {
+      position: absolute; top: 14px; right: 18px;
+      background: none; border: none;
+      color: var(--gray2); font-size: 1.1rem; cursor: pointer;
+    }
+    .overlay-close:hover { color: var(--white); }
+    .detail-img { width: 100%; max-height: 320px; object-fit: cover; border-radius: 12px; margin-bottom: 24px; display: block; }
+    .detail-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .detail-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; }
+    .detail-author { font-size: 0.84rem; color: var(--gray2); margin-bottom: 24px; }
+    .detail-content { font-size: 0.92rem; color: var(--gray2); line-height: 1.8; white-space: pre-wrap; }
+
+    /* ── Write post modal ── */
+    .write-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(10px);
+      z-index: 300;
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .write-overlay.hidden { display: none; }
+    .write-panel {
+      background: #0c0c16;
+      border: 1px solid rgba(168,85,247,0.28);
+      border-radius: 20px;
+      padding: 36px;
+      width: 100%; max-width: 560px;
+      max-height: 92vh; overflow-y: auto;
+      position: relative;
+    }
+    .write-panel h3 { font-size: 1.25rem; font-weight: 800; margin-bottom: 24px; }
+    .write-close { position: absolute; top: 14px; right: 18px; background: none; border: none; color: var(--gray2); font-size: 1.1rem; cursor: pointer; }
+    .write-close:hover { color: var(--white); }
+    .write-form { display: flex; flex-direction: column; gap: 12px; }
+    .write-input, .write-textarea, .write-select {
+      padding: 11px 15px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      color: var(--white);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+      width: 100%;
+    }
+    .write-input:focus, .write-textarea:focus, .write-select:focus { border-color: rgba(168,85,247,0.5); }
+    .write-input::placeholder, .write-textarea::placeholder { color: var(--gray3); }
+    .write-select { appearance: none; cursor: pointer; }
+    .write-select option { background: #111; }
+    .write-textarea { min-height: 140px; resize: vertical; line-height: 1.6; }
+    .write-file-label {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 15px;
+      background: rgba(255,255,255,0.03);
+      border: 1px dashed rgba(255,255,255,0.12);
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 0.88rem; color: var(--gray2);
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .write-file-label:hover { border-color: rgba(168,85,247,0.4); background: rgba(168,85,247,0.05); color: var(--white); }
+    .write-file-label svg { flex-shrink: 0; }
+    .write-submit {
+      padding: 13px;
+      background: var(--accent); color: var(--white);
+      border: none; border-radius: 10px;
+      font-size: 0.95rem; font-weight: 700;
+      cursor: pointer; font-family: inherit;
+      transition: background 0.2s, transform 0.15s;
+      margin-top: 4px;
+    }
+    .write-submit:hover { background: var(--accent2); transform: translateY(-1px); }
+    .write-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .write-msg { border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; }
+    .write-msg.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); color: #f87171; }
+    .write-msg.hidden { display: none; }
+    .write-preview-img { max-height: 120px; border-radius: 8px; margin-top: -4px; }
+
+    /* ── Loading spinner ── */
+    .spinner { text-align: center; padding: 60px; color: var(--gray2); font-size: 0.9rem; }
+
+    @media (max-width: 768px) {
+      .page-header { padding-left: 20px; padding-right: 20px; }
+      .filter-bar, .board-body { padding-left: 20px; padding-right: 20px; }
+      .board-grid { grid-template-columns: 1fr; }
+      .overlay-panel, .write-panel { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav class="site-nav">
+  <a href="/" class="site-nav-brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" width="26" height="26">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+    </svg>
+    <span class="site-nav-brand-name">Lacus</span>
+  </a>
+  <div class="site-nav-links">
+    <a href="/"          class="site-nav-link">Home</a>
+    <a href="/#features" class="site-nav-link">Features</a>
+    <a href="/#privacy"  class="site-nav-link">Privacy</a>
+    <a href="/board"     class="site-nav-link active">Community</a>
+    <a href="/app"       class="site-nav-link" id="nl-papers-board">Papers</a>
+  </div>
+  <div class="site-nav-auth" id="nav-auth"></div>
+</nav>
+
+<!-- ── Page header ── -->
+<div class="page-header">
+  <div class="page-header-inner">
+    <div>
+      <div class="page-title-label">Community Board</div>
+      <h1 class="page-title">Discussions &amp; Announcements</h1>
+      <p class="page-sub">Share feedback, ask questions, and stay up to date with Lacus news.</p>
+    </div>
+    <button class="write-btn" id="write-btn" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+      Write Post
+    </button>
+  </div>
+</div>
+
+<!-- ── Category filter ── -->
+<div class="filter-bar">
+  <button class="filter-chip active" data-cat="">All</button>
+  <button class="filter-chip" data-cat="notice">Notice</button>
+  <button class="filter-chip" data-cat="feedback">Feedback</button>
+  <button class="filter-chip" data-cat="qna">Q&amp;A</button>
+</div>
+
+<!-- ── Board grid ── -->
+<div class="board-body">
+  <div id="board-spinner" class="spinner">Loading posts…</div>
+  <div id="board-grid" class="board-grid" style="display:none"></div>
+  <div id="board-empty" class="board-empty" style="display:none">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+    <p style="font-size:1rem;font-weight:600;color:#fff;margin-bottom:6px">No posts yet</p>
+    <p style="font-size:0.88rem">Be the first to start a discussion.</p>
+  </div>
+</div>
+
+<!-- ── Post detail overlay ── -->
+<div class="overlay hidden" id="detail-overlay">
+  <div class="overlay-panel">
+    <button class="overlay-close" id="detail-close">✕</button>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<!-- ── Write post modal ── -->
+<div class="write-overlay hidden" id="write-overlay">
+  <div class="write-panel">
+    <button class="write-close" id="write-close">✕</button>
+    <h3>Write a Post</h3>
+    <div class="write-msg error hidden" id="write-error"></div>
+    <form class="write-form" id="write-form" onsubmit="submitPost(event)">
+      <select class="write-select" id="post-category" required>
+        <option value="" disabled selected>Category</option>
+        <option value="notice">Notice</option>
+        <option value="feedback">Feedback</option>
+        <option value="qna">Q&amp;A</option>
+      </select>
+      <input class="write-input" type="text" id="post-title" placeholder="Title" required maxlength="200" />
+      <textarea class="write-textarea" id="post-content" placeholder="Write your post here…" required maxlength="5000"></textarea>
+      <label class="write-file-label" for="post-image">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        <span id="post-image-label">Attach an image (optional, max 5 MB)</span>
+      </label>
+      <input type="file" id="post-image" accept="image/*" style="display:none" />
+      <img id="post-image-preview" class="write-preview-img" style="display:none" />
+      <button class="write-submit" type="submit" id="write-submit">Publish Post</button>
+    </form>
+  </div>
+</div>
+
+<script src="/static/js/board.js"></script>
+</body>
+</html>
