@@ -94,7 +94,3 @@ If you are a researcher, developer, or someone interested in academic tools — 
 **Contact:** lacusnet@gmail.com
 
 ---
-
-## License
-
-MIT
