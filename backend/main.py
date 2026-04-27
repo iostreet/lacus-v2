@@ -5,8 +5,8 @@ Run:  uvicorn main:app --reload --port 8000
 from __future__ import annotations
 
 import contextlib
-import contextvars
 import hashlib
+import threading
 import json
 import os
 import shutil
@@ -46,20 +46,13 @@ _SUPABASE_URL_CONST = "https://pzodkufrnnjkbghyfwth.supabase.co"
 _SUPABASE_ANON_CONST = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2RrdWZybm5qa2JnaHlmd3RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzg2ODAsImV4cCI6MjA5MjgxNDY4MH0.Z_WF2-VVFKTiGF2V4DEcabZYgdxeW_feO4eqcfu1rqU"
 _SUPABASE_HEADERS = {"apikey": _SUPABASE_ANON_CONST, "Content-Type": "application/json"}
 
-# Per-request user token (set by get_current_user dependency)
-_request_token: contextvars.ContextVar[str] = contextvars.ContextVar('request_token', default='')
+# Per-thread user token (set by get_current_user dependency, readable by _sb())
+_thread_local = threading.local()
 
 def _sb():
-    """Return a postgrest client authenticated with the current request's user JWT."""
-    from postgrest import SyncPostgrestClient
-    token = _request_token.get()
-    return SyncPostgrestClient(
-        base_url=f"{_SUPABASE_URL_CONST}/rest/v1",
-        headers={
-            "apikey": _SUPABASE_ANON_CONST,
-            "Authorization": f"Bearer {token}" if token else f"Bearer {_SUPABASE_ANON_CONST}",
-        },
-    )
+    """Return a postgrest client authenticated with the current thread's user JWT."""
+    token = getattr(_thread_local, 'auth_token', '')
+    return _sb_with(token)
 
 def _sb_with(token: str):
     """Return a postgrest client authenticated with an explicit token (for background tasks)."""
@@ -175,7 +168,7 @@ def get_current_user(authorization: str = Header(None)) -> str:
         if resp.status_code == 200:
             user_id = resp.json().get("id")
             if user_id:
-                _request_token.set(token)
+                _thread_local.auth_token = token
                 return str(user_id)
     except Exception:
         pass
@@ -364,26 +357,9 @@ def _find_keyword_id(paper_id: int, name: str) -> Optional[int]:
 
 
 def _assert_paper_owner(paper_id: int, user_id: str):
-    token = _request_token.get()
-    try:
-        import httpx
-        resp = httpx.get(
-            f"{_SUPABASE_URL_CONST}/rest/v1/papers",
-            params={"id": f"eq.{paper_id}", "select": "id,user_id"},
-            headers={
-                "apikey": _SUPABASE_ANON_CONST,
-                "Authorization": f"Bearer {token}",
-            },
-            timeout=10,
-        )
-        print(f"[owner] status={resp.status_code} body={resp.text[:200]} user_id={user_id} token_len={len(token)}")
-        if resp.status_code == 200:
-            data = resp.json()
-            if data and str(data[0].get("user_id")) == str(user_id):
-                return
-    except Exception as e:
-        print(f"[owner] error={e}")
-    raise HTTPException(404, "Paper not found")
+    res = _sb().table("papers").select("id").eq("id", paper_id).eq("user_id", user_id).execute()
+    if not res.data:
+        raise HTTPException(404, "Paper not found")
 
 
 # ── Background analysis ───────────────────────────────────────────────────────
@@ -503,17 +479,19 @@ async def upload_paper(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
+    authorization: str = Header(None),
 ):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are accepted.")
 
+    upload_token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
     tmp_path = UPLOADS_DIR / file.filename
     with open(tmp_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     pdf_hash = _hash_file(tmp_path)
 
-    dup = _sb().table("papers").select("id").eq("user_id", user_id).eq("pdf_hash", pdf_hash).execute()
+    dup = _sb_with(upload_token).table("papers").select("id").eq("user_id", user_id).eq("pdf_hash", pdf_hash).execute()
     if dup.data:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(409, f"This PDF is already in your library (paper id={dup.data[0]['id']}).")
@@ -521,7 +499,7 @@ async def upload_paper(
     final_path = UPLOADS_DIR / f"{pdf_hash[:16]}.pdf"
     shutil.move(str(tmp_path), str(final_path))
 
-    res = _sb().table("papers").insert({
+    res = _sb_with(upload_token).table("papers").insert({
         "user_id":  user_id,
         "title":    file.filename.replace(".pdf", ""),
         "pdf_path": str(final_path),
@@ -535,8 +513,7 @@ async def upload_paper(
 
     paper_id = res.data[0]["id"]
     _set_progress(paper_id, "Queued for analysis…", 5)
-    token = _request_token.get()
-    background_tasks.add_task(_run_analysis, paper_id, user_id, str(final_path), file.filename, token)
+    background_tasks.add_task(_run_analysis, paper_id, user_id, str(final_path), file.filename, upload_token)
     return {"paper_id": paper_id, "status": "processing"}
 
 
