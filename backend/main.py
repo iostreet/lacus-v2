@@ -364,9 +364,26 @@ def _find_keyword_id(paper_id: int, name: str) -> Optional[int]:
 
 
 def _assert_paper_owner(paper_id: int, user_id: str):
-    res = _sb().table("papers").select("id").eq("id", paper_id).eq("user_id", user_id).execute()
-    if not res.data:
-        raise HTTPException(404, "Paper not found")
+    token = _request_token.get()
+    try:
+        import httpx
+        resp = httpx.get(
+            f"{_SUPABASE_URL_CONST}/rest/v1/papers",
+            params={"id": f"eq.{paper_id}", "select": "id,user_id"},
+            headers={
+                "apikey": _SUPABASE_ANON_CONST,
+                "Authorization": f"Bearer {token}",
+            },
+            timeout=10,
+        )
+        print(f"[owner] status={resp.status_code} body={resp.text[:200]} user_id={user_id} token_len={len(token)}")
+        if resp.status_code == 200:
+            data = resp.json()
+            if data and str(data[0].get("user_id")) == str(user_id):
+                return
+    except Exception as e:
+        print(f"[owner] error={e}")
+    raise HTTPException(404, "Paper not found")
 
 
 # ── Background analysis ───────────────────────────────────────────────────────
