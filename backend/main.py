@@ -40,21 +40,25 @@ from processors.summary_generator  import generate_summaries
 # ── In-memory progress tracker ───────────────────────────────────────────────
 _progress: dict[int, dict] = {}
 
-# ── Visitor counter (file-backed) ─────────────────────────────────────────────
-_VISITOR_FILE = BASE_DIR / "visitor_count.json"
-
-def _get_visitors() -> int:
-    if _VISITOR_FILE.exists():
-        try:
-            return json.loads(_VISITOR_FILE.read_text())["count"]
-        except Exception:
-            pass
-    return 0
+# ── Visitor counter (Supabase-backed) ────────────────────────────────────────
+_SUPABASE_URL_CONST = "https://pzodkufrnnjkbghyfwth.supabase.co"
+_SUPABASE_ANON_CONST = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2RrdWZybm5qa2JnaHlmd3RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzg2ODAsImV4cCI6MjA5MjgxNDY4MH0.Z_WF2-VVFKTiGF2V4DEcabZYgdxeW_feO4eqcfu1rqU"
+_SUPABASE_HEADERS = {"apikey": _SUPABASE_ANON_CONST, "Content-Type": "application/json"}
 
 def _increment_visitors() -> int:
-    count = _get_visitors() + 1
-    _VISITOR_FILE.write_text(json.dumps({"count": count}))
-    return count
+    try:
+        import httpx
+        resp = httpx.post(
+            f"{_SUPABASE_URL_CONST}/rest/v1/rpc/increment_visitor_count",
+            headers=_SUPABASE_HEADERS,
+            json={},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return int(resp.json())
+    except Exception:
+        pass
+    return 0
 
 def _set_progress(paper_id: int, step: str, pct: int, error: str | None = None):
     _progress[paper_id] = {"step": step, "pct": pct, "error": error}
@@ -110,25 +114,21 @@ def status():
 def public_stats():
     """Public stats for landing page — no auth required."""
     import httpx
-    # Use hardcoded values to bypass any misconfigured env vars on Railway
-    _URL = "https://pzodkufrnnjkbghyfwth.supabase.co"
-    _ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2RrdWZybm5qa2JnaHlmd3RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzg2ODAsImV4cCI6MjA5MjgxNDY4MH0.Z_WF2-VVFKTiGF2V4DEcabZYgdxeW_feO4eqcfu1rqU"
     paper_count = 0
     member_count = 0
     try:
         resp = httpx.post(
-            f"{_URL}/rest/v1/rpc/get_public_stats",
-            headers={"apikey": _ANON, "Content-Type": "application/json"},
+            f"{_SUPABASE_URL_CONST}/rest/v1/rpc/get_public_stats",
+            headers=_SUPABASE_HEADERS,
             json={},
             timeout=5,
         )
-        print(f"[stats] status={resp.status_code} body={resp.text[:200]}")
         if resp.status_code == 200:
             data = resp.json()
             paper_count = data.get("papers", 0)
             member_count = data.get("members", 0)
-    except Exception as e:
-        print(f"[stats] error: {e}")
+    except Exception:
+        pass
     visitor_count = _increment_visitors()
     return {"visitors": visitor_count, "papers": paper_count, "members": member_count}
 
