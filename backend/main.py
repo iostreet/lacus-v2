@@ -110,22 +110,25 @@ def status():
 def public_stats():
     """Public stats for landing page — no auth required."""
     import httpx
-    from supabase_client import SUPABASE_URL, SUPABASE_ANON_KEY
+    # Use hardcoded values to bypass any misconfigured env vars on Railway
+    _URL = "https://pzodkufrnnjkbghyfwth.supabase.co"
+    _ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2RrdWZybm5qa2JnaHlmd3RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzg2ODAsImV4cCI6MjA5MjgxNDY4MH0.Z_WF2-VVFKTiGF2V4DEcabZYgdxeW_feO4eqcfu1rqU"
     paper_count = 0
     member_count = 0
     try:
         resp = httpx.post(
-            f"{SUPABASE_URL}/rest/v1/rpc/get_public_stats",
-            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            f"{_URL}/rest/v1/rpc/get_public_stats",
+            headers={"apikey": _ANON, "Content-Type": "application/json"},
             json={},
             timeout=5,
         )
+        print(f"[stats] status={resp.status_code} body={resp.text[:200]}")
         if resp.status_code == 200:
             data = resp.json()
             paper_count = data.get("papers", 0)
             member_count = data.get("members", 0)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[stats] error: {e}")
     visitor_count = _increment_visitors()
     return {"visitors": visitor_count, "papers": paper_count, "members": member_count}
 
