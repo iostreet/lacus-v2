@@ -109,10 +109,13 @@ def status():
 @app.get("/api/public/stats")
 def public_stats():
     """Public stats for landing page — no auth required."""
+    from supabase import create_client
+    from supabase_client import SUPABASE_URL, SUPABASE_ANON_KEY
     paper_count = 0
     member_count = 0
     try:
-        r = supabase_admin.rpc("get_public_stats").execute()
+        anon_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        r = anon_client.rpc("get_public_stats").execute()
         if r.data:
             paper_count = r.data.get("papers", 0)
             member_count = r.data.get("members", 0)
