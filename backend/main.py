@@ -109,16 +109,21 @@ def status():
 @app.get("/api/public/stats")
 def public_stats():
     """Public stats for landing page — no auth required."""
-    from supabase import create_client
+    import httpx
     from supabase_client import SUPABASE_URL, SUPABASE_ANON_KEY
     paper_count = 0
     member_count = 0
     try:
-        anon_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-        r = anon_client.rpc("get_public_stats").execute()
-        if r.data:
-            paper_count = r.data.get("papers", 0)
-            member_count = r.data.get("members", 0)
+        resp = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/get_public_stats",
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            json={},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            paper_count = data.get("papers", 0)
+            member_count = data.get("members", 0)
     except Exception:
         pass
     visitor_count = _increment_visitors()
