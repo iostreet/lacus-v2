@@ -134,17 +134,28 @@ def public_stats():
 
 
 # ── Auth dependency ──────────────────────────────────────────────────────────
+def _validate_token(token: str) -> str:
+    """Validate Supabase JWT. Tries service key client first, falls back to anon key client."""
+    from supabase import create_client
+    clients = [supabase_admin]
+    try:
+        anon_client = create_client(_SUPABASE_URL_CONST, _SUPABASE_ANON_CONST)
+        clients.append(anon_client)
+    except Exception:
+        pass
+    for client in clients:
+        try:
+            user_resp = client.auth.get_user(token)
+            if user_resp and user_resp.user:
+                return str(user_resp.user.id)
+        except Exception:
+            continue
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 def get_current_user(authorization: str = Header(None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
-    token = authorization[7:]
-    try:
-        user_resp = supabase_admin.auth.get_user(token)
-        if not user_resp or not user_resp.user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return str(user_resp.user.id)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return _validate_token(authorization[7:])
 
 
 # ── Pydantic schemas ─────────────────────────────────────────────────────────
