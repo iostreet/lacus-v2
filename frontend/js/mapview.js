@@ -35,7 +35,7 @@ window.MapView = (() => {
       },
       ...opts,
     });
-    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || res.statusText); }
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || res.statusText || `HTTP ${res.status}`); }
     return res.json();
   };
 
