@@ -168,9 +168,27 @@
           ${canEdit   ? `<button class="btn-edit"   onclick="openEdit()">Edit</button>`     : ''}
           ${canDelete ? `<button class="btn-delete" onclick="deletePost()">Delete</button>` : ''}
         </div>` : ''}
+
+      <div class="comments-section">
+        <div class="comments-title" id="comments-title">Comments</div>
+        <div id="comments-list"><span style="color:var(--gray3);font-size:0.84rem">Loading…</span></div>
+        ${currentSession
+          ? `<div class="comment-form">
+               <textarea id="comment-input" placeholder="Write a comment…" maxlength="2000"></textarea>
+               <button class="comment-submit-btn" id="comment-submit">Post Comment</button>
+             </div>`
+          : `<p class="comment-signin-note"><a href="/?signin=1" style="color:var(--accent)">Sign in</a> to leave a comment.</p>`
+        }
+      </div>
     `;
+
     document.getElementById('detail-overlay').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
+
+    loadComments(post.id);
+
+    document.getElementById('comment-submit')?.addEventListener('click', () => submitComment(post.id));
+    document.getElementById('comments-list').addEventListener('click', handleCommentAction);
   }
 
   document.getElementById('detail-close').addEventListener('click', closeDetail);
@@ -239,6 +257,106 @@
     closeDetail();
     loadPosts();
   };
+
+  // ── Comments ──────────────────────────────────────────────────────────────
+  async function loadComments(postId) {
+    const list = document.getElementById('comments-list');
+    if (!list) return;
+    const { data, error } = await sb
+      .from('board_comments')
+      .select('id, content, created_at, user_id, user_profiles(name)')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (error) { list.innerHTML = '<span style="color:#f87171;font-size:0.82rem">댓글을 불러오지 못했습니다.</span>'; return; }
+    renderComments(data || [], postId);
+  }
+
+  function renderComments(comments, postId) {
+    const list  = document.getElementById('comments-list');
+    const title = document.getElementById('comments-title');
+    if (!list) return;
+    if (title) title.textContent = `Comments (${comments.length})`;
+
+    if (!comments.length) {
+      list.innerHTML = '<p class="no-comments">아직 댓글이 없습니다.</p>';
+      return;
+    }
+
+    list.innerHTML = comments.map(c => {
+      const mine   = currentSession?.user?.id === c.user_id;
+      const canDel = mine || isAdmin();
+      return `
+        <div class="comment-item" data-id="${c.id}" data-post="${postId}">
+          <div class="comment-header">
+            <span class="comment-author">${esc(c.user_profiles?.name || 'Anonymous')}</span>
+            <span class="comment-date">${formatDate(c.created_at)}</span>
+          </div>
+          <div class="comment-text">${esc(c.content)}</div>
+          ${mine || canDel ? `
+            <div class="comment-actions">
+              ${mine   ? `<button class="cmt-btn cmt-btn-edit"   data-action="edit"   data-id="${c.id}">Edit</button>`   : ''}
+              ${canDel ? `<button class="cmt-btn cmt-btn-del"    data-action="delete" data-id="${c.id}">Delete</button>` : ''}
+            </div>` : ''}
+        </div>`;
+    }).join('');
+  }
+
+  async function handleCommentAction(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const id     = btn.dataset.id;
+    const item   = btn.closest('.comment-item');
+    const postId = item?.dataset.post;
+
+    if (action === 'delete') {
+      if (!confirm('댓글을 삭제하시겠습니까?')) return;
+      const { error } = await sb.from('board_comments').delete().eq('id', id);
+      if (error) { alert('삭제 실패: ' + error.message); return; }
+      if (postId) loadComments(postId);
+
+    } else if (action === 'edit') {
+      const textEl    = item.querySelector('.comment-text');
+      const actionsEl = item.querySelector('.comment-actions');
+      const current   = textEl.textContent;
+      textEl.innerHTML    = `<textarea class="comment-edit-input" maxlength="2000">${esc(current)}</textarea>`;
+      actionsEl.innerHTML = `
+        <button class="cmt-btn cmt-btn-save"   data-action="save"   data-id="${id}">Save</button>
+        <button class="cmt-btn cmt-btn-cancel" data-action="cancel" data-id="${id}">Cancel</button>`;
+      textEl.querySelector('textarea').focus();
+
+    } else if (action === 'save') {
+      const textarea   = item.querySelector('.comment-edit-input');
+      const newContent = textarea?.value.trim();
+      if (!newContent) return;
+      const { error } = await sb.from('board_comments')
+        .update({ content: newContent, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) { alert('수정 실패: ' + error.message); return; }
+      if (postId) loadComments(postId);
+
+    } else if (action === 'cancel') {
+      if (postId) loadComments(postId);
+    }
+  }
+
+  async function submitComment(postId) {
+    const input = document.getElementById('comment-input');
+    const btn   = document.getElementById('comment-submit');
+    const content = input?.value.trim();
+    if (!content || !currentSession) return;
+    btn.disabled = true;
+    const { error } = await sb.from('board_comments').insert({
+      post_id: postId,
+      user_id: currentSession.user.id,
+      content,
+    });
+    btn.disabled = false;
+    if (error) { alert('댓글 작성 실패: ' + error.message); return; }
+    input.value = '';
+    loadComments(postId);
+  }
 
   // Submit
   window.submitPost = async function (e) {

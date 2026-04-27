@@ -194,6 +194,55 @@
     }
     .btn-delete:hover { background: rgba(239,68,68,0.2); color: #fff; }
 
+    /* ── Comments ── */
+    .comments-section { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 22px; }
+    .comments-title { font-size: 0.88rem; font-weight: 700; color: var(--gray2); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 16px; }
+    .no-comments { font-size: 0.84rem; color: var(--gray3); padding: 10px 0; }
+
+    .comment-item { padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .comment-item:last-child { border-bottom: none; }
+    .comment-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .comment-author { font-size: 0.82rem; font-weight: 600; color: var(--gray1); }
+    .comment-date   { font-size: 0.75rem; color: var(--gray3); }
+    .comment-text   { font-size: 0.88rem; color: var(--gray2); line-height: 1.7; white-space: pre-wrap; }
+    .comment-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+    .cmt-btn { padding: 3px 10px; border-radius: 5px; font-size: 0.75rem; font-weight: 600; cursor: pointer; font-family: inherit; border: 1px solid; transition: all 0.18s; background: transparent; }
+    .cmt-btn-edit   { color: #a78bfa; border-color: rgba(167,139,250,0.3); }
+    .cmt-btn-edit:hover { background: rgba(167,139,250,0.12); }
+    .cmt-btn-del    { color: #f87171; border-color: rgba(248,113,113,0.3); }
+    .cmt-btn-del:hover  { background: rgba(248,113,113,0.1); }
+    .cmt-btn-save   { color: #34d399; border-color: rgba(52,211,153,0.3); }
+    .cmt-btn-save:hover { background: rgba(52,211,153,0.1); }
+    .cmt-btn-cancel { color: var(--gray3); border-color: rgba(255,255,255,0.1); }
+    .cmt-btn-cancel:hover { color: var(--gray2); }
+
+    .comment-edit-input {
+      width: 100%; min-height: 70px; resize: vertical;
+      padding: 8px 12px; margin-bottom: 6px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(168,85,247,0.35);
+      border-radius: 8px; color: var(--white); font-size: 0.88rem; font-family: inherit; line-height: 1.6; outline: none;
+    }
+
+    .comment-form { margin-top: 18px; }
+    .comment-form textarea {
+      width: 100%; min-height: 80px; resize: vertical;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px; color: var(--white); font-size: 0.88rem; font-family: inherit; line-height: 1.6; outline: none; transition: border-color 0.2s;
+    }
+    .comment-form textarea:focus { border-color: rgba(168,85,247,0.45); }
+    .comment-form textarea::placeholder { color: var(--gray3); }
+    .comment-submit-btn {
+      margin-top: 8px; padding: 8px 20px;
+      background: var(--accent); color: var(--white);
+      border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: background 0.2s;
+    }
+    .comment-submit-btn:hover { background: var(--accent2); }
+    .comment-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .comment-signin-note { font-size: 0.82rem; color: var(--gray3); margin-top: 14px; }
+
     /* ── Loading spinner ── */
     .spinner { text-align: center; padding: 60px; color: var(--gray2); font-size: 0.9rem; }
 
