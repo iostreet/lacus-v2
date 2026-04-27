@@ -5,6 +5,7 @@ Run:  uvicorn main:app --reload --port 8000
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import hashlib
 import json
 import os
@@ -30,7 +31,7 @@ UPLOADS_DIR  = PROJECT_DIR / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 sys.path.insert(0, str(BASE_DIR))
 
-from supabase_client import supabase_admin, SUPABASE_URL, SUPABASE_ANON_KEY
+from supabase_client import SUPABASE_URL, SUPABASE_ANON_KEY
 from processors.grobid_client     import extract_paper_info, check_grobid
 from processors.keyword_extractor import extract_keywords
 from processors.metric_extractor  import extract_metrics
@@ -44,6 +45,26 @@ _progress: dict[int, dict] = {}
 _SUPABASE_URL_CONST = "https://pzodkufrnnjkbghyfwth.supabase.co"
 _SUPABASE_ANON_CONST = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2RrdWZybm5qa2JnaHlmd3RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzg2ODAsImV4cCI6MjA5MjgxNDY4MH0.Z_WF2-VVFKTiGF2V4DEcabZYgdxeW_feO4eqcfu1rqU"
 _SUPABASE_HEADERS = {"apikey": _SUPABASE_ANON_CONST, "Content-Type": "application/json"}
+
+# Per-request user token (set by get_current_user dependency)
+_request_token: contextvars.ContextVar[str] = contextvars.ContextVar('request_token', default='')
+
+def _sb():
+    """Return a Supabase client authenticated with the current request's user JWT."""
+    from supabase import create_client
+    client = create_client(_SUPABASE_URL_CONST, _SUPABASE_ANON_CONST)
+    token = _request_token.get()
+    if token:
+        client.postgrest.auth(token)
+    return client
+
+def _sb_with(token: str):
+    """Return a Supabase client authenticated with an explicit token (for background tasks)."""
+    from supabase import create_client
+    client = create_client(_SUPABASE_URL_CONST, _SUPABASE_ANON_CONST)
+    if token:
+        client.postgrest.auth(token)
+    return client
 
 def _increment_visitors() -> int:
     try:
@@ -148,6 +169,7 @@ def get_current_user(authorization: str = Header(None)) -> str:
         if resp.status_code == 200:
             user_id = resp.json().get("id")
             if user_id:
+                _request_token.set(token)
                 return str(user_id)
     except Exception:
         pass
@@ -331,18 +353,19 @@ def _sum_to_dict(s: dict) -> dict:
 
 
 def _find_keyword_id(paper_id: int, name: str) -> Optional[int]:
-    res = supabase_admin.table("keywords").select("id").eq("paper_id", paper_id).ilike("normalized_name", name).limit(1).execute()
+    res = _sb().table("keywords").select("id").eq("paper_id", paper_id).ilike("normalized_name", name).limit(1).execute()
     return res.data[0]["id"] if res.data else None
 
 
 def _assert_paper_owner(paper_id: int, user_id: str):
-    res = supabase_admin.table("papers").select("id").eq("id", paper_id).eq("user_id", user_id).execute()
+    res = _sb().table("papers").select("id").eq("id", paper_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(404, "Paper not found")
 
 
 # ── Background analysis ───────────────────────────────────────────────────────
-def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str):
+def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str, token: str = ""):
+    sb = _sb_with(token)
     try:
         _set_progress(paper_id, "Extracting text from PDF…", 10)
         info = extract_paper_info(pdf_path)
@@ -355,7 +378,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
             "journal": info.get("journal", ""),
             "year":    info.get("year", ""),
         }
-        supabase_admin.table("papers").update(update).eq("id", paper_id).execute()
+        sb.table("papers").update(update).eq("id", paper_id).execute()
 
         if info.get("doi"):
             _set_progress(paper_id, "Fetching metadata from web…", 20)
@@ -375,7 +398,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 if web.get("year") and not update["year"]:
                     patch["year"] = web["year"]
                 if patch:
-                    supabase_admin.table("papers").update(patch).eq("id", paper_id).execute()
+                    sb.table("papers").update(patch).eq("id", paper_id).execute()
 
         sections = {
             "title":           title,
@@ -388,7 +411,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
         kw_data = extract_keywords(sections)
         kw_id_map: dict[str, int] = {}
         for kw in kw_data:
-            res = supabase_admin.table("keywords").insert({
+            res = sb.table("keywords").insert({
                 "paper_id":        paper_id,
                 "keyword_name":    kw["keyword_name"],
                 "normalized_name": kw["normalized_name"],
@@ -402,7 +425,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
         # Step 3 — Metrics
         _set_progress(paper_id, "Extracting performance metrics…", 52)
         for met in extract_metrics(sections):
-            supabase_admin.table("metrics").insert({
+            sb.table("metrics").insert({
                 "paper_id":    paper_id,
                 "metric_name": met["metric_name"],
                 "value":       met["value"],
@@ -415,7 +438,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
         # Step 4 — Relations
         _set_progress(paper_id, "Building keyword relations…", 70)
         for rel in extract_relations(sections, kw_data):
-            supabase_admin.table("relations").insert({
+            sb.table("relations").insert({
                 "paper_id":          paper_id,
                 "source_keyword_id": kw_id_map.get(rel["source_name"].lower()),
                 "source_name":       rel["source_name"],
@@ -430,24 +453,24 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
 
         # Step 5 — Summaries
         _set_progress(paper_id, "Generating key findings…", 88)
-        kws  = (supabase_admin.table("keywords").select("*").eq("paper_id", paper_id).execute().data or [])
-        rels = (supabase_admin.table("relations").select("*").eq("paper_id", paper_id).execute().data or [])
-        mets = (supabase_admin.table("metrics").select("*").eq("paper_id", paper_id).execute().data or [])
+        kws  = (sb.table("keywords").select("*").eq("paper_id", paper_id).execute().data or [])
+        rels = (sb.table("relations").select("*").eq("paper_id", paper_id).execute().data or [])
+        mets = (sb.table("metrics").select("*").eq("paper_id", paper_id).execute().data or [])
 
         for s in generate_summaries(info, kws, rels, mets):
-            supabase_admin.table("summaries").insert({
+            sb.table("summaries").insert({
                 "paper_id":     paper_id,
                 "summary_text": s["summary_text"],
                 "summary_type": s["summary_type"],
                 "confidence":   s["confidence"],
             }).execute()
 
-        supabase_admin.table("papers").update({"status": "confirmed"}).eq("id", paper_id).execute()
+        sb.table("papers").update({"status": "confirmed"}).eq("id", paper_id).execute()
         _set_progress(paper_id, "Analysis complete!", 100)
 
     except Exception as exc:
         with contextlib.suppress(Exception):
-            supabase_admin.table("papers").update({"status": "error"}).eq("id", paper_id).execute()
+            sb.table("papers").update({"status": "error"}).eq("id", paper_id).execute()
         _set_progress(paper_id, f"Error: {exc}", -1, error=str(exc))
 
 
@@ -467,7 +490,7 @@ async def upload_paper(
 
     pdf_hash = _hash_file(tmp_path)
 
-    dup = supabase_admin.table("papers").select("id").eq("user_id", user_id).eq("pdf_hash", pdf_hash).execute()
+    dup = _sb().table("papers").select("id").eq("user_id", user_id).eq("pdf_hash", pdf_hash).execute()
     if dup.data:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(409, f"This PDF is already in your library (paper id={dup.data[0]['id']}).")
@@ -475,7 +498,7 @@ async def upload_paper(
     final_path = UPLOADS_DIR / f"{pdf_hash[:16]}.pdf"
     shutil.move(str(tmp_path), str(final_path))
 
-    res = supabase_admin.table("papers").insert({
+    res = _sb().table("papers").insert({
         "user_id":  user_id,
         "title":    file.filename.replace(".pdf", ""),
         "pdf_path": str(final_path),
@@ -485,11 +508,12 @@ async def upload_paper(
 
     if not res.data:
         final_path.unlink(missing_ok=True)
-        raise HTTPException(500, "DB insert failed — SUPABASE_SERVICE_KEY may not be set in backend/.env")
+        raise HTTPException(500, "DB insert failed")
 
     paper_id = res.data[0]["id"]
     _set_progress(paper_id, "Queued for analysis…", 5)
-    background_tasks.add_task(_run_analysis, paper_id, user_id, str(final_path), file.filename)
+    token = _request_token.get()
+    background_tasks.add_task(_run_analysis, paper_id, user_id, str(final_path), file.filename, token)
     return {"paper_id": paper_id, "status": "processing"}
 
 
@@ -497,7 +521,7 @@ async def upload_paper(
 def get_progress(paper_id: int, user_id: str = Depends(get_current_user)):
     prog = _progress.get(paper_id)
     if prog is None:
-        res = supabase_admin.table("papers").select("status").eq("id", paper_id).eq("user_id", user_id).execute()
+        res = _sb().table("papers").select("status").eq("id", paper_id).eq("user_id", user_id).execute()
         if res.data:
             s = res.data[0]["status"]
             if s == "confirmed": return {"step": "Analysis complete!", "pct": 100, "error": None}
@@ -509,7 +533,7 @@ def get_progress(paper_id: int, user_id: str = Depends(get_current_user)):
 # ── Papers CRUD ───────────────────────────────────────────────────────────────
 @app.get("/api/papers")
 def list_papers(user_id: str = Depends(get_current_user)):
-    res = supabase_admin.table("papers").select("*, summaries(summary_text, summary_type)").eq("user_id", user_id).order("created_at", desc=True).execute()
+    res = _sb().table("papers").select("*, summaries(summary_text, summary_type)").eq("user_id", user_id).order("created_at", desc=True).execute()
     result = []
     for p in (res.data or []):
         d = _paper_to_dict(p)
@@ -522,7 +546,7 @@ def list_papers(user_id: str = Depends(get_current_user)):
 
 @app.get("/api/papers/{paper_id}")
 def get_paper(paper_id: int, user_id: str = Depends(get_current_user)):
-    res = supabase_admin.table("papers").select("*").eq("id", paper_id).eq("user_id", user_id).execute()
+    res = _sb().table("papers").select("*").eq("id", paper_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(404, "Paper not found")
     return _paper_to_dict(res.data[0])
@@ -534,17 +558,17 @@ def update_paper(paper_id: int, data: PaperUpdate, user_id: str = Depends(get_cu
     patch = {k: v for k, v in data.model_dump().items() if v is not None}
     if "relevance" in patch:
         patch["relevance"] = max(0, min(5, patch["relevance"]))
-    supabase_admin.table("papers").update(patch).eq("id", paper_id).execute()
+    _sb().table("papers").update(patch).eq("id", paper_id).execute()
     return get_paper(paper_id, user_id)
 
 
 @app.delete("/api/papers/{paper_id}")
 def delete_paper(paper_id: int, user_id: str = Depends(get_current_user)):
-    res = supabase_admin.table("papers").select("pdf_path").eq("id", paper_id).eq("user_id", user_id).execute()
+    res = _sb().table("papers").select("pdf_path").eq("id", paper_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(404, "Paper not found")
     pdf_path = res.data[0].get("pdf_path")
-    supabase_admin.table("papers").delete().eq("id", paper_id).execute()
+    _sb().table("papers").delete().eq("id", paper_id).execute()
     if pdf_path and Path(pdf_path).exists():
         Path(pdf_path).unlink(missing_ok=True)
     return {"deleted": paper_id}
@@ -554,7 +578,7 @@ def delete_paper(paper_id: int, user_id: str = Depends(get_current_user)):
 @app.get("/api/papers/{paper_id}/keywords")
 def get_keywords(paper_id: int, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    res = supabase_admin.table("keywords").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute()
+    res = _sb().table("keywords").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute()
     return [_kw_to_dict(k) for k in (res.data or [])]
 
 
@@ -562,14 +586,14 @@ def get_keywords(paper_id: int, user_id: str = Depends(get_current_user)):
 def reorder_keywords(paper_id: int, items: list[ReorderItem], user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
     for item in items:
-        supabase_admin.table("keywords").update({"display_order": item.order}).eq("id", item.id).eq("paper_id", paper_id).execute()
+        _sb().table("keywords").update({"display_order": item.order}).eq("id", item.id).eq("paper_id", paper_id).execute()
     return {"ok": True}
 
 
 @app.post("/api/papers/{paper_id}/keywords")
 def create_keyword(paper_id: int, data: KeywordCreate, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    res = supabase_admin.table("keywords").insert({
+    res = _sb().table("keywords").insert({
         "paper_id":        paper_id,
         "keyword_name":    data.keyword_name,
         "normalized_name": data.normalized_name or data.keyword_name,
@@ -582,8 +606,8 @@ def create_keyword(paper_id: int, data: KeywordCreate, user_id: str = Depends(ge
 @app.put("/api/keywords/{kw_id}")
 def update_keyword(kw_id: int, data: KeywordUpdate, user_id: str = Depends(get_current_user)):
     patch = {k: v for k, v in data.model_dump().items() if v is not None}
-    supabase_admin.table("keywords").update(patch).eq("id", kw_id).execute()
-    res = supabase_admin.table("keywords").select("*").eq("id", kw_id).execute()
+    _sb().table("keywords").update(patch).eq("id", kw_id).execute()
+    res = _sb().table("keywords").select("*").eq("id", kw_id).execute()
     if not res.data:
         raise HTTPException(404, "Keyword not found")
     return _kw_to_dict(res.data[0])
@@ -591,7 +615,7 @@ def update_keyword(kw_id: int, data: KeywordUpdate, user_id: str = Depends(get_c
 
 @app.delete("/api/keywords/{kw_id}")
 def delete_keyword(kw_id: int, user_id: str = Depends(get_current_user)):
-    supabase_admin.table("keywords").delete().eq("id", kw_id).execute()
+    _sb().table("keywords").delete().eq("id", kw_id).execute()
     return {"deleted": kw_id}
 
 
@@ -599,7 +623,7 @@ def delete_keyword(kw_id: int, user_id: str = Depends(get_current_user)):
 @app.get("/api/papers/{paper_id}/relations")
 def get_relations(paper_id: int, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    res = supabase_admin.table("relations").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute()
+    res = _sb().table("relations").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute()
     return [_rel_to_dict(r) for r in (res.data or [])]
 
 
@@ -607,14 +631,14 @@ def get_relations(paper_id: int, user_id: str = Depends(get_current_user)):
 def reorder_relations(paper_id: int, items: list[ReorderItem], user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
     for item in items:
-        supabase_admin.table("relations").update({"display_order": item.order}).eq("id", item.id).eq("paper_id", paper_id).execute()
+        _sb().table("relations").update({"display_order": item.order}).eq("id", item.id).eq("paper_id", paper_id).execute()
     return {"ok": True}
 
 
 @app.post("/api/papers/{paper_id}/relations")
 def create_relation(paper_id: int, data: RelationCreate, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    res = supabase_admin.table("relations").insert({
+    res = _sb().table("relations").insert({
         "paper_id":          paper_id,
         "source_keyword_id": _find_keyword_id(paper_id, data.source_name),
         "source_name":       data.source_name,
@@ -630,7 +654,7 @@ def create_relation(paper_id: int, data: RelationCreate, user_id: str = Depends(
 
 @app.put("/api/relations/{rel_id}")
 def update_relation(rel_id: int, data: RelationUpdate, user_id: str = Depends(get_current_user)):
-    res_cur = supabase_admin.table("relations").select("paper_id").eq("id", rel_id).execute()
+    res_cur = _sb().table("relations").select("paper_id").eq("id", rel_id).execute()
     if not res_cur.data:
         raise HTTPException(404, "Relation not found")
     paper_id = res_cur.data[0]["paper_id"]
@@ -644,14 +668,14 @@ def update_relation(rel_id: int, data: RelationUpdate, user_id: str = Depends(ge
     if data.relation_type is not None: patch["relation_type"] = data.relation_type
     if data.confidence    is not None: patch["confidence"]    = data.confidence
     if data.evidence_text is not None: patch["evidence_text"] = data.evidence_text
-    supabase_admin.table("relations").update(patch).eq("id", rel_id).execute()
-    res = supabase_admin.table("relations").select("*").eq("id", rel_id).execute()
+    _sb().table("relations").update(patch).eq("id", rel_id).execute()
+    res = _sb().table("relations").select("*").eq("id", rel_id).execute()
     return _rel_to_dict(res.data[0])
 
 
 @app.delete("/api/relations/{rel_id}")
 def delete_relation(rel_id: int, user_id: str = Depends(get_current_user)):
-    supabase_admin.table("relations").delete().eq("id", rel_id).execute()
+    _sb().table("relations").delete().eq("id", rel_id).execute()
     return {"deleted": rel_id}
 
 
@@ -659,7 +683,7 @@ def delete_relation(rel_id: int, user_id: str = Depends(get_current_user)):
 @app.get("/api/papers/{paper_id}/metrics")
 def get_metrics(paper_id: int, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    res = supabase_admin.table("metrics").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute()
+    res = _sb().table("metrics").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute()
     return [_met_to_dict(m) for m in (res.data or [])]
 
 
@@ -667,14 +691,14 @@ def get_metrics(paper_id: int, user_id: str = Depends(get_current_user)):
 def reorder_metrics(paper_id: int, items: list[ReorderItem], user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
     for item in items:
-        supabase_admin.table("metrics").update({"display_order": item.order}).eq("id", item.id).eq("paper_id", paper_id).execute()
+        _sb().table("metrics").update({"display_order": item.order}).eq("id", item.id).eq("paper_id", paper_id).execute()
     return {"ok": True}
 
 
 @app.post("/api/papers/{paper_id}/metrics")
 def create_metric(paper_id: int, data: MetricCreate, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    res = supabase_admin.table("metrics").insert({
+    res = _sb().table("metrics").insert({
         "paper_id":    paper_id,
         "metric_name": data.metric_name,
         "value":       data.value,
@@ -688,8 +712,8 @@ def create_metric(paper_id: int, data: MetricCreate, user_id: str = Depends(get_
 @app.put("/api/metrics/{met_id}")
 def update_metric(met_id: int, data: MetricUpdate, user_id: str = Depends(get_current_user)):
     patch = {k: v for k, v in data.model_dump().items() if v is not None}
-    supabase_admin.table("metrics").update(patch).eq("id", met_id).execute()
-    res = supabase_admin.table("metrics").select("*").eq("id", met_id).execute()
+    _sb().table("metrics").update(patch).eq("id", met_id).execute()
+    res = _sb().table("metrics").select("*").eq("id", met_id).execute()
     if not res.data:
         raise HTTPException(404, "Metric not found")
     return _met_to_dict(res.data[0])
@@ -697,7 +721,7 @@ def update_metric(met_id: int, data: MetricUpdate, user_id: str = Depends(get_cu
 
 @app.delete("/api/metrics/{met_id}")
 def delete_metric(met_id: int, user_id: str = Depends(get_current_user)):
-    supabase_admin.table("metrics").delete().eq("id", met_id).execute()
+    _sb().table("metrics").delete().eq("id", met_id).execute()
     return {"deleted": met_id}
 
 
@@ -705,14 +729,14 @@ def delete_metric(met_id: int, user_id: str = Depends(get_current_user)):
 @app.get("/api/papers/{paper_id}/summaries")
 def get_summaries(paper_id: int, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    res = supabase_admin.table("summaries").select("*").eq("paper_id", paper_id).execute()
+    res = _sb().table("summaries").select("*").eq("paper_id", paper_id).execute()
     return [_sum_to_dict(s) for s in (res.data or [])]
 
 
 @app.put("/api/summaries/{sum_id}")
 def update_summary(sum_id: int, data: SummaryUpdate, user_id: str = Depends(get_current_user)):
-    supabase_admin.table("summaries").update({"summary_text": data.summary_text}).eq("id", sum_id).execute()
-    res = supabase_admin.table("summaries").select("*").eq("id", sum_id).execute()
+    _sb().table("summaries").update({"summary_text": data.summary_text}).eq("id", sum_id).execute()
+    res = _sb().table("summaries").select("*").eq("id", sum_id).execute()
     if not res.data:
         raise HTTPException(404, "Summary not found")
     return _sum_to_dict(res.data[0])
@@ -721,14 +745,14 @@ def update_summary(sum_id: int, data: SummaryUpdate, user_id: str = Depends(get_
 # ── Admin ─────────────────────────────────────────────────────────────────────
 @app.get("/api/admin/papers/{paper_id}")
 def admin_paper(paper_id: int, user_id: str = Depends(get_current_user)):
-    res = supabase_admin.table("papers").select("*").eq("id", paper_id).eq("user_id", user_id).execute()
+    res = _sb().table("papers").select("*").eq("id", paper_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(404, "Paper not found")
     p = res.data[0]
-    kws  = (supabase_admin.table("keywords").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute().data or [])
-    rels = (supabase_admin.table("relations").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute().data or [])
-    mets = (supabase_admin.table("metrics").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute().data or [])
-    sums = (supabase_admin.table("summaries").select("*").eq("paper_id", paper_id).execute().data or [])
+    kws  = (_sb().table("keywords").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute().data or [])
+    rels = (_sb().table("relations").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute().data or [])
+    mets = (_sb().table("metrics").select("*").eq("paper_id", paper_id).order("display_order").order("id").execute().data or [])
+    sums = (_sb().table("summaries").select("*").eq("paper_id", paper_id).execute().data or [])
     paper_d = _paper_to_dict(p)
     paper_d["abstract"] = p.get("abstract") or ""
     return {"paper": paper_d, "keywords": kws, "relations": rels, "metrics": mets, "summaries": sums}
@@ -763,9 +787,9 @@ RELATION_COLORS = {
 @app.get("/api/papers/{paper_id}/graph")
 def get_graph(paper_id: int, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    keywords  = (supabase_admin.table("keywords").select("*").eq("paper_id", paper_id).execute().data or [])
-    relations = (supabase_admin.table("relations").select("*").eq("paper_id", paper_id).execute().data or [])
-    metrics   = (supabase_admin.table("metrics").select("*").eq("paper_id", paper_id).execute().data or [])
+    keywords  = (_sb().table("keywords").select("*").eq("paper_id", paper_id).execute().data or [])
+    relations = (_sb().table("relations").select("*").eq("paper_id", paper_id).execute().data or [])
+    metrics   = (_sb().table("metrics").select("*").eq("paper_id", paper_id).execute().data or [])
 
     kw_id_set = {kw["id"] for kw in keywords}
 
@@ -843,10 +867,10 @@ def get_graph(paper_id: int, user_id: str = Depends(get_current_user)):
 # ── Map Canvas ────────────────────────────────────────────────────────────────
 @app.get("/api/map-canvas")
 def get_map_canvas(user_id: str = Depends(get_current_user)):
-    papers       = (supabase_admin.table("papers").select("*").eq("user_id", user_id).execute().data or [])
-    positions_r  = (supabase_admin.table("map_positions").select("*").eq("user_id", user_id).execute().data or [])
-    custom_nodes = (supabase_admin.table("map_custom_nodes").select("*").eq("user_id", user_id).execute().data or [])
-    map_edges    = (supabase_admin.table("map_edges").select("*").eq("user_id", user_id).execute().data or [])
+    papers       = (_sb().table("papers").select("*").eq("user_id", user_id).execute().data or [])
+    positions_r  = (_sb().table("map_positions").select("*").eq("user_id", user_id).execute().data or [])
+    custom_nodes = (_sb().table("map_custom_nodes").select("*").eq("user_id", user_id).execute().data or [])
+    map_edges    = (_sb().table("map_edges").select("*").eq("user_id", user_id).execute().data or [])
 
     positions = {p["node_id"]: p for p in positions_r}
 
@@ -854,7 +878,7 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
     paper_ids = [p["id"] for p in papers]
     all_kws: list[dict] = []
     if paper_ids:
-        all_kws = (supabase_admin.table("keywords").select("normalized_name, keyword_name, category, paper_id").in_("paper_id", paper_ids).execute().data or [])
+        all_kws = (_sb().table("keywords").select("normalized_name, keyword_name, category, paper_id").in_("paper_id", paper_ids).execute().data or [])
 
     norm_map: dict[str, dict] = defaultdict(lambda: {"paper_ids": set(), "name": "", "category": "Other"})
     for kw in all_kws:
@@ -894,7 +918,7 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
             "expanded":     expanded,
         }
         if expanded:
-            full_kws = (supabase_admin.table("keywords").select("*").eq("paper_id", paper["id"]).execute().data or [])
+            full_kws = (_sb().table("keywords").select("*").eq("paper_id", paper["id"]).execute().data or [])
             paper_data["keywords"] = [
                 {
                     "id":         k["id"],
@@ -924,17 +948,17 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
 @app.post("/api/map-positions")
 def save_map_positions(items: list[MapPositionItem], user_id: str = Depends(get_current_user)):
     for item in items:
-        existing = supabase_admin.table("map_positions").select("node_id").eq("node_id", item.node_id).eq("user_id", user_id).execute()
+        existing = _sb().table("map_positions").select("node_id").eq("node_id", item.node_id).eq("user_id", user_id).execute()
         if existing.data:
-            supabase_admin.table("map_positions").update({"pos_x": item.pos_x, "pos_y": item.pos_y, "expanded": item.expanded}).eq("node_id", item.node_id).eq("user_id", user_id).execute()
+            _sb().table("map_positions").update({"pos_x": item.pos_x, "pos_y": item.pos_y, "expanded": item.expanded}).eq("node_id", item.node_id).eq("user_id", user_id).execute()
         else:
-            supabase_admin.table("map_positions").insert({"node_id": item.node_id, "user_id": user_id, "pos_x": item.pos_x, "pos_y": item.pos_y, "expanded": item.expanded}).execute()
+            _sb().table("map_positions").insert({"node_id": item.node_id, "user_id": user_id, "pos_x": item.pos_x, "pos_y": item.pos_y, "expanded": item.expanded}).execute()
     return {"ok": True}
 
 
 @app.post("/api/map-custom-nodes")
 def create_custom_node(data: CustomNodeCreate, user_id: str = Depends(get_current_user)):
-    res = supabase_admin.table("map_custom_nodes").insert({
+    res = _sb().table("map_custom_nodes").insert({
         "user_id": user_id, "label": data.label, "category": data.category,
         "description": data.description, "color": data.color, "pos_x": data.pos_x, "pos_y": data.pos_y,
     }).execute()
@@ -944,21 +968,21 @@ def create_custom_node(data: CustomNodeCreate, user_id: str = Depends(get_curren
 @app.put("/api/map-custom-nodes/{node_id}")
 def update_custom_node(node_id: int, data: CustomNodeUpdate, user_id: str = Depends(get_current_user)):
     patch = {k: v for k, v in data.model_dump().items() if v is not None}
-    supabase_admin.table("map_custom_nodes").update(patch).eq("id", node_id).eq("user_id", user_id).execute()
+    _sb().table("map_custom_nodes").update(patch).eq("id", node_id).eq("user_id", user_id).execute()
     return {"ok": True}
 
 
 @app.delete("/api/map-custom-nodes/{node_id}")
 def delete_custom_node(node_id: int, user_id: str = Depends(get_current_user)):
     nid_str = f"cn_{node_id}"
-    supabase_admin.table("map_edges").delete().eq("user_id", user_id).or_(f"source_id.eq.{nid_str},target_id.eq.{nid_str}").execute()
-    supabase_admin.table("map_custom_nodes").delete().eq("id", node_id).eq("user_id", user_id).execute()
+    _sb().table("map_edges").delete().eq("user_id", user_id).or_(f"source_id.eq.{nid_str},target_id.eq.{nid_str}").execute()
+    _sb().table("map_custom_nodes").delete().eq("id", node_id).eq("user_id", user_id).execute()
     return {"deleted": node_id}
 
 
 @app.post("/api/map-edges")
 def create_map_edge(data: MapEdgeCreate, user_id: str = Depends(get_current_user)):
-    res = supabase_admin.table("map_edges").insert({
+    res = _sb().table("map_edges").insert({
         "user_id": user_id, "source_id": data.source_id, "target_id": data.target_id,
         "relation_type": data.relation_type, "label": data.label,
     }).execute()
@@ -968,11 +992,11 @@ def create_map_edge(data: MapEdgeCreate, user_id: str = Depends(get_current_user
 @app.put("/api/map-edges/{edge_id}")
 def update_map_edge(edge_id: int, data: MapEdgeUpdate, user_id: str = Depends(get_current_user)):
     patch = {k: v for k, v in data.model_dump().items() if v is not None}
-    supabase_admin.table("map_edges").update(patch).eq("id", edge_id).eq("user_id", user_id).execute()
+    _sb().table("map_edges").update(patch).eq("id", edge_id).eq("user_id", user_id).execute()
     return {"ok": True}
 
 
 @app.delete("/api/map-edges/{edge_id}")
 def delete_map_edge(edge_id: int, user_id: str = Depends(get_current_user)):
-    supabase_admin.table("map_edges").delete().eq("id", edge_id).eq("user_id", user_id).execute()
+    _sb().table("map_edges").delete().eq("id", edge_id).eq("user_id", user_id).execute()
     return {"deleted": edge_id}
