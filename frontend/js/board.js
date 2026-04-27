@@ -251,9 +251,9 @@
   // ── Delete post ───────────────────────────────────────────────────────────
   window.deletePost = async function () {
     if (!currentDetailPost) return;
-    if (!confirm('이 글을 삭제하시겠습니까?')) return;
+    if (!confirm('Delete this post?')) return;
     const { error } = await sb.from('board_posts').delete().eq('id', currentDetailPost.id);
-    if (error) { alert('삭제 실패: ' + error.message); return; }
+    if (error) { alert('Failed to delete: ' + error.message); return; }
     closeDetail();
     loadPosts();
   };
@@ -268,7 +268,7 @@
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
 
-    if (error) { list.innerHTML = '<span style="color:#f87171;font-size:0.82rem">댓글을 불러오지 못했습니다.</span>'; return; }
+    if (error) { list.innerHTML = '<span style="color:#f87171;font-size:0.82rem">Failed to load comments.</span>'; return; }
     renderComments(data || [], postId);
   }
 
@@ -279,7 +279,7 @@
     if (title) title.textContent = `Comments (${comments.length})`;
 
     if (!comments.length) {
-      list.innerHTML = '<p class="no-comments">아직 댓글이 없습니다.</p>';
+      list.innerHTML = '<p class="no-comments">No comments yet.</p>';
       return;
     }
 
@@ -311,9 +311,9 @@
     const postId = item?.dataset.post;
 
     if (action === 'delete') {
-      if (!confirm('댓글을 삭제하시겠습니까?')) return;
+      if (!confirm('Delete this comment?')) return;
       const { error } = await sb.from('board_comments').delete().eq('id', id);
-      if (error) { alert('삭제 실패: ' + error.message); return; }
+      if (error) { alert('Failed to delete: ' + error.message); return; }
       if (postId) loadComments(postId);
 
     } else if (action === 'edit') {
@@ -333,7 +333,7 @@
       const { error } = await sb.from('board_comments')
         .update({ content: newContent, updated_at: new Date().toISOString() })
         .eq('id', id);
-      if (error) { alert('수정 실패: ' + error.message); return; }
+      if (error) { alert('Failed to update: ' + error.message); return; }
       if (postId) loadComments(postId);
 
     } else if (action === 'cancel') {
@@ -348,12 +348,12 @@
     if (!content || !currentSession) return;
     btn.disabled = true;
     const { error } = await sb.from('board_comments').insert({
-      post_id: postId,
+      post_id: parseInt(postId),
       user_id: currentSession.user.id,
       content,
     });
     btn.disabled = false;
-    if (error) { alert('댓글 작성 실패: ' + error.message); return; }
+    if (error) { alert('Failed to post comment: ' + error.message); return; }
     input.value = '';
     loadComments(postId);
   }
