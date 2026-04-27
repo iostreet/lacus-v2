@@ -117,7 +117,7 @@
           <div class="post-title">${esc(post.title)}</div>
           <div class="post-preview">${esc(post.content)}</div>
           <div class="post-footer">
-            <span class="post-author">${esc(post.user_profiles?.name || 'Anonymous')}${post.user_profiles?.institution ? ' · ' + esc(post.user_profiles.institution) : ''}</span>
+            <span class="post-author">${esc(post.user_profiles?.name || 'Anonymous')}</span>
           </div>
         </div>
       `;
@@ -146,7 +146,7 @@
         <span style="font-size:0.78rem;color:var(--gray3)">${formatDate(post.created_at)}</span>
       </div>
       <div class="detail-title">${esc(post.title)}</div>
-      <div class="detail-author">${esc(post.user_profiles?.name || 'Anonymous')}${post.user_profiles?.institution ? ' · ' + esc(post.user_profiles.institution) : ''}</div>
+      <div class="detail-author">${esc(post.user_profiles?.name || 'Anonymous')}</div>
       <div class="detail-content">${esc(post.content)}</div>
     `;
     document.getElementById('detail-overlay').classList.remove('hidden');
