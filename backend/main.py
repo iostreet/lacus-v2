@@ -109,15 +109,21 @@ def status():
 @app.get("/api/public/stats")
 def public_stats():
     """Public stats for landing page — no auth required."""
+    from supabase_client import SUPABASE_URL, SUPABASE_SERVICE_KEY
+    print(f"[stats] SUPABASE_URL={SUPABASE_URL[:30]}... SERVICE_KEY={'set' if SUPABASE_SERVICE_KEY else 'NOT SET'}")
     try:
-        papers_res = supabase_admin.from_("papers").select("id", count="exact").execute()
-        paper_count = papers_res.count or 0
-    except Exception:
+        r = supabase_admin.table("papers").select("id", count="exact").execute()
+        paper_count = r.count if r.count is not None else len(r.data or [])
+        print(f"[stats] papers count={paper_count} r.count={r.count} data_len={len(r.data or [])}")
+    except Exception as e:
+        print(f"[stats] papers error: {e}")
         paper_count = 0
     try:
-        members_res = supabase_admin.from_("user_profiles").select("id", count="exact").execute()
-        member_count = members_res.count or 0
-    except Exception:
+        r = supabase_admin.table("user_profiles").select("id", count="exact").execute()
+        member_count = r.count if r.count is not None else len(r.data or [])
+        print(f"[stats] members count={member_count} r.count={r.count} data_len={len(r.data or [])}")
+    except Exception as e:
+        print(f"[stats] members error: {e}")
         member_count = 0
     visitor_count = _increment_visitors()
     return {"visitors": visitor_count, "papers": paper_count, "members": member_count}
