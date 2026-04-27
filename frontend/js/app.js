@@ -104,7 +104,7 @@ document.getElementById('view-map-btn').addEventListener('click', () => _setView
 const loadMapView = async () => {
   try {
     const canvasData = await apiFetch('/map-canvas');
-    MapView.init('papers-map', canvasData, { onPaperClick: openDetail });
+    MapView.init('papers-map', canvasData, { onNodeClick: showMapNodePanel, onCanvasTap: hideMapNodePanel });
     _renderKwFilterBar(canvasData.keyword_stats || []);
   } catch (e) {
     toast('Failed to load map view: ' + e.message, 'error');
@@ -1358,6 +1358,99 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // Search
 document.getElementById('search-input').addEventListener('input', (e) => {
   filterPapers(e.target.value);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Map view — node summary panel
+// ─────────────────────────────────────────────────────────────────────────────
+const _CAT_COLORS = {
+  Material: '#22c55e', Structure: '#3b82f6', Property: '#f59e0b',
+  Method: '#a855f7', Application: '#06b6d4', Metric: '#f472b6', Other: '#64748b',
+};
+
+let _mnpPaperId = null;
+
+const hideMapNodePanel = () => {
+  document.getElementById('map-node-panel')?.classList.add('hidden');
+  _mnpPaperId = null;
+};
+
+const showMapNodePanel = async ({ type, paperId, nodeData }) => {
+  const panel = document.getElementById('map-node-panel');
+  const body  = document.getElementById('map-node-panel-body');
+  const lbl   = document.getElementById('mnp-type-label');
+  if (!panel || !body) return;
+
+  _mnpPaperId = paperId;
+  panel.classList.remove('hidden');
+  body.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:4px 0">Loading…</div>';
+  if (lbl) lbl.textContent = type === 'keyword' ? 'Keyword' : 'Paper';
+
+  try {
+    const paper = await apiFetch(`/papers/${paperId}`);
+
+    if (type === 'keyword') {
+      const d   = nodeData;
+      const col = _CAT_COLORS[d.category] || '#64748b';
+      const pct = Math.round((d.confidence || 0) * 100);
+      body.innerHTML = `
+        <span class="mnp-badge" style="background:${col}22;color:${col};border:1px solid ${col}44">${escHtml(d.category)}</span>
+        <div class="mnp-kw-name">${escHtml(d.label)}</div>
+        ${d.normalized && d.normalized !== d.label
+          ? `<div class="mnp-meta" style="margin-top:-2px">${escHtml(d.normalized)}</div>` : ''}
+        <div class="mnp-conf-wrap">
+          <div class="mnp-conf-track"><div class="mnp-conf-bar" style="width:${pct}%;background:${col}"></div></div>
+          <span class="mnp-conf-pct">${pct}%</span>
+        </div>
+        <hr class="mnp-divider">
+        <div class="mnp-section-label">논문</div>
+        <div class="mnp-title">${escHtml(paper.title || 'Untitled')}</div>
+        ${paper.year || paper.journal ? `
+        <div class="mnp-meta">
+          ${[paper.year, paper.journal].filter(Boolean).map(escHtml).join(' · ')}
+        </div>` : ''}
+      `;
+    } else {
+      const authors  = Array.isArray(paper.authors) ? paper.authors.join(', ') : (paper.authors || '');
+      const abstract = (paper.abstract || '').trim();
+      const snippet  = abstract.length > 220 ? abstract.slice(0, 220) + '…' : abstract;
+
+      let kwHtml = '';
+      try {
+        const kws = await apiFetch(`/papers/${paperId}/keywords`);
+        if (kws.length) {
+          kwHtml = `
+            <hr class="mnp-divider">
+            <div class="mnp-section-label">키워드</div>
+            <div class="mnp-kw-chips">
+              ${kws.slice(0, 8).map(k => {
+                const c = _CAT_COLORS[k.category] || '#64748b';
+                return `<span class="mnp-kw-chip" style="border-color:${c}33;color:${c}">${escHtml(k.keyword_name)}</span>`;
+              }).join('')}
+            </div>`;
+        }
+      } catch (_) {}
+
+      body.innerHTML = `
+        <div class="mnp-title">${escHtml(paper.title || 'Untitled')}</div>
+        ${authors ? `<div class="mnp-meta">${escHtml(authors)}</div>` : ''}
+        ${paper.year || paper.journal ? `
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">
+          ${paper.year    ? `<span class="mnp-kw-chip">${escHtml(paper.year)}</span>`    : ''}
+          ${paper.journal ? `<span class="mnp-kw-chip">${escHtml(paper.journal)}</span>` : ''}
+        </div>` : ''}
+        ${snippet ? `<div class="mnp-abstract">${escHtml(snippet)}</div>` : ''}
+        ${kwHtml}
+      `;
+    }
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--danger);font-size:0.78rem">${escHtml(e.message)}</div>`;
+  }
+};
+
+document.getElementById('map-node-panel-close')?.addEventListener('click', hideMapNodePanel);
+document.getElementById('map-node-panel-open')?.addEventListener('click', () => {
+  if (_mnpPaperId) openDetail(_mnpPaperId);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

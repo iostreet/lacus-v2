@@ -14,7 +14,7 @@ window.MapView = (() => {
   let _connectMode  = false;
   let _connectSrcId = null;
   let _suppressCtx  = false;
-  let _onPaperClick = null;
+  let _onNodeClick  = null;
   let _tapTimer     = null;
 
   const API = '/api';
@@ -696,7 +696,7 @@ window.MapView = (() => {
   // ── Public: init ─────────────────────────────────────────────────────────
 
   const init = (containerId, canvasData, opts = {}) => {
-    _onPaperClick = opts.onPaperClick || null;
+    _onNodeClick = opts.onNodeClick || null;
     const container = document.getElementById(containerId);
     if (!container) return;
 
@@ -849,11 +849,11 @@ window.MapView = (() => {
         return;
       }
       const paperId = tgt.data('paperId');
-      if (paperId && _onPaperClick) _onPaperClick(paperId);
+      if (paperId && _onNodeClick) _onNodeClick({ type: 'keyword', paperId, nodeData: tgt.data() });
       evt.stopPropagation();
     });
 
-    // Tap paper node → open detail on single-click, expand/collapse on double-click
+    // Tap paper node → show summary panel on single-click, expand/collapse on double-click
     cy.on('tap', 'node[type="paper"]', (evt) => {
       const tgt = evt.target;
       if (_connectMode) {
@@ -873,7 +873,7 @@ window.MapView = (() => {
       _tapTimer = setTimeout(() => {
         _tapTimer = null;
         const paperId = tgt.data('paperId');
-        if (paperId && _onPaperClick) _onPaperClick(paperId);
+        if (paperId && _onNodeClick) _onNodeClick({ type: 'paper', paperId, nodeData: tgt.data() });
       }, 280);
     });
 
@@ -935,6 +935,7 @@ window.MapView = (() => {
       if (evt.target !== cy) return;
       if (_connectMode) { _cancelConnectMode(); return; }
       _hideAllMenus();
+      if (opts.onCanvasTap) opts.onCanvasTap();
     });
 
     // Tooltip
