@@ -14,6 +14,8 @@ window.MapView = (() => {
   let _connectMode  = false;
   let _connectSrcId = null;
   let _suppressCtx  = false;
+  let _onPaperClick = null;
+  let _tapTimer     = null;
 
   const API = '/api';
   const _getToken = async () => {
@@ -693,7 +695,8 @@ window.MapView = (() => {
 
   // ── Public: init ─────────────────────────────────────────────────────────
 
-  const init = (containerId, canvasData) => {
+  const init = (containerId, canvasData, opts = {}) => {
+    _onPaperClick = opts.onPaperClick || null;
     const container = document.getElementById(containerId);
     if (!container) return;
 
@@ -823,18 +826,64 @@ window.MapView = (() => {
 
     // Double-click paper → expand keywords / collapse back
     cy.on('dblclick', 'node[type="paper"]', (evt) => {
+      if (_tapTimer) { clearTimeout(_tapTimer); _tapTimer = null; }
       const node = evt.target;
       if (node.data('expanded')) _collapsePaper(node);
       else _expandPaper(node);
     });
 
-    // Tap node in connect mode → create edge
-    cy.on('tap', 'node', (evt) => {
-      if (!_connectMode) return;
+    // Tap keyword node → open paper detail (or complete edge in connect mode)
+    cy.on('tap', 'node[type="keyword"]', (evt) => {
       const tgt = evt.target;
+      if (_connectMode) {
+        if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
+        const srcNode  = cy.getElementById(_connectSrcId);
+        const tempEdge = cy.add([{ data: {
+          id: `tmp_${Date.now()}`,
+          source: _connectSrcId, target: tgt.id(),
+          edgeType: 'user', relation: 'related_to',
+        }}])[0];
+        _cancelConnectMode();
+        _showRelDialog(tempEdge, srcNode, tgt);
+        evt.stopPropagation();
+        return;
+      }
+      const paperId = tgt.data('paperId');
+      if (paperId && _onPaperClick) _onPaperClick(paperId);
+      evt.stopPropagation();
+    });
+
+    // Tap paper node → open detail on single-click, expand/collapse on double-click
+    cy.on('tap', 'node[type="paper"]', (evt) => {
+      const tgt = evt.target;
+      if (_connectMode) {
+        if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
+        const srcNode  = cy.getElementById(_connectSrcId);
+        const tempEdge = cy.add([{ data: {
+          id: `tmp_${Date.now()}`,
+          source: _connectSrcId, target: tgt.id(),
+          edgeType: 'user', relation: 'related_to',
+        }}])[0];
+        _cancelConnectMode();
+        _showRelDialog(tempEdge, srcNode, tgt);
+        evt.stopPropagation();
+        return;
+      }
+      if (_tapTimer) { clearTimeout(_tapTimer); _tapTimer = null; return; }
+      _tapTimer = setTimeout(() => {
+        _tapTimer = null;
+        const paperId = tgt.data('paperId');
+        if (paperId && _onPaperClick) _onPaperClick(paperId);
+      }, 280);
+    });
+
+    // Tap custom node → complete edge in connect mode only
+    cy.on('tap', 'node[type="custom"]', (evt) => {
+      const tgt = evt.target;
+      if (!_connectMode) return;
       if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
-      const srcNode   = cy.getElementById(_connectSrcId);
-      const tempEdge  = cy.add([{ data: {
+      const srcNode  = cy.getElementById(_connectSrcId);
+      const tempEdge = cy.add([{ data: {
         id: `tmp_${Date.now()}`,
         source: _connectSrcId, target: tgt.id(),
         edgeType: 'user', relation: 'related_to',

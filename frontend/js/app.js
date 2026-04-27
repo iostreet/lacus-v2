@@ -2,7 +2,7 @@
  * Lacus V2 — Main frontend logic
  */
 
-const API = 'http://localhost:8000/api';
+const API = '/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State
@@ -104,7 +104,7 @@ document.getElementById('view-map-btn').addEventListener('click', () => _setView
 const loadMapView = async () => {
   try {
     const canvasData = await apiFetch('/map-canvas');
-    MapView.init('papers-map', canvasData);
+    MapView.init('papers-map', canvasData, { onPaperClick: openDetail });
     _renderKwFilterBar(canvasData.keyword_stats || []);
   } catch (e) {
     toast('Failed to load map view: ' + e.message, 'error');
