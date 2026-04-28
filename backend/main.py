@@ -400,6 +400,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                     sb.table("papers").update(patch).eq("id", paper_id).execute()
 
         sections = {
+            **info.get("sections", {}),
             "title":           title,
             "abstract":        info.get("abstract", ""),
             "author_keywords": info.get("author_keywords", []),
@@ -572,6 +573,35 @@ def delete_paper(paper_id: int, user_id: str = Depends(get_current_user)):
     if pdf_path and Path(pdf_path).exists():
         Path(pdf_path).unlink(missing_ok=True)
     return {"deleted": paper_id}
+
+
+@app.post("/api/papers/{paper_id}/reanalyze")
+async def reanalyze_paper(
+    background_tasks: BackgroundTasks,
+    paper_id: int,
+    user_id: str = Depends(get_current_user),
+    authorization: str = Header(None),
+):
+    res = _sb().table("papers").select("pdf_path, title").eq("id", paper_id).eq("user_id", user_id).execute()
+    if not res.data:
+        raise HTTPException(404, "Paper not found")
+    pdf_path = res.data[0]["pdf_path"]
+    if not pdf_path or not Path(pdf_path).exists():
+        raise HTTPException(400, "PDF file not found on server")
+
+    # Clear existing extracted data
+    sb = _sb()
+    sb.table("keywords").delete().eq("paper_id", paper_id).execute()
+    sb.table("relations").delete().eq("paper_id", paper_id).execute()
+    sb.table("metrics").delete().eq("paper_id", paper_id).execute()
+    sb.table("summaries").delete().eq("paper_id", paper_id).execute()
+    sb.table("papers").update({"status": "processing"}).eq("id", paper_id).execute()
+
+    token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    orig_filename = Path(pdf_path).name
+    _set_progress(paper_id, "Queued for re-analysis…", 5)
+    background_tasks.add_task(_run_analysis, paper_id, user_id, pdf_path, orig_filename, token)
+    return {"paper_id": paper_id, "status": "processing"}
 
 
 # ── Keywords ──────────────────────────────────────────────────────────────────

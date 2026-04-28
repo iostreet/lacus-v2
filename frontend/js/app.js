@@ -438,6 +438,20 @@ const deletePaper = async (id) => {
   }
 };
 
+const reanalyzePaper = async (id) => {
+  if (!confirm('Re-analyze this paper? Existing keywords, relations, and metrics will be cleared.')) return;
+  try {
+    await apiFetch(`/papers/${id}/reanalyze`, { method: 'POST' });
+    toast('Re-analysis started. This may take a minute…', 'ok');
+    closeDetail();
+    await loadPapers();
+    // Reopen to show progress
+    setTimeout(() => openDetail(id), 800);
+  } catch (e) {
+    toast('Re-analyze failed: ' + e.message, 'error');
+  }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Detail modal
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1345,6 +1359,7 @@ const loadSummary = async () => {
 // Modal close
 // ─────────────────────────────────────────────────────────────────────────────
 document.getElementById('modal-close').addEventListener('click', closeDetail);
+document.getElementById('reanalyze-btn').addEventListener('click', () => { if (activePaperId) reanalyzePaper(activePaperId); });
 document.getElementById('modal-overlay').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeDetail();
 });
