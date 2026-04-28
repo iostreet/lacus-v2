@@ -400,6 +400,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                     sb.table("papers").update(patch).eq("id", paper_id).execute()
 
         sections = {
+            **info.get("sections", {}),
             "title":           title,
             "abstract":        info.get("abstract", ""),
             "author_keywords": info.get("author_keywords", []),
@@ -407,7 +408,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
 
         # Step 2 — Keywords
         _set_progress(paper_id, "Extracting keywords…", 30)
-        kw_data = extract_keywords(sections)
+        kw_data = [kw for kw in extract_keywords(sections) if kw.get("confidence", 0) > 0.40]
         kw_id_map: dict[str, int] = {}
         for kw in kw_data:
             res = sb.table("keywords").insert({
