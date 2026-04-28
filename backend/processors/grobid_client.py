@@ -156,7 +156,7 @@ def extract_with_fallback(pdf_path: str) -> dict:
         except Exception:
             return _empty_result()
 
-    return _parse_plain_text(_fix_garbled_text(text[:8000]))
+    return _parse_plain_text(_fix_garbled_text(text))
 
 
 def _empty_result() -> dict:
@@ -204,8 +204,18 @@ def _looks_like_journal(line: str) -> bool:
     return len(line) < 120 and any(p.search(line) for p in _JOURNAL_HINTS)
 
 
+def _has_weird_midword_caps(line: str) -> bool:
+    """Detect Science-journal category headers with mid-word uppercase like 'ReseaRch aRticles'."""
+    words = [w for w in line.split() if len(w) > 3]
+    if not words:
+        return False
+    weird = sum(any(c.isupper() for c in w[1:]) and not w.isupper() for w in words)
+    return weird / len(words) >= 0.5
+
+
 def _parse_plain_text(text: str) -> dict:
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    raw_lines = text.splitlines()
+    lines = [l.strip() for l in raw_lines if l.strip()]
     header_lines = lines[:40]
 
     doi  = m[1].rstrip(".") if (m := DOI_RE.search(text)) else ""
@@ -213,7 +223,8 @@ def _parse_plain_text(text: str) -> dict:
 
     journal = ""
     title   = ""
-    for line in header_lines:
+    title_last_idx = -1
+    for idx, line in enumerate(header_lines):
         if len(line) < 5:
             continue
         if _HEADER_END.match(line):
@@ -223,12 +234,27 @@ def _parse_plain_text(text: str) -> dict:
         if _looks_like_journal(line):
             journal = journal or line
             continue
+        if _has_weird_midword_caps(line):
+            continue
         if 15 <= len(line) <= 350:
             if line.isupper() and len(line) < 25:
                 continue
-            if line[0].islower():
+            # Skip author lines (name + digit superscript)
+            if re.search(r'[A-Za-z]\d[†*,]', line):
+                if title:
+                    break
                 continue
-            title = title or line
+            in_continuation = title_last_idx >= 0 and idx <= title_last_idx + 3
+            if line[0].islower() and not in_continuation:
+                continue
+            if not title:
+                title = line
+                title_last_idx = idx
+            elif in_continuation and line[-1] not in '.?!':
+                title += " " + line
+                # Do NOT update title_last_idx — window is fixed from first line
+            else:
+                break  # hit something after the title block, stop
 
     if m := re.search(
         r"(?:abstract|summary)[:\s]*\n?\s*(.+?)(?=\n\s*(?:1\s*\.?\s*introduction|keywords?|index\s+terms|graphical))",
@@ -239,6 +265,41 @@ def _parse_plain_text(text: str) -> dict:
         abstract = m[1].strip().replace("\n", " ")[:2000]
     else:
         abstract = ""
+
+    # Fallback: unlabeled abstract (Science/Nature format — paragraph right after author block)
+    if not abstract:
+        # Find the first author line (name + digit superscript within first 30 raw lines)
+        first_author_line = -1
+        for i, raw_line in enumerate(raw_lines[:30]):
+            if re.search(r'[A-Z][a-z]+\s+[A-Z][a-z]+\d[\u2020*,]', raw_line):
+                first_author_line = i
+                break
+        if first_author_line >= 0:
+            # Find the first blank line after the author block
+            blank_after_authors = -1
+            for i in range(first_author_line, min(first_author_line + 20, len(raw_lines))):
+                if not raw_lines[i].strip():
+                    blank_after_authors = i
+                    break
+            if blank_after_authors >= 0:
+                para: list[str] = []
+                for raw_line in raw_lines[blank_after_authors + 1: blank_after_authors + 40]:
+                    stripped = raw_line.strip()
+                    if not stripped:
+                        if para:
+                            break
+                        continue
+                    if re.search(r'^\d+\w|\bCenter\b|\bDepartment\b|\bInstitute\b|\bUniversity\b|\bLaboratory\b', stripped):
+                        continue
+                    para.append(stripped)
+                candidate = " ".join(para)
+                if len(candidate) > 150:
+                    abstract = candidate[:2000]
+
+    # Editor’s summary fallback (Science journals)
+    if not abstract:
+        if m := re.search(r"Editor[‘’]s\s+summary\s*\n(.{100,1500})", text, re.IGNORECASE | re.DOTALL):
+            abstract = m[1].strip().replace("\n", " ")[:2000]
 
     intro = (
         m[1].strip().replace("\n", " ")[:1500]
@@ -259,7 +320,7 @@ def _parse_plain_text(text: str) -> dict:
     results = (
         m[1].strip().replace("\n", " ")[:2000]
         if (m := re.search(
-            r'(?:results?\s+and\s+discussion|results?)[:\s\n]+(.+?)(?=\n\s*(?:conclusion|\d+\.\s*[A-Z]|discussion))',
+            r'(?:results?\s+and\s+discussion|results?|discussion)[:\s\n]+(.+?)(?=\n\s*(?:conclusion|\d+\.\s*[A-Z]|discussion|references|bibliography))',
             text, re.IGNORECASE | re.DOTALL,
         )) else ""
     )
