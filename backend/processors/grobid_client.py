@@ -145,6 +145,7 @@ def _parse_tei(xml_text: str) -> dict:
 def extract_with_fallback(pdf_path: str) -> dict:
     try:
         from pdfminer.high_level import extract_text
+        from pdfminer.pdfpage import PDFPage
     except ImportError:
         return _empty_result()
 
@@ -156,7 +157,18 @@ def extract_with_fallback(pdf_path: str) -> dict:
         except Exception:
             return _empty_result()
 
-    return _parse_plain_text(_fix_garbled_text(text))
+    result = _parse_plain_text(_fix_garbled_text(text))
+
+    # If DOI not found in first pages, search the last page
+    if not result["doi"]:
+        with contextlib.suppress(Exception):
+            with open(pdf_path, "rb") as f:
+                total_pages = sum(1 for _ in PDFPage.get_pages(f))
+            last_text = extract_text(pdf_path, page_numbers=[total_pages - 1])
+            if m := DOI_RE.search(last_text):
+                result["doi"] = m[1].rstrip(".")
+
+    return result
 
 
 def _empty_result() -> dict:
