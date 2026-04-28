@@ -230,12 +230,16 @@ def extract_keywords(sections: dict) -> list[dict]:
         cl = kw.lower().strip()
         candidates[cl] = max(candidates.get(cl, 0), 0.90)
 
-    # Fallback
+    # Fallback: regex only — normalize so best term reaches 0.72,
+    # keeping all results above the 0.40 confidence filter in main.py
     if not candidates:
-        for item in _regex_keywords(priority_text or full_text):
-            kw = _clean_phrase(item["keyword"])
-            if kw:
-                candidates[kw.lower()] = item["confidence"]
+        regex_items = [(c := _clean_phrase(item["keyword"]), item["confidence"])
+                       for item in _regex_keywords(priority_text or full_text)
+                       if _clean_phrase(item["keyword"])]
+        if regex_items:
+            max_conf = max(c for _, c in regex_items) or 1
+            for kw, conf in regex_items:
+                candidates[kw.lower()] = 0.45 + (conf / max_conf) * 0.27
 
     # Build output list
     seen_normalized: set[str] = set()
