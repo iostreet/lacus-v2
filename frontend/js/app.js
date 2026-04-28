@@ -584,7 +584,7 @@ const loadOverview = async () => {
   // Relevance stars — add as last row of basic info table
   const relevanceRow = document.createElement('tr');
   relevanceRow.innerHTML = `
-    <td style="color:var(--text-muted);white-space:nowrap">연관성</td>
+    <td style="color:var(--text-muted);white-space:nowrap">Relevance</td>
     <td colspan="2">
       <div class="star-rating" id="star-rating" data-value="${paper.relevance || 0}">
         ${[1,2,3,4,5].map(n =>
