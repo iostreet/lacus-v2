@@ -61,49 +61,57 @@ window.MapView = (() => {
 
   // ── SVG generators ────────────────────────────────────────────────────────
 
-  const PW = 300, PH = 92, PR = 8, PTB = 24;
+  // ── Palantir-style card: left accent panel + right text area ─────────────
+  // Draw order: fill → accent panel → border on top (prevents border being
+  // obscured by the panel fill on the left side).
+
+  const PW = 280, PH = 76, PR = 8;
 
   const _paperSvg = (title, year, materials, expanded) => {
-    const matStr = materials.length ? _cut(materials.join('  ·  '), 36) : '';
     const ind = expanded ? '▼' : '▶';
     return _uri(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${PW}" height="${PH}">` +
-      `<rect x="1" y="1" width="${PW-2}" height="${PH-2}" rx="${PR}" ry="${PR}" fill="#13111e" stroke="#7c3aed" stroke-width="1.5"/>` +
-      `<rect x="1" y="1" width="${PW-2}" height="${PTB}" rx="${PR}" ry="${PR}" fill="#7c3aed"/>` +
-      `<rect x="1" y="${PTB-PR+1}" width="${PW-2}" height="${PR}" fill="#7c3aed"/>` +
-      `<text x="10" y="${PTB/2+5}" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#ddd6fe" letter-spacing="1">PAPER</text>` +
-      (year ? `<text x="${PW-10}" y="${PTB/2+5}" font-family="'Inter','Segoe UI',sans-serif" font-size="9" fill="#e0e7ff" text-anchor="end">${_e(year)}</text>` : '') +
-      `<text x="10" y="${PTB+21}" font-family="'Inter','Segoe UI',sans-serif" font-size="15" font-weight="700" fill="#f8fafc">${_e(_cut(title, 28))}</text>` +
-      (matStr ? `<text x="10" y="${PTB+41}" font-family="'Inter','Segoe UI',sans-serif" font-size="12" fill="#fcd34d">◆ ${_e(matStr)}</text>` : '') +
-      `<text x="${PW-10}" y="${PH-7}" font-family="'Inter','Segoe UI',sans-serif" font-size="9" fill="#a78bfa" text-anchor="end">${ind} keywords</text>` +
+      `<rect x=".5" y=".5" width="${PW-1}" height="${PH-1}" rx="${PR}" ry="${PR}" fill="#111827"/>` +
+      `<rect x=".5" y=".5" width="48" height="${PH-1}" rx="${PR}" ry="${PR}" fill="#2e1065"/>` +
+      `<rect x=".5" y=".5" width="${PW-1}" height="${PH-1}" rx="${PR}" ry="${PR}" fill="none" stroke="#6d28d9" stroke-width="1.5"/>` +
+      `<circle cx="24" cy="${PH/2}" r="10" fill="#7c3aed" fill-opacity=".4"/>` +
+      `<circle cx="24" cy="${PH/2}" r="5" fill="#a855f7"/>` +
+      `<text x="56" y="19" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#a78bfa" letter-spacing=".8">PAPER${year ? '  ' + _e(year) : ''}</text>` +
+      `<text x="56" y="39" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f8fafc">${_e(_cut(title, 24))}</text>` +
+      (materials.length ? `<text x="56" y="57" font-family="'Inter','Segoe UI',sans-serif" font-size="10.5" fill="#fcd34d">◆ ${_e(_cut(materials.join(' · '), 28))}</text>` : '') +
+      `<text x="${PW-8}" y="${PH-5}" font-family="'Inter','Segoe UI',sans-serif" font-size="9" fill="#6b7280" text-anchor="end">${ind} expand</text>` +
       `</svg>`
     );
   };
 
-  const KW = 200, KH = 62, KR = 7, KTB = 20;
+  const KW = 200, KH = 62, KR = 7;
   const _kwSvg = (label, category) => {
     const col = CAT_COLORS[category] || '#94a3b8';
     return _uri(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${KW}" height="${KH}">` +
-      `<rect x="1" y="1" width="${KW-2}" height="${KH-2}" rx="${KR}" ry="${KR}" fill="#0f1729" stroke="${col}" stroke-width="1.5" stroke-opacity=".75"/>` +
-      `<rect x="1" y="1" width="${KW-2}" height="${KTB}" rx="${KR}" ry="${KR}" fill="${col}"/>` +
-      `<rect x="1" y="${KTB-KR+1}" width="${KW-2}" height="${KR}" fill="${col}"/>` +
-      `<text x="${KW/2}" y="${KTB/2+5}" font-family="'Inter','Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#050d1a" text-anchor="middle">${_e(category||'')}</text>` +
-      `<text x="9" y="${KTB+26}" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 20))}</text>` +
+      `<rect x=".5" y=".5" width="${KW-1}" height="${KH-1}" rx="${KR}" ry="${KR}" fill="#0f172a"/>` +
+      `<rect x=".5" y=".5" width="38" height="${KH-1}" rx="${KR}" ry="${KR}" fill="${col}" fill-opacity=".18"/>` +
+      `<rect x=".5" y=".5" width="${KW-1}" height="${KH-1}" rx="${KR}" ry="${KR}" fill="none" stroke="${col}" stroke-width="1.5" stroke-opacity=".6"/>` +
+      `<circle cx="19" cy="${KH/2}" r="8" fill="${col}" fill-opacity=".3"/>` +
+      `<circle cx="19" cy="${KH/2}" r="4" fill="${col}"/>` +
+      `<text x="46" y="19" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="${col}" letter-spacing=".5">${_e(category||'')}</text>` +
+      `<text x="46" y="40" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 18))}</text>` +
       `</svg>`
     );
   };
 
-  const CN_W = 200, CN_H = 68, CN_R = 7, CN_TB = 22;
+  const CN_W = 200, CN_H = 68, CN_R = 7;
   const _customSvg = (label, category, color) => {
     const col = color || CAT_COLORS[category] || '#64748b';
     return _uri(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${CN_W}" height="${CN_H}">` +
-      `<rect x="1" y="1" width="${CN_W-2}" height="${CN_H-2}" rx="${CN_R}" ry="${CN_R}" fill="#0a0a12" stroke="${col}" stroke-width="1.5"/>` +
-      `<rect x="1" y="1" width="${CN_W-2}" height="${CN_TB}" rx="${CN_R}" ry="${CN_R}" fill="${col}"/>` +
-      `<rect x="1" y="${CN_TB-CN_R+1}" width="${CN_W-2}" height="${CN_R}" fill="${col}"/>` +
-      `<text x="${CN_W/2}" y="${CN_TB/2+5}" font-family="'Inter','Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#050d1a" text-anchor="middle">${_e(category||'Custom')}</text>` +
-      `<text x="9" y="${CN_TB+26}" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 20))}</text>` +
+      `<rect x=".5" y=".5" width="${CN_W-1}" height="${CN_H-1}" rx="${CN_R}" ry="${CN_R}" fill="#0a0a12"/>` +
+      `<rect x=".5" y=".5" width="38" height="${CN_H-1}" rx="${CN_R}" ry="${CN_R}" fill="${col}" fill-opacity=".18"/>` +
+      `<rect x=".5" y=".5" width="${CN_W-1}" height="${CN_H-1}" rx="${CN_R}" ry="${CN_R}" fill="none" stroke="${col}" stroke-width="1.5"/>` +
+      `<circle cx="19" cy="${CN_H/2}" r="9" fill="${col}" fill-opacity=".3"/>` +
+      `<circle cx="19" cy="${CN_H/2}" r="4.5" fill="${col}"/>` +
+      `<text x="46" y="20" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="${col}" letter-spacing=".5">${_e(category||'Custom')}</text>` +
+      `<text x="46" y="42" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 18))}</text>` +
       `</svg>`
     );
   };
