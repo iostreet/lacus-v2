@@ -182,6 +182,7 @@ _META_SKIP = [
     re.compile(r'^\s*(vol\.?\s*\d|volume\s+\d|issue\s*\d|no\.?\s*\d|pp\.?\s*\d)', re.I),
     re.compile(r'\bdoi\s*:\s*10\.', re.I),
     re.compile(r'[©®]|copyright|all rights reserved|open access|license', re.I),
+    re.compile(r'\b(rights?\s+reserved|licensee|noncommercial|some\s+rights)\b', re.I),
     re.compile(r'^\s*(received|accepted|published|available online|submitted|revised):?', re.I),
     re.compile(r'^\s*\d{1,5}\s*$'),
     re.compile(r'page\s+\d+\s+of\s+\d+', re.I),
@@ -225,6 +226,14 @@ def _has_weird_midword_caps(line: str) -> bool:
     return weird / len(words) >= 0.5
 
 
+def _is_spaced_chars(line: str) -> bool:
+    """Detect lines like 'P H Y S I C A L  S C I E N C E S' (single chars separated by spaces)."""
+    words = line.split()
+    if len(words) < 3:
+        return False
+    return sum(1 for w in words if len(w) == 1) / len(words) > 0.6
+
+
 def _parse_plain_text(text: str) -> dict:
     raw_lines = text.splitlines()
     lines = [l.strip() for l in raw_lines if l.strip()]
@@ -247,6 +256,8 @@ def _parse_plain_text(text: str) -> dict:
             journal = journal or line
             continue
         if _has_weird_midword_caps(line):
+            continue
+        if _is_spaced_chars(line):
             continue
         if 15 <= len(line) <= 350:
             if line.isupper() and len(line) < 25:
@@ -347,7 +358,9 @@ def _parse_plain_text(text: str) -> dict:
             and not re.search(r'\d{4,}|\bUniversity\b|\bInstitute\b|\bDepartment\b|\bLaboratory\b', line, re.I)
         ):
             parts = [a.strip() for a in re.split(r',\s*|\s+and\s+', line, flags=re.I) if a.strip()]
-            valid = [p for p in parts if re.match(r'^[A-Z][a-zA-Z.\-]+(\s+[A-Z][a-zA-Z.\-]+){0,3}$', p)]
+            # Strip trailing superscript markers (digit/†/*/,) before name validation
+            parts_clean = [re.sub(r'[\d†*,\s]+$', '', p).strip() for p in parts]
+            valid = [p for p in parts_clean if re.match(r'^[A-Z][a-zA-Z.\-]+(\s+[A-Z][a-zA-Z.\-]+){0,3}$', p)]
             if valid:
                 authors = valid
                 break

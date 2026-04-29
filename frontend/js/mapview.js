@@ -16,6 +16,7 @@ window.MapView = (() => {
   let _suppressCtx  = false;
   let _onNodeClick  = null;
   let _tapTimer     = null;
+  let _papersCache  = [];   // paper data for preview restoration
 
   const API = '/api';
   const _getToken = async () => {
@@ -60,58 +61,73 @@ window.MapView = (() => {
 
   // ── SVG generators ────────────────────────────────────────────────────────
 
-  const PW = 300, PH = 102, PR = 10, PTB = 26;
+  // ── Palantir-style card: left accent panel + right text area ─────────────
+  // Draw order: fill → accent panel → border on top (prevents border being
+  // obscured by the panel fill on the left side).
+
+  const PW = 280, PH = 76, PR = 8;
 
   const _paperSvg = (title, year, materials, expanded) => {
-    const matStr = materials.length ? _cut(materials.join('  ·  '), 38) : '';
     const ind = expanded ? '▼' : '▶';
     return _uri(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${PW}" height="${PH}">` +
-      `<rect x="1" y="1" width="${PW-2}" height="${PH-2}" rx="${PR}" ry="${PR}" fill="#0c0c16" stroke="#a855f7" stroke-width="2"/>` +
-      `<rect x="1" y="1" width="${PW-2}" height="${PTB}" rx="${PR}" ry="${PR}" fill="#a855f7"/>` +
-      `<rect x="1" y="${PTB-PR+1}" width="${PW-2}" height="${PR}" fill="#a855f7"/>` +
-      `<text x="10" y="${PTB/2+5}" font-family="'Inter','Segoe UI',sans-serif" font-size="10" font-weight="700" fill="#c7d2fe">PAPER</text>` +
-      (year ? `<text x="${PW-10}" y="${PTB/2+5}" font-family="'Inter','Segoe UI',sans-serif" font-size="10" fill="#e0e7ff" text-anchor="end">${_e(year)}</text>` : '') +
-      `<text x="10" y="${PTB+20}" font-family="'Inter','Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#f1f5f9">${_e(_cut(title, 34))}</text>` +
-      (matStr ? `<text x="10" y="${PTB+39}" font-family="'Inter','Segoe UI',sans-serif" font-size="10.5" fill="#fcd34d">◆ ${_e(matStr)}</text>` : '') +
-      `<text x="${PW-10}" y="${PH-8}" font-family="'Inter','Segoe UI',sans-serif" font-size="10" fill="#c084fc" text-anchor="end">${ind} keywords</text>` +
+      `<rect x=".5" y=".5" width="${PW-1}" height="${PH-1}" rx="${PR}" ry="${PR}" fill="#111827"/>` +
+      `<rect x=".5" y=".5" width="48" height="${PH-1}" rx="${PR}" ry="${PR}" fill="#2e1065"/>` +
+      `<rect x=".5" y=".5" width="${PW-1}" height="${PH-1}" rx="${PR}" ry="${PR}" fill="none" stroke="#6d28d9" stroke-width="1.5"/>` +
+      `<circle cx="24" cy="${PH/2}" r="10" fill="#7c3aed" fill-opacity=".4"/>` +
+      `<circle cx="24" cy="${PH/2}" r="5" fill="#a855f7"/>` +
+      `<text x="56" y="19" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#a78bfa" letter-spacing=".8">PAPER${year ? '  ' + _e(year) : ''}</text>` +
+      `<text x="56" y="39" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f8fafc">${_e(_cut(title, 24))}</text>` +
+      (materials.length ? `<text x="56" y="57" font-family="'Inter','Segoe UI',sans-serif" font-size="10.5" fill="#fcd34d">◆ ${_e(_cut(materials.join(' · '), 28))}</text>` : '') +
+      `<text x="${PW-8}" y="${PH-5}" font-family="'Inter','Segoe UI',sans-serif" font-size="9" fill="#6b7280" text-anchor="end">${ind} expand</text>` +
       `</svg>`
     );
   };
 
-  const KW = 158, KH = 52, KR = 7, KTB = 17;
+  const KW = 200, KH = 62, KR = 7;
   const _kwSvg = (label, category) => {
     const col = CAT_COLORS[category] || '#94a3b8';
     return _uri(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${KW}" height="${KH}">` +
-      `<rect x="1" y="1" width="${KW-2}" height="${KH-2}" rx="${KR}" ry="${KR}" fill="#0d1420" stroke="${col}" stroke-width="1" stroke-opacity=".6"/>` +
-      `<rect x="1" y="1" width="${KW-2}" height="${KTB}" rx="${KR}" ry="${KR}" fill="${col}"/>` +
-      `<rect x="1" y="${KTB-KR+1}" width="${KW-2}" height="${KR}" fill="${col}"/>` +
-      `<text x="${KW/2}" y="${KTB/2+4}" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#050d1a" text-anchor="middle">${_e(category||'')}</text>` +
-      `<text x="9" y="${KTB+22}" font-family="'Inter','Segoe UI',sans-serif" font-size="12" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 17))}</text>` +
+      `<rect x=".5" y=".5" width="${KW-1}" height="${KH-1}" rx="${KR}" ry="${KR}" fill="#0f172a"/>` +
+      `<rect x=".5" y=".5" width="38" height="${KH-1}" rx="${KR}" ry="${KR}" fill="${col}" fill-opacity=".18"/>` +
+      `<rect x=".5" y=".5" width="${KW-1}" height="${KH-1}" rx="${KR}" ry="${KR}" fill="none" stroke="${col}" stroke-width="1.5" stroke-opacity=".6"/>` +
+      `<circle cx="19" cy="${KH/2}" r="8" fill="${col}" fill-opacity=".3"/>` +
+      `<circle cx="19" cy="${KH/2}" r="4" fill="${col}"/>` +
+      `<text x="46" y="19" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="${col}" letter-spacing=".5">${_e(category||'')}</text>` +
+      `<text x="46" y="40" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 18))}</text>` +
       `</svg>`
     );
   };
 
-  const CN_W = 168, CN_H = 66, CN_R = 8, CN_TB = 20;
+  const CN_W = 200, CN_H = 68, CN_R = 7;
   const _customSvg = (label, category, color) => {
     const col = color || CAT_COLORS[category] || '#64748b';
     return _uri(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${CN_W}" height="${CN_H}">` +
-      `<rect x="1" y="1" width="${CN_W-2}" height="${CN_H-2}" rx="${CN_R}" ry="${CN_R}" fill="#0a0a12" stroke="${col}" stroke-width="1.5"/>` +
-      `<rect x="1" y="1" width="${CN_W-2}" height="${CN_TB}" rx="${CN_R}" ry="${CN_R}" fill="${col}"/>` +
-      `<rect x="1" y="${CN_TB-CN_R+1}" width="${CN_W-2}" height="${CN_R}" fill="${col}"/>` +
-      `<text x="${CN_W/2}" y="${CN_TB/2+4}" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="#050d1a" text-anchor="middle">${_e(category||'Custom')}</text>` +
-      `<text x="9" y="${CN_TB+22}" font-family="'Inter','Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 17))}</text>` +
+      `<rect x=".5" y=".5" width="${CN_W-1}" height="${CN_H-1}" rx="${CN_R}" ry="${CN_R}" fill="#0a0a12"/>` +
+      `<rect x=".5" y=".5" width="38" height="${CN_H-1}" rx="${CN_R}" ry="${CN_R}" fill="${col}" fill-opacity=".18"/>` +
+      `<rect x=".5" y=".5" width="${CN_W-1}" height="${CN_H-1}" rx="${CN_R}" ry="${CN_R}" fill="none" stroke="${col}" stroke-width="1.5"/>` +
+      `<circle cx="19" cy="${CN_H/2}" r="9" fill="${col}" fill-opacity=".3"/>` +
+      `<circle cx="19" cy="${CN_H/2}" r="4.5" fill="${col}"/>` +
+      `<text x="46" y="20" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="${col}" letter-spacing=".5">${_e(category||'Custom')}</text>` +
+      `<text x="46" y="42" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 18))}</text>` +
       `</svg>`
     );
   };
 
   // ── Layout helpers ────────────────────────────────────────────────────────
 
-  const LAYER_Y_OFF   = [140, 250, 370, 490];
-  const KW_GAP        = 182;
+  // Palantir-style: papers left column, keywords 2-column grid to the right
+  const PAPER_COL_X  = 200;   // paper center x (left column)
+  const PAPER_V_GAP  = 80;    // gap between paper bottom edge and next paper top
+  const KW_COL_GAP   = 24;    // horizontal gap between keyword columns
+  const KW_ROW_H     = KH + 14;
   const MAX_PER_LAYER = 4;
+
+  // x-center of keyword column col (0-indexed) relative to paper center
+  const _kwColX = (paperX, col) =>
+    paperX + PW / 2 + 80 + col * (KW + KW_COL_GAP) + KW / 2;
 
   const _kwDefaultPos = (paperNode, keywords) => {
     const px = paperNode.position('x');
@@ -124,18 +140,45 @@ window.MapView = (() => {
         const li = CAT_LAYER[kw.category] !== undefined ? CAT_LAYER[kw.category] : 2;
         if (li < 4 && layers[li].length < MAX_PER_LAYER) layers[li].push(kw);
       });
+    const allKw = layers.flat();
+    const half  = Math.ceil(allKw.length / 2);
     const posMap = {};
-    layers.forEach((kwArr, li) => {
-      const totalW = (kwArr.length - 1) * KW_GAP;
-      const startX = px - totalW / 2;
-      kwArr.forEach((kw, i) => {
-        posMap[`kw_${kw.id}`] = {
-          x: kw.pos_x != null ? kw.pos_x : startX + i * KW_GAP,
-          y: kw.pos_y != null ? kw.pos_y : py + LAYER_Y_OFF[li],
-        };
-      });
+    allKw.forEach((kw, i) => {
+      const col = i < half ? 0 : 1;
+      const row = i < half ? i : i - half;
+      posMap[`kw_${kw.id}`] = {
+        x: kw.pos_x != null ? kw.pos_x : _kwColX(px, col),
+        y: kw.pos_y != null ? kw.pos_y : py + row * KW_ROW_H,
+      };
     });
     return { layers, posMap };
+  };
+
+  // Re-stack all papers in the left column, expanding vertical space where a
+  // paper is expanded so keyword blocks never overlap the paper below.
+  const _relayoutPapers = () => {
+    if (!cy) return;
+    let y = 80;
+    _papersCache.forEach(p => {
+      const pNode = cy.getElementById(`p_${p.id}`);
+      if (!pNode.length) return;
+      pNode.position({ x: PAPER_COL_X, y });
+      if (pNode.data('expanded')) {
+        const kwNodes = cy.nodes(`[type="keyword"][paperId="${p.id}"]`);
+        if (kwNodes.length) {
+          const half = Math.ceil(kwNodes.length / 2);
+          kwNodes.forEach((kw, i) => {
+            const col = i < half ? 0 : 1;
+            const row = i < half ? i : i - half;
+            kw.position({ x: _kwColX(PAPER_COL_X, col), y: y + row * KW_ROW_H });
+          });
+          y += Math.max(PH + PAPER_V_GAP, half * KW_ROW_H + PAPER_V_GAP);
+          return;
+        }
+      }
+      y += PH + PAPER_V_GAP;
+    });
+    _schedSave();
   };
 
   // ── Stylesheet ────────────────────────────────────────────────────────────
@@ -209,6 +252,21 @@ window.MapView = (() => {
         'text-rotation': 'autorotate', 'text-margin-y': -9, 'opacity': 0.9,
       }
     },
+    // Cross-paper shared-keyword edges
+    {
+      selector: 'edge[edgeType="cross_paper"]',
+      style: {
+        'width': 1.5, 'line-color': '#334155',
+        'line-style': 'dashed', 'line-dash-pattern': [6, 4],
+        'curve-style': 'bezier', 'opacity': 0.55,
+        'label': 'data(relation)',
+        'font-size': '8px', 'color': '#64748b',
+        'font-family': '"Inter","Segoe UI",sans-serif',
+        'text-rotation': 'autorotate', 'text-margin-y': -6,
+        'text-opacity': 0.75,
+        'target-arrow-shape': 'none',
+      }
+    },
     { selector: 'edge:selected', style: { 'overlay-color': '#c084fc', 'overlay-opacity': 0.3, 'overlay-padding': 4, 'width': 4 } },
     { selector: 'edge.faded',    style: { 'opacity': 0.05 } },
     // Edge-handles
@@ -255,6 +313,9 @@ window.MapView = (() => {
   const _expandPaper = async (paperNode) => {
     const paperId   = paperNode.data('paperId');
     const papNodeId = `p_${paperId}`;
+    // Remove preview (1차) nodes before loading full keywords
+    cy.nodes(`[type="keyword"][paperId="${paperId}"]`).remove();
+    cy.edges(`[edgeType="parent"][paperId="${paperId}"]`).remove();
     try {
       const keywords = await _fetch(`/papers/${paperId}/keywords`);
       if (keywords.length === 0) { _showToast('No keywords found for this paper.', 'warn'); return; }
@@ -310,7 +371,7 @@ window.MapView = (() => {
 
       paperNode.data('expanded', true);
       _refreshPaperSvg(paperNode);
-      _schedSave();
+      _relayoutPapers();
     } catch (e) { _showToast('Failed to load keywords: ' + e.message, 'error'); }
   };
 
@@ -321,7 +382,29 @@ window.MapView = (() => {
     cy.edges(`[edgeType="parent"][paperId="${paperId}"]`).remove();
     paperNode.data('expanded', false);
     _refreshPaperSvg(paperNode);
-    _schedSave();
+    _relayoutPapers();
+  };
+
+  // Add top keyword "preview" nodes (1차 노드) around a paper node
+  const _addPreviewNodes = (paper, addFn) => {
+    const previewKws = [...(paper.materials || []), ...(paper.top_keywords || [])].filter(Boolean).slice(0, 5);
+    if (!previewKws.length) return;
+    const papNodeId = `p_${paper.id}`;
+    const px = paper.pos_x || 0;
+    const py = paper.pos_y || 0;
+    const radius = 230;
+    previewKws.forEach((kwName, i) => {
+      const angle = -Math.PI / 2 + (i / previewKws.length) * 2 * Math.PI;
+      const nodeId = `pw_${paper.id}_${i}`;
+      const ismat  = i < (paper.materials || []).length;
+      addFn({ data: {
+        id: nodeId, type: 'keyword',
+        label: kwName, normalized: kwName.toLowerCase(),
+        category: ismat ? 'Material' : 'Other',
+        paperId: paper.id, preview: true,
+      }, position: { x: px + Math.cos(angle) * radius, y: py + Math.sin(angle) * radius } });
+      addFn({ data: { id: `pwe_${paper.id}_${i}`, source: papNodeId, target: nodeId, edgeType: 'parent', paperId: paper.id } });
+    });
   };
 
   const _refreshPaperSvg = (node) => {
@@ -711,6 +794,8 @@ window.MapView = (() => {
     const customNodes = canvasData.custom_nodes || [];
     const edges       = canvasData.edges        || [];
 
+    _papersCache = papers;
+
     // Build keyword filter index (works for unexpanded papers too)
     _paperKwMap = {};
     papers.forEach(p => {
@@ -725,63 +810,91 @@ window.MapView = (() => {
     container.style.position = 'relative';
     container.style.overflow = 'hidden';
 
-    // Auto-arrange with enough vertical space so expanded keywords don't overlap next row
-    papers.forEach((p, i) => {
-      if (p.pos_x == null || p.pos_y == null) {
-        const cols = Math.max(1, Math.min(3, papers.length));
-        p.pos_x = (i % cols) * 500 + 200;
-        p.pos_y = Math.floor(i / cols) * 700 + 80;
-      }
-    });
-
     const elements = [];
 
+    // Assign paper column positions: stack vertically on the left.
+    // Expanded papers get extra height so their keyword block fits.
+    let colY = 80;
     papers.forEach(p => {
+      const paperY = colY;
+
       elements.push({ data: {
         id: `p_${p.id}`, type: 'paper',
         title: p.title, year: p.year,
         materials: p.materials || [],
         expanded: !!p.expanded,
         paperId: p.id,
-      }, position: { x: p.pos_x, y: p.pos_y } });
+      }, position: { x: PAPER_COL_X, y: paperY } });
 
-      // Restore expanded state
       if (p.expanded && p.keywords) {
         const papNodeId = `p_${p.id}`;
-        p.keywords.forEach(kw => {
+        const sorted = p.keywords.slice().sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+        const half = Math.ceil(sorted.length / 2);
+
+        sorted.forEach((kw, i) => {
+          const col = i < half ? 0 : 1;
+          const row = i < half ? i : i - half;
           elements.push({ data: {
             id: `kw_${kw.id}`, type: 'keyword',
             label: kw.name, normalized: kw.normalized,
             category: kw.category, confidence: kw.confidence,
             paperId: p.id,
-          }, position: { x: kw.pos_x || p.pos_x, y: kw.pos_y || (p.pos_y + 200) } });
+          }, position: {
+            x: kw.pos_x != null ? kw.pos_x : _kwColX(PAPER_COL_X, col),
+            y: kw.pos_y != null ? kw.pos_y : paperY + row * KW_ROW_H,
+          } });
         });
 
         const byCat = {};
-        (p.keywords || []).forEach(kw => {
+        sorted.forEach(kw => {
           if (!byCat[kw.category]) byCat[kw.category] = [];
           byCat[kw.category].push(`kw_${kw.id}`);
         });
+        (byCat.Material || []).forEach((kwId, i2) =>
+          elements.push({ data: { id: `pe_${p.id}_m${i2}`, source: papNodeId, target: kwId, relation: '', edgeType: 'parent', paperId: p.id } }));
+        (byCat.Structure || []).forEach((kwId, i2) =>
+          elements.push({ data: { id: `pe_${p.id}_s${i2}`, source: papNodeId, target: kwId, relation: '', edgeType: 'parent', paperId: p.id } }));
 
-        // Paper → Material/Structure edges
-        (byCat.Material || []).forEach((kwId, i2) => {
-          elements.push({ data: { id: `pe_${p.id}_m${i2}`, source: papNodeId, target: kwId, relation: '', edgeType: 'parent', paperId: p.id } });
-        });
-        (byCat.Structure || []).forEach((kwId, i2) => {
-          elements.push({ data: { id: `pe_${p.id}_s${i2}`, source: papNodeId, target: kwId, relation: '', edgeType: 'parent', paperId: p.id } });
-        });
-
-        // Story-flow edges
         const methods = [...(byCat.Method || []), ...(byCat.Structure || [])];
         const props   = [...(byCat.Property || []), ...(byCat.Other || [])];
         let si = 0;
         const addS = (src, tgt, rel) => elements.push({ data: {
-          id: `se_${p.id}_${si++}`, source: src, target: tgt,
-          relation: rel, edgeType: 'story', paperId: p.id,
+          id: `se_${p.id}_${si++}`, source: src, target: tgt, relation: rel, edgeType: 'story', paperId: p.id,
         }});
         (byCat.Material || []).forEach(m => methods.forEach(n => addS(m, n, 'made by')));
         methods.forEach(n => props.forEach(pp => addS(n, pp, 'yields')));
         props.forEach(pp => (byCat.Application || []).forEach(a => addS(pp, a, 'enables')));
+
+        const blockH = half * KW_ROW_H;
+        colY += Math.max(PH + PAPER_V_GAP, blockH + PAPER_V_GAP);
+      } else {
+        colY += PH + PAPER_V_GAP;
+      }
+    });
+
+    // Cross-paper edges: connect papers sharing the same keyword
+    const kwToPaperIds = {};
+    papers.forEach(p => {
+      (p.keyword_norms || []).forEach(norm => {
+        if (!norm) return;
+        if (!kwToPaperIds[norm]) kwToPaperIds[norm] = [];
+        if (!kwToPaperIds[norm].includes(p.id)) kwToPaperIds[norm].push(p.id);
+      });
+    });
+    const addedPairs = new Set();
+    Object.entries(kwToPaperIds).forEach(([norm, pids]) => {
+      if (pids.length < 2) return;
+      for (let i = 0; i < pids.length; i++) {
+        for (let j = i + 1; j < pids.length; j++) {
+          const key = `${Math.min(pids[i], pids[j])}_${Math.max(pids[i], pids[j])}`;
+          if (addedPairs.has(key)) continue;
+          addedPairs.add(key);
+          elements.push({ data: {
+            id: `cp_${key}`,
+            source: `p_${pids[i]}`, target: `p_${pids[j]}`,
+            edgeType: 'cross_paper', relation: norm,
+          }});
+        }
       }
     });
 
@@ -805,11 +918,15 @@ window.MapView = (() => {
 
     cy = cytoscape({
       container, elements, style: STYLESHEET,
-      layout: { name: 'preset', padding: 60, animate: false },
+      layout: { name: 'preset', animate: false },
       wheelSensitivity: 0.3, minZoom: 0.04, maxZoom: 4,
     });
 
-    cy.fit(undefined, 60);
+    // Fit to paper column then clamp zoom so 14px SVG text ≈ menu text size
+    const pEls = cy.nodes('[type="paper"]');
+    cy.fit(pEls.length ? pEls : cy.elements(), 60);
+    const initZ = Math.min(Math.max(cy.zoom(), 0.7), 1.0);
+    cy.zoom({ level: initZ, renderedPosition: { x: container.offsetWidth / 2, y: container.offsetHeight / 2 } });
 
     // Edge handles (drag + to connect)
     if (window.cytoscapeEdgehandles) {
@@ -830,6 +947,14 @@ window.MapView = (() => {
       const node = evt.target;
       if (node.data('expanded')) _collapsePaper(node);
       else _expandPaper(node);
+    });
+
+    // Double-click preview (1차) keyword node → expand parent paper
+    cy.on('dblclick', 'node[type="keyword"][?preview]', (evt) => {
+      if (_tapTimer) { clearTimeout(_tapTimer); _tapTimer = null; }
+      const paperId  = evt.target.data('paperId');
+      const paperNode = cy.getElementById(`p_${paperId}`);
+      if (paperNode.length) _expandPaper(paperNode);
     });
 
     // Tap keyword node — only Metric category triggers panel; others: connect mode only
