@@ -1040,32 +1040,6 @@ document.getElementById('arel-save').addEventListener('click', async () => {
   } catch (e) { toast('Failed: ' + e.message, 'error'); }
 });
 
-// ── Add-keyword modal ────────────────────────────────────────────────────────
-document.getElementById('add-keyword-btn').addEventListener('click', () => {
-  document.getElementById('add-kw-modal').classList.remove('hidden');
-});
-document.getElementById('akw-cancel').addEventListener('click', () => {
-  document.getElementById('add-kw-modal').classList.add('hidden');
-});
-document.getElementById('akw-save').addEventListener('click', async () => {
-  const name = document.getElementById('akw-name').value.trim();
-  const norm = document.getElementById('akw-norm').value.trim() || name;
-  const cat  = document.getElementById('akw-cat').value;
-  const conf = parseFloat(document.getElementById('akw-conf').value) || 0.70;
-  if (!name) { toast('Keyword name is required.', 'warn'); return; }
-  try {
-    await apiFetch(`/papers/${activePaperId}/keywords`, {
-      method: 'POST',
-      body: JSON.stringify({ keyword_name: name, normalized_name: norm, category: cat, confidence: conf }),
-    });
-    document.getElementById('add-kw-modal').classList.add('hidden');
-    ['akw-name','akw-norm'].forEach(id => { document.getElementById(id).value = ''; });
-    document.getElementById('akw-conf').value = '0.70';
-    toast('Keyword added.', 'ok');
-    await loadKeywords();
-    await refreshStorymapIfActive();
-  } catch (e) { toast('Failed: ' + e.message, 'error'); }
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Metrics tab

@@ -214,7 +214,6 @@
       <div class="tab-pane" id="tab-keywords">
         <div class="table-toolbar">
           <span class="toolbar-label" id="kw-count-label">Keywords</span>
-          <button class="btn btn-sm btn-primary" id="add-keyword-btn">+ Add Keyword</button>
         </div>
         <div class="table-bulk-bar hidden" id="kw-bulk-bar">
           <span id="kw-bulk-count">0 selected</span>
@@ -358,25 +357,6 @@
   </div>
 </div>
 
-<!-- Add-keyword modal -->
-<div class="mini-modal hidden" id="add-kw-modal">
-  <div class="mini-modal-box">
-    <h4>Add Keyword</h4>
-    <label>Keyword name<input id="akw-name" class="mini-input" placeholder="e.g. PbTiO3"/></label>
-    <label>Normalized name (optional)<input id="akw-norm" class="mini-input" placeholder="Leave blank to copy from above"/></label>
-    <label>Category
-      <select id="akw-cat" class="mini-input">
-        <option>Material</option><option>Structure</option><option>Property</option>
-        <option>Method</option><option>Application</option><option>Metric</option><option>Other</option>
-      </select>
-    </label>
-    <label>Confidence (0–1)<input id="akw-conf" class="mini-input" type="number" min="0" max="1" step="0.05" value="0.70"/></label>
-    <div class="mini-modal-actions">
-      <button class="btn btn-sm" id="akw-cancel">Cancel</button>
-      <button class="btn btn-sm btn-primary" id="akw-save">Add</button>
-    </div>
-  </div>
-</div>
 
 <!-- Add-metric modal -->
 <div class="mini-modal hidden" id="add-met-modal">
