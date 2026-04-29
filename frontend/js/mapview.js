@@ -118,12 +118,15 @@ window.MapView = (() => {
 
   // ── Layout helpers ────────────────────────────────────────────────────────
 
-  // Palantir-style: papers left column, keywords 2-column grid to the right
+  // Palantir-style: papers left column, keywords grid to the right
   const PAPER_COL_X  = 200;   // paper center x (left column)
   const PAPER_V_GAP  = 80;    // gap between paper bottom edge and next paper top
-  const KW_COL_GAP   = 24;    // horizontal gap between keyword columns
+  const KW_COL_GAP   = 20;    // horizontal gap between keyword columns
   const KW_ROW_H     = KH + 14;
   const MAX_PER_LAYER = 4;
+
+  // Number of keyword columns: square-ish grid grows wider as n increases
+  const _gridCols = (n) => n <= 4 ? 2 : n <= 9 ? 3 : 4;
 
   // x-center of keyword column col (0-indexed) relative to paper center
   const _kwColX = (paperX, col) =>
@@ -141,14 +144,12 @@ window.MapView = (() => {
         if (li < 4 && layers[li].length < MAX_PER_LAYER) layers[li].push(kw);
       });
     const allKw = layers.flat();
-    const half  = Math.ceil(allKw.length / 2);
+    const cols  = _gridCols(allKw.length);
     const posMap = {};
     allKw.forEach((kw, i) => {
-      const col = i < half ? 0 : 1;
-      const row = i < half ? i : i - half;
       posMap[`kw_${kw.id}`] = {
-        x: kw.pos_x != null ? kw.pos_x : _kwColX(px, col),
-        y: kw.pos_y != null ? kw.pos_y : py + row * KW_ROW_H,
+        x: kw.pos_x != null ? kw.pos_x : _kwColX(px, i % cols),
+        y: kw.pos_y != null ? kw.pos_y : py + Math.floor(i / cols) * KW_ROW_H,
       };
     });
     return { layers, posMap };
@@ -166,13 +167,12 @@ window.MapView = (() => {
       if (pNode.data('expanded')) {
         const kwNodes = cy.nodes(`[type="keyword"][paperId="${p.id}"]`);
         if (kwNodes.length) {
-          const half = Math.ceil(kwNodes.length / 2);
+          const cols = _gridCols(kwNodes.length);
+          const rows = Math.ceil(kwNodes.length / cols);
           kwNodes.forEach((kw, i) => {
-            const col = i < half ? 0 : 1;
-            const row = i < half ? i : i - half;
-            kw.position({ x: _kwColX(PAPER_COL_X, col), y: y + row * KW_ROW_H });
+            kw.position({ x: _kwColX(PAPER_COL_X, i % cols), y: y + Math.floor(i / cols) * KW_ROW_H });
           });
-          y += Math.max(PH + PAPER_V_GAP, half * KW_ROW_H + PAPER_V_GAP);
+          y += Math.max(PH + PAPER_V_GAP, rows * KW_ROW_H + PAPER_V_GAP);
           return;
         }
       }
@@ -224,7 +224,8 @@ window.MapView = (() => {
       style: {
         'width': 1.5, 'line-color': '#eab308', 'target-arrow-color': '#eab308',
         'target-arrow-shape': 'triangle', 'arrow-scale': 0.7,
-        'curve-style': 'bezier', 'opacity': 0.55, 'label': '',
+        'curve-style': 'round-taxi', 'taxi-direction': 'rightward', 'taxi-turn': '50%', 'round-taxi-radius': 8,
+        'opacity': 0.55, 'label': '',
       }
     },
     // Story-flow edges
@@ -774,6 +775,23 @@ window.MapView = (() => {
     cy.edges().forEach(e => {
       e.toggleClass('faded', e.source().hasClass('faded') || e.target().hasClass('faded'));
     });
+
+    // Auto-pan: bring topmost visible paper to top-left
+    const visiblePapers = cy.nodes('[type="paper"]').not('.faded');
+    if (visiblePapers.length) {
+      const top = visiblePapers.min(n => n.position('y'));
+      const topNode = top.ele;
+      const pos = topNode.renderedPosition();
+      const container = cy.container();
+      cy.animate({
+        pan: {
+          x: cy.pan().x + (20 - pos.x + topNode.renderedWidth() / 2),
+          y: cy.pan().y + (20 - pos.y + topNode.renderedHeight() / 2),
+        },
+        duration: 300,
+        easing: 'ease-in-out',
+      });
+    }
   };
 
   // ── Public: init ─────────────────────────────────────────────────────────
@@ -829,19 +847,17 @@ window.MapView = (() => {
       if (p.expanded && p.keywords) {
         const papNodeId = `p_${p.id}`;
         const sorted = p.keywords.slice().sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
-        const half = Math.ceil(sorted.length / 2);
+        const cols = _gridCols(sorted.length);
 
         sorted.forEach((kw, i) => {
-          const col = i < half ? 0 : 1;
-          const row = i < half ? i : i - half;
           elements.push({ data: {
             id: `kw_${kw.id}`, type: 'keyword',
             label: kw.name, normalized: kw.normalized,
             category: kw.category, confidence: kw.confidence,
             paperId: p.id,
           }, position: {
-            x: kw.pos_x != null ? kw.pos_x : _kwColX(PAPER_COL_X, col),
-            y: kw.pos_y != null ? kw.pos_y : paperY + row * KW_ROW_H,
+            x: kw.pos_x != null ? kw.pos_x : _kwColX(PAPER_COL_X, i % cols),
+            y: kw.pos_y != null ? kw.pos_y : paperY + Math.floor(i / cols) * KW_ROW_H,
           } });
         });
 
@@ -922,11 +938,9 @@ window.MapView = (() => {
       wheelSensitivity: 0.3, minZoom: 0.04, maxZoom: 4,
     });
 
-    // Fit to paper column then clamp zoom so 14px SVG text ≈ menu text size
-    const pEls = cy.nodes('[type="paper"]');
-    cy.fit(pEls.length ? pEls : cy.elements(), 60);
-    const initZ = Math.min(Math.max(cy.zoom(), 0.7), 1.0);
-    cy.zoom({ level: initZ, renderedPosition: { x: container.offsetWidth / 2, y: container.offsetHeight / 2 } });
+    // Position top-left: zoom 1.0, pan so first paper is visible near top-left
+    cy.zoom(1.0);
+    cy.pan({ x: -(PAPER_COL_X - PW / 2 - 20), y: -(80 - PH / 2 - 20) });
 
     // Edge handles (drag + to connect)
     if (window.cytoscapeEdgehandles) {
