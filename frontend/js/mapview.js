@@ -224,7 +224,9 @@ window.MapView = (() => {
       style: {
         'width': 1.5, 'line-color': '#eab308', 'target-arrow-color': '#eab308',
         'target-arrow-shape': 'triangle', 'arrow-scale': 0.7,
-        'curve-style': 'round-taxi', 'taxi-direction': 'rightward', 'taxi-turn': '50%', 'round-taxi-radius': 8,
+        'curve-style': 'unbundled-bezier',
+        'control-point-distances': [60, -60],
+        'control-point-weights': [0.25, 0.75],
         'opacity': 0.55, 'label': '',
       }
     },
@@ -234,7 +236,9 @@ window.MapView = (() => {
       style: {
         'width': 1.5, 'line-color': '#2d4a72', 'target-arrow-color': '#2d4a72',
         'target-arrow-shape': 'triangle', 'arrow-scale': 0.8,
-        'curve-style': 'bezier',
+        'curve-style': 'unbundled-bezier',
+        'control-point-distances': [50, -50],
+        'control-point-weights': [0.25, 0.75],
         'label': 'data(relation)', 'font-size': '9px', 'color': '#475569',
         'font-family': '"Inter","Segoe UI",sans-serif',
         'text-rotation': 'autorotate', 'text-margin-y': -7,
@@ -247,7 +251,9 @@ window.MapView = (() => {
       style: {
         'width': 2.5, 'line-color': '#a855f7', 'target-arrow-color': '#a855f7',
         'target-arrow-shape': 'triangle', 'arrow-scale': 1.0,
-        'curve-style': 'bezier',
+        'curve-style': 'unbundled-bezier',
+        'control-point-distances': [60, -60],
+        'control-point-weights': [0.25, 0.75],
         'label': 'data(relation)', 'font-size': '10px', 'color': '#a5b4fc',
         'font-family': '"Inter","Segoe UI",sans-serif',
         'text-rotation': 'autorotate', 'text-margin-y': -9, 'opacity': 0.9,
@@ -259,7 +265,10 @@ window.MapView = (() => {
       style: {
         'width': 1.5, 'line-color': '#334155',
         'line-style': 'dashed', 'line-dash-pattern': [6, 4],
-        'curve-style': 'bezier', 'opacity': 0.55,
+        'curve-style': 'unbundled-bezier',
+        'control-point-distances': [40, -40],
+        'control-point-weights': [0.25, 0.75],
+        'opacity': 0.55,
         'label': 'data(relation)',
         'font-size': '8px', 'color': '#64748b',
         'font-family': '"Inter","Segoe UI",sans-serif',
