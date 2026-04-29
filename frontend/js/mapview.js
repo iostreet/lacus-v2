@@ -148,8 +148,8 @@ window.MapView = (() => {
     const posMap = {};
     allKw.forEach((kw, i) => {
       posMap[`kw_${kw.id}`] = {
-        x: kw.pos_x != null ? kw.pos_x : _kwColX(px, i % cols),
-        y: kw.pos_y != null ? kw.pos_y : py + Math.floor(i / cols) * KW_ROW_H,
+        x: _kwColX(px, i % cols),
+        y: py + Math.floor(i / cols) * KW_ROW_H,
       };
     });
     return { layers, posMap };
@@ -307,7 +307,8 @@ window.MapView = (() => {
 
   const _savePositions = async () => {
     if (!cy) return;
-    const items = cy.nodes().map(n => ({
+    // Skip keyword nodes — their positions are always recomputed from the grid
+    const items = cy.nodes().filter(n => n.data('type') !== 'keyword').map(n => ({
       node_id:  n.id(),
       pos_x:    Math.round(n.position('x') * 10) / 10,
       pos_y:    Math.round(n.position('y') * 10) / 10,
@@ -345,7 +346,8 @@ window.MapView = (() => {
           category:   kw.category || 'Other',
           confidence: kw.confidence || 0,
           paperId,
-        }, position: posMap[kwId] || { x: paperNode.position('x'), y: paperNode.position('y') + 200 } }]);
+        }, position: posMap[kwId] || { x: paperNode.position('x'), y: paperNode.position('y') + 200 },
+           locked: true }]);
       });
 
       const byCat = {};
@@ -865,8 +867,8 @@ window.MapView = (() => {
             category: kw.category, confidence: kw.confidence,
             paperId: p.id,
           }, position: {
-            x: kw.pos_x != null ? kw.pos_x : _kwColX(PAPER_COL_X, i % cols),
-            y: kw.pos_y != null ? kw.pos_y : paperY + Math.floor(i / cols) * KW_ROW_H,
+            x: _kwColX(PAPER_COL_X, i % cols),
+            y: paperY + Math.floor(i / cols) * KW_ROW_H,
           } });
         });
 
@@ -946,6 +948,9 @@ window.MapView = (() => {
       layout: { name: 'preset', animate: false },
       wheelSensitivity: 0.3, minZoom: 0.04, maxZoom: 4,
     });
+
+    // Lock keyword nodes so they can't be dragged out of their grid positions
+    cy.nodes('[type="keyword"]').lock();
 
     // Position top-left: zoom 1.0, pan so first paper is visible near top-left
     cy.zoom(1.0);
