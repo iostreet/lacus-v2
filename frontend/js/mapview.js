@@ -118,9 +118,16 @@ window.MapView = (() => {
 
   // ── Layout helpers ────────────────────────────────────────────────────────
 
-  const LAYER_Y_OFF   = [148, 272, 400, 528];
-  const KW_GAP        = 224;
+  // Palantir-style: papers left column, keywords 2-column grid to the right
+  const PAPER_COL_X  = 200;   // paper center x (left column)
+  const PAPER_V_GAP  = 80;    // gap between paper bottom edge and next paper top
+  const KW_COL_GAP   = 24;    // horizontal gap between keyword columns
+  const KW_ROW_H     = KH + 14;
   const MAX_PER_LAYER = 4;
+
+  // x-center of keyword column col (0-indexed) relative to paper center
+  const _kwColX = (paperX, col) =>
+    paperX + PW / 2 + 80 + col * (KW + KW_COL_GAP) + KW / 2;
 
   const _kwDefaultPos = (paperNode, keywords) => {
     const px = paperNode.position('x');
@@ -133,18 +140,45 @@ window.MapView = (() => {
         const li = CAT_LAYER[kw.category] !== undefined ? CAT_LAYER[kw.category] : 2;
         if (li < 4 && layers[li].length < MAX_PER_LAYER) layers[li].push(kw);
       });
+    const allKw = layers.flat();
+    const half  = Math.ceil(allKw.length / 2);
     const posMap = {};
-    layers.forEach((kwArr, li) => {
-      const totalW = (kwArr.length - 1) * KW_GAP;
-      const startX = px - totalW / 2;
-      kwArr.forEach((kw, i) => {
-        posMap[`kw_${kw.id}`] = {
-          x: kw.pos_x != null ? kw.pos_x : startX + i * KW_GAP,
-          y: kw.pos_y != null ? kw.pos_y : py + LAYER_Y_OFF[li],
-        };
-      });
+    allKw.forEach((kw, i) => {
+      const col = i < half ? 0 : 1;
+      const row = i < half ? i : i - half;
+      posMap[`kw_${kw.id}`] = {
+        x: kw.pos_x != null ? kw.pos_x : _kwColX(px, col),
+        y: kw.pos_y != null ? kw.pos_y : py + row * KW_ROW_H,
+      };
     });
     return { layers, posMap };
+  };
+
+  // Re-stack all papers in the left column, expanding vertical space where a
+  // paper is expanded so keyword blocks never overlap the paper below.
+  const _relayoutPapers = () => {
+    if (!cy) return;
+    let y = 80;
+    _papersCache.forEach(p => {
+      const pNode = cy.getElementById(`p_${p.id}`);
+      if (!pNode.length) return;
+      pNode.position({ x: PAPER_COL_X, y });
+      if (pNode.data('expanded')) {
+        const kwNodes = cy.nodes(`[type="keyword"][paperId="${p.id}"]`);
+        if (kwNodes.length) {
+          const half = Math.ceil(kwNodes.length / 2);
+          kwNodes.forEach((kw, i) => {
+            const col = i < half ? 0 : 1;
+            const row = i < half ? i : i - half;
+            kw.position({ x: _kwColX(PAPER_COL_X, col), y: y + row * KW_ROW_H });
+          });
+          y += Math.max(PH + PAPER_V_GAP, half * KW_ROW_H + PAPER_V_GAP);
+          return;
+        }
+      }
+      y += PH + PAPER_V_GAP;
+    });
+    _schedSave();
   };
 
   // ── Stylesheet ────────────────────────────────────────────────────────────
@@ -337,7 +371,7 @@ window.MapView = (() => {
 
       paperNode.data('expanded', true);
       _refreshPaperSvg(paperNode);
-      _schedSave();
+      _relayoutPapers();
     } catch (e) { _showToast('Failed to load keywords: ' + e.message, 'error'); }
   };
 
@@ -348,7 +382,7 @@ window.MapView = (() => {
     cy.edges(`[edgeType="parent"][paperId="${paperId}"]`).remove();
     paperNode.data('expanded', false);
     _refreshPaperSvg(paperNode);
-    _schedSave();
+    _relayoutPapers();
   };
 
   // Add top keyword "preview" nodes (1차 노드) around a paper node
@@ -776,63 +810,65 @@ window.MapView = (() => {
     container.style.position = 'relative';
     container.style.overflow = 'hidden';
 
-    // Auto-arrange with enough vertical space so expanded keywords don't overlap next row
-    papers.forEach((p, i) => {
-      if (p.pos_x == null || p.pos_y == null) {
-        const cols = Math.max(1, Math.min(3, papers.length));
-        p.pos_x = (i % cols) * 500 + 200;
-        p.pos_y = Math.floor(i / cols) * 700 + 80;
-      }
-    });
-
     const elements = [];
 
+    // Assign paper column positions: stack vertically on the left.
+    // Expanded papers get extra height so their keyword block fits.
+    let colY = 80;
     papers.forEach(p => {
+      const paperY = colY;
+
       elements.push({ data: {
         id: `p_${p.id}`, type: 'paper',
         title: p.title, year: p.year,
         materials: p.materials || [],
         expanded: !!p.expanded,
         paperId: p.id,
-      }, position: { x: p.pos_x, y: p.pos_y } });
+      }, position: { x: PAPER_COL_X, y: paperY } });
 
-      // Restore expanded state
       if (p.expanded && p.keywords) {
         const papNodeId = `p_${p.id}`;
-        p.keywords.forEach(kw => {
+        const sorted = p.keywords.slice().sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+        const half = Math.ceil(sorted.length / 2);
+
+        sorted.forEach((kw, i) => {
+          const col = i < half ? 0 : 1;
+          const row = i < half ? i : i - half;
           elements.push({ data: {
             id: `kw_${kw.id}`, type: 'keyword',
             label: kw.name, normalized: kw.normalized,
             category: kw.category, confidence: kw.confidence,
             paperId: p.id,
-          }, position: { x: kw.pos_x || p.pos_x, y: kw.pos_y || (p.pos_y + 200) } });
+          }, position: {
+            x: kw.pos_x != null ? kw.pos_x : _kwColX(PAPER_COL_X, col),
+            y: kw.pos_y != null ? kw.pos_y : paperY + row * KW_ROW_H,
+          } });
         });
 
         const byCat = {};
-        (p.keywords || []).forEach(kw => {
+        sorted.forEach(kw => {
           if (!byCat[kw.category]) byCat[kw.category] = [];
           byCat[kw.category].push(`kw_${kw.id}`);
         });
+        (byCat.Material || []).forEach((kwId, i2) =>
+          elements.push({ data: { id: `pe_${p.id}_m${i2}`, source: papNodeId, target: kwId, relation: '', edgeType: 'parent', paperId: p.id } }));
+        (byCat.Structure || []).forEach((kwId, i2) =>
+          elements.push({ data: { id: `pe_${p.id}_s${i2}`, source: papNodeId, target: kwId, relation: '', edgeType: 'parent', paperId: p.id } }));
 
-        // Paper → Material/Structure edges
-        (byCat.Material || []).forEach((kwId, i2) => {
-          elements.push({ data: { id: `pe_${p.id}_m${i2}`, source: papNodeId, target: kwId, relation: '', edgeType: 'parent', paperId: p.id } });
-        });
-        (byCat.Structure || []).forEach((kwId, i2) => {
-          elements.push({ data: { id: `pe_${p.id}_s${i2}`, source: papNodeId, target: kwId, relation: '', edgeType: 'parent', paperId: p.id } });
-        });
-
-        // Story-flow edges
         const methods = [...(byCat.Method || []), ...(byCat.Structure || [])];
         const props   = [...(byCat.Property || []), ...(byCat.Other || [])];
         let si = 0;
         const addS = (src, tgt, rel) => elements.push({ data: {
-          id: `se_${p.id}_${si++}`, source: src, target: tgt,
-          relation: rel, edgeType: 'story', paperId: p.id,
+          id: `se_${p.id}_${si++}`, source: src, target: tgt, relation: rel, edgeType: 'story', paperId: p.id,
         }});
         (byCat.Material || []).forEach(m => methods.forEach(n => addS(m, n, 'made by')));
         methods.forEach(n => props.forEach(pp => addS(n, pp, 'yields')));
         props.forEach(pp => (byCat.Application || []).forEach(a => addS(pp, a, 'enables')));
+
+        const blockH = half * KW_ROW_H;
+        colY += Math.max(PH + PAPER_V_GAP, blockH + PAPER_V_GAP);
+      } else {
+        colY += PH + PAPER_V_GAP;
       }
     });
 
@@ -880,28 +916,17 @@ window.MapView = (() => {
       }});
     });
 
-    const hasPositions = papers.some(p => p.pos_x != null);
     cy = cytoscape({
       container, elements, style: STYLESHEET,
-      layout: hasPositions
-        ? { name: 'preset', padding: 60, animate: false }
-        : { name: 'cose', padding: 80, animate: true, randomize: false,
-            nodeRepulsion: 12000, idealEdgeLength: 350, nodeOverlap: 30,
-            gravity: 0.5, numIter: 1000, initialTemp: 200, coolingFactor: 0.99 },
+      layout: { name: 'preset', animate: false },
       wheelSensitivity: 0.3, minZoom: 0.04, maxZoom: 4,
     });
 
-    // Fit to paper nodes then clamp zoom so SVG text (14px) appears at
-    // approximately menu/filter text size (~13-15px CSS).
-    const _fitReadable = () => {
-      const pEls = cy.nodes('[type="paper"]');
-      const target = pEls.length ? pEls : cy.elements();
-      cy.fit(target, 60);
-      const z = Math.min(Math.max(cy.zoom(), 0.7), 1.0);
-      cy.zoom({ level: z, renderedPosition: { x: container.offsetWidth / 2, y: container.offsetHeight / 2 } });
-    };
-    if (hasPositions) { _fitReadable(); }
-    else              { cy.one('layoutstop', _fitReadable); }
+    // Fit to paper column then clamp zoom so 14px SVG text ≈ menu text size
+    const pEls = cy.nodes('[type="paper"]');
+    cy.fit(pEls.length ? pEls : cy.elements(), 60);
+    const initZ = Math.min(Math.max(cy.zoom(), 0.7), 1.0);
+    cy.zoom({ level: initZ, renderedPosition: { x: container.offsetWidth / 2, y: container.offsetHeight / 2 } });
 
     // Edge handles (drag + to connect)
     if (window.cytoscapeEdgehandles) {
