@@ -881,8 +881,8 @@ window.MapView = (() => {
         methods.forEach(n => props.forEach(pp => addS(n, pp, 'yields')));
         props.forEach(pp => (byCat.Application || []).forEach(a => addS(pp, a, 'enables')));
 
-        const blockH = half * KW_ROW_H;
-        colY += Math.max(PH + PAPER_V_GAP, blockH + PAPER_V_GAP);
+        const rows = Math.ceil(sorted.length / cols);
+        colY += Math.max(PH + PAPER_V_GAP, rows * KW_ROW_H + PAPER_V_GAP);
       } else {
         colY += PH + PAPER_V_GAP;
       }
