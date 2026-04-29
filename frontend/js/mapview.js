@@ -348,12 +348,6 @@ window.MapView = (() => {
     cy.edges(`[edgeType="parent"][paperId="${paperId}"]`).remove();
     paperNode.data('expanded', false);
     _refreshPaperSvg(paperNode);
-    // Restore preview nodes (1차 노드)
-    const paper = _papersCache.find(p => p.id === paperId);
-    if (paper) {
-      const pos = paperNode.position();
-      _addPreviewNodes({ ...paper, pos_x: pos.x, pos_y: pos.y }, el => cy.add([el]));
-    }
     _schedSave();
   };
 
@@ -839,9 +833,6 @@ window.MapView = (() => {
         (byCat.Material || []).forEach(m => methods.forEach(n => addS(m, n, 'made by')));
         methods.forEach(n => props.forEach(pp => addS(n, pp, 'yields')));
         props.forEach(pp => (byCat.Application || []).forEach(a => addS(pp, a, 'enables')));
-      } else {
-        // Not expanded → show preview (1차) keyword nodes
-        _addPreviewNodes(p, el => elements.push(el));
       }
     });
 
@@ -900,7 +891,17 @@ window.MapView = (() => {
       wheelSensitivity: 0.3, minZoom: 0.04, maxZoom: 4,
     });
 
-    cy.fit(undefined, 80);
+    // Fit to paper nodes then clamp zoom so SVG text (14px) appears at
+    // approximately menu/filter text size (~13-15px CSS).
+    const _fitReadable = () => {
+      const pEls = cy.nodes('[type="paper"]');
+      const target = pEls.length ? pEls : cy.elements();
+      cy.fit(target, 60);
+      const z = Math.min(Math.max(cy.zoom(), 0.7), 1.0);
+      cy.zoom({ level: z, renderedPosition: { x: container.offsetWidth / 2, y: container.offsetHeight / 2 } });
+    };
+    if (hasPositions) { _fitReadable(); }
+    else              { cy.one('layoutstop', _fitReadable); }
 
     // Edge handles (drag + to connect)
     if (window.cytoscapeEdgehandles) {
