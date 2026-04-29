@@ -16,6 +16,7 @@ window.MapView = (() => {
   let _suppressCtx  = false;
   let _onNodeClick  = null;
   let _tapTimer     = null;
+  let _papersCache  = [];   // paper data for preview restoration
 
   const API = '/api';
   const _getToken = async () => {
@@ -209,6 +210,21 @@ window.MapView = (() => {
         'text-rotation': 'autorotate', 'text-margin-y': -9, 'opacity': 0.9,
       }
     },
+    // Cross-paper shared-keyword edges
+    {
+      selector: 'edge[edgeType="cross_paper"]',
+      style: {
+        'width': 1.5, 'line-color': '#334155',
+        'line-style': 'dashed', 'line-dash-pattern': [6, 4],
+        'curve-style': 'bezier', 'opacity': 0.55,
+        'label': 'data(relation)',
+        'font-size': '8px', 'color': '#64748b',
+        'font-family': '"Inter","Segoe UI",sans-serif',
+        'text-rotation': 'autorotate', 'text-margin-y': -6,
+        'text-opacity': 0.75,
+        'target-arrow-shape': 'none',
+      }
+    },
     { selector: 'edge:selected', style: { 'overlay-color': '#c084fc', 'overlay-opacity': 0.3, 'overlay-padding': 4, 'width': 4 } },
     { selector: 'edge.faded',    style: { 'opacity': 0.05 } },
     // Edge-handles
@@ -255,6 +271,9 @@ window.MapView = (() => {
   const _expandPaper = async (paperNode) => {
     const paperId   = paperNode.data('paperId');
     const papNodeId = `p_${paperId}`;
+    // Remove preview (1차) nodes before loading full keywords
+    cy.nodes(`[type="keyword"][paperId="${paperId}"]`).remove();
+    cy.edges(`[edgeType="parent"][paperId="${paperId}"]`).remove();
     try {
       const keywords = await _fetch(`/papers/${paperId}/keywords`);
       if (keywords.length === 0) { _showToast('No keywords found for this paper.', 'warn'); return; }
@@ -321,7 +340,35 @@ window.MapView = (() => {
     cy.edges(`[edgeType="parent"][paperId="${paperId}"]`).remove();
     paperNode.data('expanded', false);
     _refreshPaperSvg(paperNode);
+    // Restore preview nodes (1차 노드)
+    const paper = _papersCache.find(p => p.id === paperId);
+    if (paper) {
+      const pos = paperNode.position();
+      _addPreviewNodes({ ...paper, pos_x: pos.x, pos_y: pos.y }, el => cy.add([el]));
+    }
     _schedSave();
+  };
+
+  // Add top keyword "preview" nodes (1차 노드) around a paper node
+  const _addPreviewNodes = (paper, addFn) => {
+    const previewKws = [...(paper.materials || []), ...(paper.top_keywords || [])].filter(Boolean).slice(0, 5);
+    if (!previewKws.length) return;
+    const papNodeId = `p_${paper.id}`;
+    const px = paper.pos_x || 0;
+    const py = paper.pos_y || 0;
+    const radius = 200;
+    previewKws.forEach((kwName, i) => {
+      const angle = -Math.PI / 2 + (i / previewKws.length) * 2 * Math.PI;
+      const nodeId = `pw_${paper.id}_${i}`;
+      const ismat  = i < (paper.materials || []).length;
+      addFn({ data: {
+        id: nodeId, type: 'keyword',
+        label: kwName, normalized: kwName.toLowerCase(),
+        category: ismat ? 'Material' : 'Other',
+        paperId: paper.id, preview: true,
+      }, position: { x: px + Math.cos(angle) * radius, y: py + Math.sin(angle) * radius } });
+      addFn({ data: { id: `pwe_${paper.id}_${i}`, source: papNodeId, target: nodeId, edgeType: 'parent', paperId: paper.id } });
+    });
   };
 
   const _refreshPaperSvg = (node) => {
@@ -711,6 +758,8 @@ window.MapView = (() => {
     const customNodes = canvasData.custom_nodes || [];
     const edges       = canvasData.edges        || [];
 
+    _papersCache = papers;
+
     // Build keyword filter index (works for unexpanded papers too)
     _paperKwMap = {};
     papers.forEach(p => {
@@ -782,6 +831,35 @@ window.MapView = (() => {
         (byCat.Material || []).forEach(m => methods.forEach(n => addS(m, n, 'made by')));
         methods.forEach(n => props.forEach(pp => addS(n, pp, 'yields')));
         props.forEach(pp => (byCat.Application || []).forEach(a => addS(pp, a, 'enables')));
+      } else {
+        // Not expanded → show preview (1차) keyword nodes
+        _addPreviewNodes(p, el => elements.push(el));
+      }
+    });
+
+    // Cross-paper edges: connect papers sharing the same keyword
+    const kwToPaperIds = {};
+    papers.forEach(p => {
+      (p.keyword_norms || []).forEach(norm => {
+        if (!norm) return;
+        if (!kwToPaperIds[norm]) kwToPaperIds[norm] = [];
+        if (!kwToPaperIds[norm].includes(p.id)) kwToPaperIds[norm].push(p.id);
+      });
+    });
+    const addedPairs = new Set();
+    Object.entries(kwToPaperIds).forEach(([norm, pids]) => {
+      if (pids.length < 2) return;
+      for (let i = 0; i < pids.length; i++) {
+        for (let j = i + 1; j < pids.length; j++) {
+          const key = `${Math.min(pids[i], pids[j])}_${Math.max(pids[i], pids[j])}`;
+          if (addedPairs.has(key)) continue;
+          addedPairs.add(key);
+          elements.push({ data: {
+            id: `cp_${key}`,
+            source: `p_${pids[i]}`, target: `p_${pids[j]}`,
+            edgeType: 'cross_paper', relation: norm,
+          }});
+        }
       }
     });
 
@@ -803,13 +881,18 @@ window.MapView = (() => {
       }});
     });
 
+    const hasPositions = papers.some(p => p.pos_x != null);
     cy = cytoscape({
       container, elements, style: STYLESHEET,
-      layout: { name: 'preset', padding: 60, animate: false },
+      layout: hasPositions
+        ? { name: 'preset', padding: 60, animate: false }
+        : { name: 'cose', padding: 80, animate: true, randomize: false,
+            nodeRepulsion: 12000, idealEdgeLength: 350, nodeOverlap: 30,
+            gravity: 0.5, numIter: 1000, initialTemp: 200, coolingFactor: 0.99 },
       wheelSensitivity: 0.3, minZoom: 0.04, maxZoom: 4,
     });
 
-    cy.fit(undefined, 60);
+    cy.fit(undefined, 80);
 
     // Edge handles (drag + to connect)
     if (window.cytoscapeEdgehandles) {
@@ -830,6 +913,14 @@ window.MapView = (() => {
       const node = evt.target;
       if (node.data('expanded')) _collapsePaper(node);
       else _expandPaper(node);
+    });
+
+    // Double-click preview (1차) keyword node → expand parent paper
+    cy.on('dblclick', 'node[type="keyword"][?preview]', (evt) => {
+      if (_tapTimer) { clearTimeout(_tapTimer); _tapTimer = null; }
+      const paperId  = evt.target.data('paperId');
+      const paperNode = cy.getElementById(`p_${paperId}`);
+      if (paperNode.length) _expandPaper(paperNode);
     });
 
     // Tap keyword node — only Metric category triggers panel; others: connect mode only
