@@ -1351,52 +1351,189 @@ const hideMapNodePanel = () => {
   _mnpPaperId = null;
 };
 
-const showMapNodePanel = async ({ paperId, kwId, nodeData }) => {
+const showMapNodePanel = async ({ type, paperId, kwId, nodeData }) => {
   const panel = document.getElementById('map-node-panel');
   const body  = document.getElementById('map-node-panel-body');
   const lbl   = document.getElementById('mnp-type-label');
+  const footer = document.getElementById('map-node-panel-footer');
   if (!panel || !body) return;
 
   panel.classList.remove('hidden');
   body.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:4px 0">Loading…</div>';
-  if (lbl) lbl.textContent = 'Metric';
-  _mnpPaperId = paperId;
+  _mnpPaperId = paperId || null;
+
+  // Update footer visibility
+  const openBtn = document.getElementById('map-node-panel-open');
 
   try {
-    const metrics = await apiFetch(`/papers/${paperId}/metrics`);
-    const kwName  = (nodeData.label || '').toLowerCase().trim();
-
-    // Match metrics by linked_keyword_id or by name
-    const matched = metrics.filter(m => {
-      if (kwId && m.linked_keyword_id === kwId) return true;
-      const mname = (m.metric_name || '').toLowerCase().trim();
-      return mname === kwName || kwName.includes(mname) || mname.includes(kwName);
-    });
-
-    if (matched.length === 0) { hideMapNodePanel(); return; }
-
-    const col = _CAT_COLORS['Metric'];
-    body.innerHTML = `
-      <span class="mnp-badge" style="background:${col}22;color:${col};border:1px solid ${col}44">Metric</span>
-      <div class="mnp-kw-name">${escHtml(nodeData.label)}</div>
-      <hr class="mnp-divider">
-      ${matched.map(m => `
-        <div style="margin-bottom:10px">
-          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px">
-            <span style="font-size:1.4rem;font-weight:700;color:${col}">${escHtml(m.value)}</span>
-            ${m.unit ? `<span style="font-size:0.85rem;color:var(--text-dim)">${escHtml(m.unit)}</span>` : ''}
-          </div>
-          ${m.condition ? `<div class="mnp-meta" style="margin-bottom:0">조건: ${escHtml(m.condition)}</div>` : ''}
-          ${m.confidence != null ? (() => {
-            const pct = Math.round(m.confidence * 100);
-            return `<div class="mnp-conf-wrap" style="margin-top:6px">
-              <div class="mnp-conf-track"><div class="mnp-conf-bar" style="width:${pct}%;background:${col}"></div></div>
-              <span class="mnp-conf-pct">${pct}%</span>
-            </div>`;
-          })() : ''}
+    if (type === 'paper') {
+      if (lbl) lbl.textContent = 'Paper';
+      if (openBtn) openBtn.style.display = '';
+      const p = papers.find(x => x.id === paperId) || await apiFetch(`/papers/${paperId}`);
+      const kwCats = { Material:0, Structure:0, Method:0, Property:0, Application:0, Metric:0, Other:0 };
+      (await apiFetch(`/papers/${paperId}/keywords`)).forEach(k => { if (kwCats[k.category] !== undefined) kwCats[k.category]++; });
+      body.innerHTML = `
+        <div class="mnp-title">${escHtml(p.title || 'Untitled')}</div>
+        <div class="mnp-meta">${[p.year, p.journal].filter(Boolean).map(escHtml).join(' · ')}</div>
+        ${p.authors ? `<div class="mnp-meta" style="margin-bottom:8px">${escHtml((p.authors || []).slice(0,3).join(', '))}</div>` : ''}
+        <div class="mnp-kw-chips" style="margin-bottom:10px">
+          ${Object.entries(kwCats).filter(([,v])=>v>0).map(([cat,cnt])=>{
+            const col=_CAT_COLORS[cat]||'#64748b';
+            return `<span class="mnp-kw-chip" style="color:${col};border-color:${col}44">${escHtml(cat)} ${cnt}</span>`;
+          }).join('')}
         </div>
-      `).join('<hr class="mnp-divider">')}
-    `;
+        <hr class="mnp-divider">
+        <div class="mnp-section-label">Relevance</div>
+        <div id="mnp-stars" style="display:flex;gap:6px;margin-bottom:10px">
+          ${[1,2,3,4,5].map(n=>`<span class="mnp-star" data-v="${n}" style="cursor:pointer;font-size:1.2rem;color:${(p.relevance||0)>=n?'#eab308':'#334155'}" title="${n}">★</span>`).join('')}
+        </div>
+        <div class="mnp-section-label">Memo</div>
+        <textarea id="mnp-memo" class="mv-nd-textarea" rows="4" style="margin-bottom:8px">${escHtml(p.memo||'')}</textarea>
+        <button class="btn btn-sm btn-primary" id="mnp-paper-save" style="width:100%">Save Memo</button>
+      `;
+      let selRel = p.relevance || 0;
+      body.querySelectorAll('.mnp-star').forEach(s => {
+        s.onclick = () => {
+          selRel = parseInt(s.dataset.v);
+          body.querySelectorAll('.mnp-star').forEach(x => { x.style.color = parseInt(x.dataset.v) <= selRel ? '#eab308' : '#334155'; });
+        };
+      });
+      body.querySelector('#mnp-paper-save').onclick = async () => {
+        const memo = body.querySelector('#mnp-memo').value;
+        try { await apiFetch(`/papers/${paperId}`, { method: 'PUT', body: JSON.stringify({ memo, relevance: selRel }) }); toast('Saved', 'ok'); } catch(e) { toast(e.message, 'error'); }
+      };
+
+    } else if (type === 'keyword') {
+      if (lbl) lbl.textContent = 'Keyword';
+      if (openBtn) openBtn.style.display = 'none';
+      const d = nodeData || {};
+      const col = _CAT_COLORS[d.category] || '#94a3b8';
+      const pct = Math.round((d.confidence || 0) * 100);
+      const CATS = ['Material','Structure','Method','Property','Application','Metric','Other'];
+      body.innerHTML = `
+        <span class="mnp-badge" style="background:${col}22;color:${col};border:1px solid ${col}44">${escHtml(d.category||'')}</span>
+        <div class="mnp-kw-name">${escHtml(d.label||d.normalized||'')}</div>
+        <div class="mnp-conf-wrap">
+          <div class="mnp-conf-track"><div class="mnp-conf-bar" style="width:${pct}%;background:${col}"></div></div>
+          <span class="mnp-conf-pct">${pct}%</span>
+        </div>
+        <hr class="mnp-divider">
+        <div class="mnp-section-label">Category</div>
+        <select class="mv-nd-select" id="mnp-kw-cat" style="margin-bottom:10px">
+          ${CATS.map(c=>`<option value="${c}"${c===d.category?' selected':''}>${c}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm btn-primary" id="mnp-kw-save" style="width:100%">Save Category</button>
+      `;
+      body.querySelector('#mnp-kw-save').onclick = async () => {
+        if (!kwId) return;
+        const cat = body.querySelector('#mnp-kw-cat').value;
+        try {
+          await apiFetch(`/keywords/${kwId}`, { method: 'PUT', body: JSON.stringify({ category: cat }) });
+          toast('Category saved', 'ok');
+        } catch(e) { toast(e.message, 'error'); }
+      };
+
+    } else if (type === 'custom') {
+      if (lbl) lbl.textContent = 'Custom Node';
+      if (openBtn) openBtn.style.display = 'none';
+      const d = nodeData || {};
+      const CATS = ['Material','Structure','Method','Property','Application','Metric','Custom','Other'];
+      body.innerHTML = `
+        <div class="mnp-section-label">Label</div>
+        <input class="mv-nd-input" id="mnp-cn-label" value="${escHtml(d.label||'')}" style="margin-bottom:8px" />
+        <div class="mnp-section-label">Type</div>
+        <select class="mv-nd-select" id="mnp-cn-cat" style="margin-bottom:8px">
+          ${CATS.map(c=>`<option value="${c}"${c===d.category?' selected':''}>${c}</option>`).join('')}
+        </select>
+        <div class="mnp-section-label">Description</div>
+        <textarea class="mv-nd-textarea" id="mnp-cn-desc" rows="3" style="margin-bottom:8px">${escHtml(d.description||'')}</textarea>
+        <div class="mnp-section-label">Color</div>
+        <input type="color" id="mnp-cn-color" value="${escHtml(d.color||'#64748b')}" style="width:100%;height:30px;border:none;border-radius:4px;cursor:pointer;margin-bottom:10px" />
+        <button class="btn btn-sm btn-primary" id="mnp-cn-save" style="width:100%;margin-bottom:6px">Save</button>
+        <button class="btn btn-sm btn-danger" id="mnp-cn-del" style="width:100%">Delete</button>
+      `;
+      body.querySelector('#mnp-cn-save').onclick = async () => {
+        const nodeId = d.nodeId;
+        if (!nodeId) return;
+        const label = body.querySelector('#mnp-cn-label').value;
+        const category = body.querySelector('#mnp-cn-cat').value;
+        const description = body.querySelector('#mnp-cn-desc').value;
+        const color = body.querySelector('#mnp-cn-color').value;
+        try { await apiFetch(`/map-custom-nodes/${nodeId}`, { method: 'PUT', body: JSON.stringify({ label, category, description, color }) }); toast('Saved', 'ok'); } catch(e) { toast(e.message, 'error'); }
+      };
+      body.querySelector('#mnp-cn-del').onclick = async () => {
+        if (!confirm('Delete this node?')) return;
+        const nodeId = d.nodeId;
+        if (!nodeId) return;
+        try { await apiFetch(`/map-custom-nodes/${nodeId}`, { method: 'DELETE' }); hideMapNodePanel(); loadMapView(); } catch(e) { toast(e.message, 'error'); }
+      };
+
+    } else if (type === 'group') {
+      if (lbl) lbl.textContent = 'Group';
+      if (openBtn) openBtn.style.display = 'none';
+      const d = nodeData || {};
+      body.innerHTML = `
+        <div class="mnp-section-label">Group Name</div>
+        <input class="mv-nd-input" id="mnp-grp-name" value="${escHtml(d.label||'')}" style="margin-bottom:8px" />
+        <div class="mnp-section-label">Color</div>
+        <input type="color" id="mnp-grp-color" value="${escHtml(d.color||'#334155')}" style="width:100%;height:30px;border:none;border-radius:4px;cursor:pointer;margin-bottom:10px" />
+        <div class="mnp-section-label">Papers (${(d.paper_ids||[]).length})</div>
+        <div style="margin-bottom:10px">
+          ${(d.paper_ids||[]).map(pid => {
+            const p = papers.find(x=>x.id===pid);
+            return `<div style="font-size:0.75rem;color:var(--text-dim);padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">• ${escHtml(p?p.title:'Paper '+pid)}</div>`;
+          }).join('')}
+        </div>
+        <button class="btn btn-sm btn-primary" id="mnp-grp-save" style="width:100%;margin-bottom:6px">Save</button>
+        <button class="btn btn-sm btn-danger" id="mnp-grp-del" style="width:100%">Dissolve Group</button>
+      `;
+      body.querySelector('#mnp-grp-save').onclick = async () => {
+        const groupId = d.groupId;
+        if (!groupId) return;
+        const name  = body.querySelector('#mnp-grp-name').value;
+        const color = body.querySelector('#mnp-grp-color').value;
+        try {
+          await apiFetch(`/map-groups/${groupId}`, { method: 'PUT', body: JSON.stringify({ name, color }) });
+          toast('Saved', 'ok');
+          if (window.MapView) MapView.refreshGroup({ id: groupId, name, color, paper_ids: d.paper_ids || [] });
+        } catch(e) { toast(e.message, 'error'); }
+      };
+      body.querySelector('#mnp-grp-del').onclick = async () => {
+        if (!confirm('Dissolve this group?')) return;
+        const groupId = d.groupId;
+        if (!groupId) return;
+        hideMapNodePanel();
+        if (window.MapView) await MapView.deleteGroup(groupId);
+      };
+
+    } else {
+      // Legacy: Metric type (backward compat)
+      if (lbl) lbl.textContent = 'Metric';
+      if (openBtn) openBtn.style.display = '';
+      const metrics = await apiFetch(`/papers/${paperId}/metrics`);
+      const kwName  = (nodeData.label || '').toLowerCase().trim();
+      const matched = metrics.filter(m => {
+        if (kwId && m.linked_keyword_id === kwId) return true;
+        const mname = (m.metric_name || '').toLowerCase().trim();
+        return mname === kwName || kwName.includes(mname) || mname.includes(kwName);
+      });
+      if (matched.length === 0) { hideMapNodePanel(); return; }
+      const col = _CAT_COLORS['Metric'];
+      body.innerHTML = `
+        <span class="mnp-badge" style="background:${col}22;color:${col};border:1px solid ${col}44">Metric</span>
+        <div class="mnp-kw-name">${escHtml(nodeData.label)}</div>
+        <hr class="mnp-divider">
+        ${matched.map(m => `
+          <div style="margin-bottom:10px">
+            <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px">
+              <span style="font-size:1.4rem;font-weight:700;color:${col}">${escHtml(m.value)}</span>
+              ${m.unit?`<span style="font-size:0.85rem;color:var(--text-dim)">${escHtml(m.unit)}</span>`:''}
+            </div>
+            ${m.condition?`<div class="mnp-meta" style="margin-bottom:0">조건: ${escHtml(m.condition)}</div>`:''}
+          </div>
+        `).join('<hr class="mnp-divider">')}
+      `;
+    }
   } catch (e) {
     body.innerHTML = `<div style="color:var(--danger);font-size:0.78rem">${escHtml(e.message)}</div>`;
   }

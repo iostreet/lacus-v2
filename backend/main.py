@@ -266,6 +266,16 @@ class MapEdgeUpdate(BaseModel):
     relation_type: Optional[str] = None
     label:         Optional[str] = None
 
+class MapGroupCreate(BaseModel):
+    name:      str
+    color:     str        = '#334155'
+    paper_ids: list[int]  = []
+
+class MapGroupUpdate(BaseModel):
+    name:      Optional[str]       = None
+    color:     Optional[str]       = None
+    paper_ids: Optional[list[int]] = None
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _hash_file(path: Path) -> str:
@@ -872,6 +882,10 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
     positions_r  = (_sb().table("map_positions").select("*").eq("user_id", user_id).execute().data or [])
     custom_nodes = (_sb().table("map_custom_nodes").select("*").eq("user_id", user_id).execute().data or [])
     map_edges    = (_sb().table("map_edges").select("*").eq("user_id", user_id).execute().data or [])
+    try:
+        map_groups = (_sb().table("map_groups").select("*").eq("user_id", user_id).execute().data or [])
+    except Exception:
+        map_groups = []
 
     positions = {p["node_id"]: p for p in positions_r}
 
@@ -892,10 +906,14 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
         for nm, v in norm_map.items() if len(v["paper_ids"]) >= 2
     ]
 
-    # Per-paper keyword norms map
+    # Per-paper keyword norms map + category map
     paper_kw_norms: dict[int, list[str]] = defaultdict(list)
+    paper_kw_cats:  dict[int, dict[str, str]] = defaultdict(dict)
     for kw in all_kws:
-        paper_kw_norms[kw["paper_id"]].append((kw.get("normalized_name") or "").lower())
+        norm = (kw.get("normalized_name") or "").lower()
+        paper_kw_norms[kw["paper_id"]].append(norm)
+        if norm:
+            paper_kw_cats[kw["paper_id"]][norm] = kw.get("category") or "Other"
 
     result_papers = []
     for paper in papers:
@@ -913,7 +931,8 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
             "year":         paper.get("year"),
             "materials":    materials,
             "top_keywords": top_kws,
-            "keyword_norms": paper_kw_norms[paper["id"]],
+            "keyword_norms":      paper_kw_norms[paper["id"]],
+            "keyword_categories": dict(paper_kw_cats[paper["id"]]),
             "pos_x":        pos["pos_x"] if pos else None,
             "pos_y":        pos["pos_y"] if pos else None,
             "expanded":     expanded,
@@ -941,6 +960,8 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
                            "pos_x": cn["pos_x"], "pos_y": cn["pos_y"]} for cn in custom_nodes],
         "edges":         [{"id": e["id"], "source_id": e["source_id"], "target_id": e["target_id"],
                            "relation_type": e["relation_type"], "label": e["label"]} for e in map_edges],
+        "groups":        [{"id": str(g["id"]), "name": g["name"], "color": g["color"],
+                           "paper_ids": g.get("paper_ids") or []} for g in map_groups],
         "keyword_stats": keyword_stats,
         "category_colors": CATEGORY_COLORS,
     }
@@ -1001,3 +1022,36 @@ def update_map_edge(edge_id: int, data: MapEdgeUpdate, user_id: str = Depends(ge
 def delete_map_edge(edge_id: int, user_id: str = Depends(get_current_user)):
     _sb().table("map_edges").delete().eq("id", edge_id).eq("user_id", user_id).execute()
     return {"deleted": edge_id}
+
+
+# ── Map Groups ────────────────────────────────────────────────────────────────
+
+@app.get("/api/map-groups")
+def list_map_groups(user_id: str = Depends(get_current_user)):
+    rows = (_sb().table("map_groups").select("*").eq("user_id", user_id).execute().data or [])
+    return [{"id": str(r["id"]), "name": r["name"], "color": r["color"],
+             "paper_ids": r.get("paper_ids") or []} for r in rows]
+
+
+@app.post("/api/map-groups")
+def create_map_group(data: MapGroupCreate, user_id: str = Depends(get_current_user)):
+    res = _sb().table("map_groups").insert({
+        "user_id": user_id, "name": data.name,
+        "color": data.color, "paper_ids": data.paper_ids,
+    }).execute()
+    r = res.data[0]
+    return {"id": str(r["id"]), "name": r["name"], "color": r["color"],
+            "paper_ids": r.get("paper_ids") or []}
+
+
+@app.put("/api/map-groups/{group_id}")
+def update_map_group(group_id: str, data: MapGroupUpdate, user_id: str = Depends(get_current_user)):
+    patch = {k: v for k, v in data.model_dump().items() if v is not None}
+    _sb().table("map_groups").update(patch).eq("id", group_id).eq("user_id", user_id).execute()
+    return {"ok": True}
+
+
+@app.delete("/api/map-groups/{group_id}")
+def delete_map_group(group_id: str, user_id: str = Depends(get_current_user)):
+    _sb().table("map_groups").delete().eq("id", group_id).eq("user_id", user_id).execute()
+    return {"deleted": group_id}

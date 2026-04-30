@@ -16,7 +16,11 @@ window.MapView = (() => {
   let _suppressCtx  = false;
   let _onNodeClick  = null;
   let _tapTimer     = null;
-  let _papersCache  = [];   // paper data for preview restoration
+  let _papersCache   = [];   // paper data for preview restoration
+  let _viewMode      = 'full';   // 'overview' | 'full'
+  let _groups        = [];       // { id, name, color, paper_ids }
+  let _paperKwCatMap = {};       // { paperId: { norm: category } }
+  let _focusKwNorm   = null;     // active Focus Mode keyword norm
 
   const API = '/api';
   const _getToken = async () => {
@@ -96,6 +100,23 @@ window.MapView = (() => {
       `<circle cx="19" cy="${KH/2}" r="4" fill="${col}"/>` +
       `<text x="46" y="19" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="${col}" letter-spacing=".5">${_e(category||'')}</text>` +
       `<text x="46" y="40" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f1f5f9">${_e(_cut(label, 18))}</text>` +
+      `</svg>`
+    );
+  };
+
+  const GW = 280, GH = 90, GR = 10;
+  const _groupSvg = (name, count, color, expanded) => {
+    const col = color || '#334155';
+    const ind = expanded ? '▼' : '▶';
+    return _uri(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${GW}" height="${GH}">` +
+      `<rect x=".5" y=".5" width="${GW-1}" height="${GH-1}" rx="${GR}" ry="${GR}" fill="#0f172a"/>` +
+      `<rect x=".5" y=".5" width="10" height="${GH-1}" rx="${GR}" ry="${GR}" fill="${col}"/>` +
+      `<rect x=".5" y=".5" width="${GW-1}" height="${GH-1}" rx="${GR}" ry="${GR}" fill="none" stroke="${col}" stroke-width="1.5"/>` +
+      `<text x="22" y="30" font-family="'Inter','Segoe UI',sans-serif" font-size="9" font-weight="700" fill="${col}" letter-spacing=".8">GROUP</text>` +
+      `<text x="22" y="53" font-family="'Inter','Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f8fafc">${_e(_cut(name, 22))}</text>` +
+      `<text x="22" y="72" font-family="'Inter','Segoe UI',sans-serif" font-size="10.5" fill="#94a3b8">논문 ${_e(count)}개</text>` +
+      `<text x="${GW-10}" y="${GH-8}" font-family="'Inter','Segoe UI',sans-serif" font-size="9" fill="#6b7280" text-anchor="end">${ind}</text>` +
       `</svg>`
     );
   };
@@ -277,6 +298,31 @@ window.MapView = (() => {
         'target-arrow-shape': 'none',
       }
     },
+    // Research-chain edges (directed cross-paper flow)
+    {
+      selector: 'edge[edgeType="research_chain"]',
+      style: {
+        'width': 2, 'line-color': '#06b6d4', 'target-arrow-color': '#06b6d4',
+        'target-arrow-shape': 'triangle', 'arrow-scale': 0.9,
+        'curve-style': 'unbundled-bezier',
+        'control-point-distances': [70, -70],
+        'control-point-weights': [0.25, 0.75],
+        'label': 'data(relation)', 'font-size': '8px', 'color': '#67e8f9',
+        'font-family': '"Inter","Segoe UI",sans-serif',
+        'text-rotation': 'autorotate', 'text-margin-y': -7, 'opacity': 0.8,
+      }
+    },
+    // Group nodes (overview mode)
+    {
+      selector: 'node[type="group"]',
+      style: {
+        'background-opacity': 0,
+        'background-image': (ele) => _groupSvg(ele.data('label'), ele.data('count'), ele.data('color'), ele.data('expanded')),
+        'background-fit': 'contain', 'background-clip': 'node', 'background-image-opacity': 1,
+        'border-width': 0, 'label': '', 'width': GW, 'height': GH,
+        'shape': 'round-rectangle', 'cursor': 'pointer',
+      }
+    },
     { selector: 'edge:selected', style: { 'overlay-color': '#c084fc', 'overlay-opacity': 0.3, 'overlay-padding': 4, 'width': 4 } },
     { selector: 'edge.faded',    style: { 'opacity': 0.05 } },
     // Edge-handles
@@ -454,11 +500,18 @@ window.MapView = (() => {
     _ctxEl.className = 'mv-ctx-menu hidden';
     _ctxEl.innerHTML = `
       <div class="mv-ctx-item" id="mv-ctx-new">＋  New Object</div>
+      <div class="mv-ctx-item hidden" id="mv-ctx-group">⬡  Create Group</div>
       <div class="mv-ctx-item" id="mv-ctx-fit">⊡  Fit View</div>
     `;
     container.appendChild(_ctxEl);
-    _ctxEl.querySelector('#mv-ctx-new').onclick = () => { _hideAllMenus(); _showNewNodeDialog(_createPos); };
-    _ctxEl.querySelector('#mv-ctx-fit').onclick = () => { _hideAllMenus(); cy && cy.fit(undefined, 50); };
+    _ctxEl.querySelector('#mv-ctx-new').onclick   = () => { _hideAllMenus(); _showNewNodeDialog(_createPos); };
+    _ctxEl.querySelector('#mv-ctx-fit').onclick   = () => { _hideAllMenus(); cy && cy.fit(undefined, 50); };
+    _ctxEl.querySelector('#mv-ctx-group').onclick = () => {
+      _hideAllMenus();
+      const selPapers = cy ? cy.nodes('[type="paper"]:selected') : null;
+      const pids = selPapers ? selPapers.map(n => n.data('paperId')).toArray() : [];
+      _showGroupDialog(pids);
+    };
     document.addEventListener('click', _hideAllMenus, { passive: true });
   };
 
@@ -468,6 +521,10 @@ window.MapView = (() => {
     const rect = c.getBoundingClientRect();
     _ctxEl.style.left = Math.min(clientX - rect.left + 4, c.offsetWidth  - 180) + 'px';
     _ctxEl.style.top  = Math.min(clientY - rect.top  + 4, c.offsetHeight - 100) + 'px';
+    // Show "Create Group" only when 2+ papers are selected
+    const selPapers = cy ? cy.nodes('[type="paper"]:selected') : null;
+    const groupBtn  = _ctxEl.querySelector('#mv-ctx-group');
+    if (groupBtn) groupBtn.classList.toggle('hidden', !selPapers || selPapers.length < 2);
     _ctxEl.classList.remove('hidden');
   };
 
@@ -805,6 +862,226 @@ window.MapView = (() => {
     }
   };
 
+  // ── Research Chain ───────────────────────────────────────────────────────
+
+  const _buildResearchChainEdges = (papers) => {
+    const kwToEntries = {};
+    papers.forEach(p => {
+      const cats = p.keyword_categories || {};
+      Object.entries(cats).forEach(([norm, cat]) => {
+        if (!kwToEntries[norm]) kwToEntries[norm] = [];
+        kwToEntries[norm].push({ pid: p.id, cat });
+      });
+    });
+    const edges = [];
+    const addedPairs = new Set();
+    Object.entries(kwToEntries).forEach(([norm, entries]) => {
+      if (entries.length < 2) return;
+      for (let i = 0; i < entries.length; i++) {
+        for (let j = i + 1; j < entries.length; j++) {
+          const a = entries[i], b = entries[j];
+          const layerA = CAT_LAYER[a.cat] ?? 2;
+          const layerB = CAT_LAYER[b.cat] ?? 2;
+          if (layerA === layerB) continue;
+          const [src, tgt] = layerA < layerB ? [a.pid, b.pid] : [b.pid, a.pid];
+          const key = `${src}>${tgt}`;
+          if (addedPairs.has(key)) continue;
+          addedPairs.add(key);
+          edges.push({ data: { id: `rc_${src}_${tgt}`, source: `p_${src}`, target: `p_${tgt}`, edgeType: 'research_chain', relation: norm } });
+        }
+      }
+    });
+    return edges;
+  };
+
+  const _calcFlowScore = (paperId) => {
+    const cats = _paperKwCatMap[paperId] || {};
+    const layers = Object.values(cats).map(c => CAT_LAYER[c] ?? 2);
+    return layers.length ? layers.reduce((a, b) => a + b, 0) / layers.length : 1.5;
+  };
+
+  // ── View Modes ────────────────────────────────────────────────────────────
+
+  const _addGroupNodes = () => {
+    _groups.forEach(g => {
+      const gid = `grp_${g.id}`;
+      if (cy.getElementById(gid).length > 0) return;
+      g.paper_ids.forEach(pid => cy.getElementById(`p_${pid}`).style('display', 'none'));
+      const memberNodes = g.paper_ids.map(pid => cy.getElementById(`p_${pid}`)).filter(n => n.length > 0);
+      let gx = PAPER_COL_X, gy = 200;
+      if (memberNodes.length) {
+        gx = memberNodes.reduce((s, n) => s + n.position('x'), 0) / memberNodes.length;
+        gy = memberNodes.reduce((s, n) => s + n.position('y'), 0) / memberNodes.length;
+      }
+      cy.add([{ data: { id: gid, type: 'group', label: g.name, color: g.color, count: g.paper_ids.length, groupId: g.id, paper_ids: g.paper_ids, expanded: false }, position: { x: gx, y: gy } }]);
+    });
+  };
+
+  const _applyFlowLayout = () => {
+    if (!cy) return;
+    const nodes = cy.nodes().filter(n => {
+      const t = n.data('type');
+      if (t === 'keyword') return false;
+      if (t === 'paper') return n.style('display') !== 'none';
+      return t === 'group';
+    });
+    const sorted = nodes.toArray().sort((a, b) => {
+      const scoreOf = (n) => {
+        if (n.data('type') === 'group') {
+          const pids = n.data('paper_ids') || [];
+          return pids.length ? pids.reduce((s, pid) => s + _calcFlowScore(pid), 0) / pids.length : 1.5;
+        }
+        return _calcFlowScore(n.data('paperId'));
+      };
+      return scoreOf(a) - scoreOf(b);
+    });
+    let y = 80;
+    sorted.forEach(n => {
+      n.position({ x: PAPER_COL_X, y });
+      y += (n.data('type') === 'group' ? GH : PH) + PAPER_V_GAP;
+    });
+  };
+
+  const _updateRCVisibility = () => {
+    if (!cy) return;
+    cy.edges('[edgeType="research_chain"]').style('display', 'element');
+    cy.edges('[edgeType="cross_paper"]').style('display', _viewMode === 'overview' ? 'none' : 'element');
+  };
+
+  const _updateModeButtons = () => {
+    const ovBtn = document.getElementById('mv-btn-overview');
+    const flBtn = document.getElementById('mv-btn-full');
+    if (ovBtn) ovBtn.classList.toggle('mv-mode-active', _viewMode === 'overview');
+    if (flBtn) flBtn.classList.toggle('mv-mode-active', _viewMode === 'full');
+  };
+
+  const _enterOverviewMode = () => {
+    if (!cy) return;
+    _viewMode = 'overview';
+    cy.nodes('[type="keyword"]').remove();
+    cy.edges('[edgeType="story"]').remove();
+    cy.edges('[edgeType="parent"]').remove();
+    cy.nodes('[type="paper"]').forEach(n => {
+      if (n.data('expanded')) { n.data('expanded', false); _refreshPaperSvg(n); }
+    });
+    _papersCache.forEach(p => { if (p.expanded) p.expanded = false; });
+    _addGroupNodes();
+    _applyFlowLayout();
+    _updateRCVisibility();
+    _updateModeButtons();
+  };
+
+  const _enterFullMode = () => {
+    if (!cy) return;
+    _viewMode = 'full';
+    cy.nodes('[type="group"]').remove();
+    cy.nodes('[type="paper"]').style('display', 'element');
+    _relayoutPapers();
+    _updateRCVisibility();
+    _updateModeButtons();
+  };
+
+  // ── Focus Mode ────────────────────────────────────────────────────────────
+
+  const _keywordFocus = (kwNorm) => {
+    if (!cy) return;
+    _focusKwNorm = kwNorm;
+    const focusPaperIds = new Set();
+    Object.entries(_paperKwCatMap).forEach(([pid, cats]) => {
+      if (cats[kwNorm] !== undefined) focusPaperIds.add(parseInt(pid));
+    });
+    cy.nodes().forEach(n => {
+      const t = n.data('type');
+      if (t === 'paper')   n.toggleClass('faded', !focusPaperIds.has(n.data('paperId')));
+      else if (t === 'keyword') n.toggleClass('faded', n.data('normalized') !== kwNorm && !focusPaperIds.has(n.data('paperId')));
+      else n.addClass('faded');
+    });
+    cy.edges().forEach(e => {
+      const type = e.data('edgeType');
+      const relevant = (type === 'research_chain' || type === 'story' || type === 'parent') &&
+        !e.source().hasClass('faded') && !e.target().hasClass('faded');
+      e.toggleClass('faded', !relevant);
+    });
+  };
+
+  const _exitFocus = () => {
+    if (!cy) return;
+    _focusKwNorm = null;
+    cy.nodes().removeClass('faded');
+    cy.edges().removeClass('faded');
+  };
+
+  // ── Groups ────────────────────────────────────────────────────────────────
+
+  const _createGroup = async (paperIds, name, color) => {
+    try {
+      const g = await _fetch('/map-groups', { method: 'POST', body: JSON.stringify({ name, color, paper_ids: paperIds }) });
+      _groups.push(g);
+      if (_viewMode === 'overview') {
+        _addGroupNodes();
+        _applyFlowLayout();
+      }
+      _showToast(`Group "${name}" created`, 'ok');
+      return g;
+    } catch (e) { _showToast('Failed to create group: ' + e.message, 'error'); }
+  };
+
+  const _showGroupDialog = (paperIds) => {
+    const container = cy && cy.container();
+    if (!container) return;
+    let dlg = container.querySelector('#mv-grp-dialog');
+    if (!dlg) {
+      dlg = document.createElement('div');
+      dlg.id = 'mv-grp-dialog';
+      dlg.className = 'mv-nd-dialog hidden';
+      dlg.innerHTML = `
+        <div class="mv-nd-header">Create Group</div>
+        <label class="mv-nd-label">Group Name</label>
+        <input class="mv-nd-input" id="mv-grp-name" type="text" placeholder="e.g. Perovskite Series…" />
+        <label class="mv-nd-label">Color</label>
+        <input type="color" id="mv-grp-color" value="#334155" style="width:100%;height:32px;border:none;border-radius:4px;cursor:pointer;margin-bottom:6px" />
+        <div class="mv-nd-actions">
+          <button class="btn btn-sm btn-primary" id="mv-grp-save">Create</button>
+          <button class="btn btn-sm" id="mv-grp-cancel">Cancel</button>
+        </div>
+      `;
+      container.appendChild(dlg);
+      dlg.querySelector('#mv-grp-cancel').onclick = () => dlg.classList.add('hidden');
+      dlg.querySelector('#mv-grp-save').onclick = async () => {
+        const name  = (dlg.querySelector('#mv-grp-name').value || '').trim();
+        const color = dlg.querySelector('#mv-grp-color').value || '#334155';
+        if (!name) { dlg.querySelector('#mv-grp-name').focus(); return; }
+        dlg.classList.add('hidden');
+        await _createGroup(dlg._paperIds || [], name, color);
+      };
+      dlg.querySelector('#mv-grp-name').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') dlg.querySelector('#mv-grp-save').click();
+        if (e.key === 'Escape') dlg.classList.add('hidden');
+      });
+    }
+    dlg._paperIds = paperIds;
+    dlg.querySelector('#mv-grp-name').value = '';
+    const c = dlg.parentElement;
+    dlg.style.left = Math.min(c.offsetWidth / 2 - 120, c.offsetWidth - 260) + 'px';
+    dlg.style.top  = Math.min(c.offsetHeight / 2 - 120, c.offsetHeight - 260) + 'px';
+    dlg.classList.remove('hidden');
+    setTimeout(() => dlg.querySelector('#mv-grp-name').focus(), 50);
+  };
+
+  // ── Mode toggle UI ────────────────────────────────────────────────────────
+
+  const _addModeToggle = (container) => {
+    const div = document.createElement('div');
+    div.className = 'mv-mode-toggle';
+    div.innerHTML = `
+      <button class="mv-mode-btn mv-mode-active" id="mv-btn-overview" title="Overview — research flow">Overview</button>
+      <button class="mv-mode-btn" id="mv-btn-full" title="Full — all keywords">Full</button>
+    `;
+    container.appendChild(div);
+    div.querySelector('#mv-btn-overview').onclick = (e) => { e.stopPropagation(); _enterOverviewMode(); };
+    div.querySelector('#mv-btn-full').onclick      = (e) => { e.stopPropagation(); _enterFullMode(); };
+  };
+
   // ── Public: init ─────────────────────────────────────────────────────────
 
   const init = (containerId, canvasData, opts = {}) => {
@@ -827,8 +1104,11 @@ window.MapView = (() => {
 
     // Build keyword filter index (works for unexpanded papers too)
     _paperKwMap = {};
+    _paperKwCatMap = {};
+    _groups = canvasData.groups || [];
     papers.forEach(p => {
-      _paperKwMap[p.id] = (p.keyword_norms || []).map(n => n.toLowerCase());
+      _paperKwMap[p.id]    = (p.keyword_norms || []).map(n => n.toLowerCase());
+      _paperKwCatMap[p.id] = p.keyword_categories || {};
     });
 
     if (papers.length === 0 && customNodes.length === 0) {
@@ -925,6 +1205,9 @@ window.MapView = (() => {
       }
     });
 
+    // Research chain edges (directed, based on keyword category layers)
+    _buildResearchChainEdges(papers).forEach(e => elements.push(e));
+
     customNodes.forEach(cn => {
       elements.push({ data: {
         id: `cn_${cn.id}`, type: 'custom',
@@ -985,60 +1268,74 @@ window.MapView = (() => {
       if (paperNode.length) _expandPaper(paperNode);
     });
 
-    // Tap keyword node — only Metric category triggers panel; others: connect mode only
+    // Tap keyword node — detail panel + focus mode (connect mode overrides)
     cy.on('tap', 'node[type="keyword"]', (evt) => {
       const tgt = evt.target;
       if (_connectMode) {
         if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
         const srcNode  = cy.getElementById(_connectSrcId);
-        const tempEdge = cy.add([{ data: {
-          id: `tmp_${Date.now()}`,
-          source: _connectSrcId, target: tgt.id(),
-          edgeType: 'user', relation: 'related_to',
-        }}])[0];
+        const tempEdge = cy.add([{ data: { id: `tmp_${Date.now()}`, source: _connectSrcId, target: tgt.id(), edgeType: 'user', relation: 'related_to' } }])[0];
         _cancelConnectMode();
         _showRelDialog(tempEdge, srcNode, tgt);
         evt.stopPropagation();
         return;
       }
-      if (tgt.data('category') === 'Metric') {
-        const paperId = tgt.data('paperId');
-        const kwId    = parseInt(tgt.id().replace('kw_', ''));
-        if (paperId && _onNodeClick) _onNodeClick({ type: 'metric', paperId, kwId, nodeData: tgt.data() });
-        evt.stopPropagation();
-      }
-    });
-
-    // Tap paper node — connect mode only (double-click handles expand/collapse)
-    cy.on('tap', 'node[type="paper"]', (evt) => {
-      if (!_connectMode) return;
-      const tgt = evt.target;
-      if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
-      const srcNode  = cy.getElementById(_connectSrcId);
-      const tempEdge = cy.add([{ data: {
-        id: `tmp_${Date.now()}`,
-        source: _connectSrcId, target: tgt.id(),
-        edgeType: 'user', relation: 'related_to',
-      }}])[0];
-      _cancelConnectMode();
-      _showRelDialog(tempEdge, srcNode, tgt);
+      const paperId = tgt.data('paperId');
+      const kwId    = parseInt(tgt.id().replace('kw_', ''));
+      const norm    = tgt.data('normalized');
+      // Enter focus mode in Full view; fire detail panel callback
+      if (_viewMode === 'full') _keywordFocus(norm);
+      if (_onNodeClick) _onNodeClick({ type: 'keyword', paperId, kwId, nodeData: tgt.data() });
       evt.stopPropagation();
     });
 
-    // Tap custom node → complete edge in connect mode only
+    // Tap paper node — detail panel (connect mode overrides; dblclick handles expand)
+    cy.on('tap', 'node[type="paper"]', (evt) => {
+      const tgt = evt.target;
+      if (_connectMode) {
+        if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
+        const srcNode  = cy.getElementById(_connectSrcId);
+        const tempEdge = cy.add([{ data: { id: `tmp_${Date.now()}`, source: _connectSrcId, target: tgt.id(), edgeType: 'user', relation: 'related_to' } }])[0];
+        _cancelConnectMode();
+        _showRelDialog(tempEdge, srcNode, tgt);
+        evt.stopPropagation();
+        return;
+      }
+      if (_onNodeClick) _onNodeClick({ type: 'paper', paperId: tgt.data('paperId'), nodeData: tgt.data() });
+      evt.stopPropagation();
+    });
+
+    // Tap custom node — detail panel (connect mode overrides)
     cy.on('tap', 'node[type="custom"]', (evt) => {
       const tgt = evt.target;
-      if (!_connectMode) return;
-      if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
-      const srcNode  = cy.getElementById(_connectSrcId);
-      const tempEdge = cy.add([{ data: {
-        id: `tmp_${Date.now()}`,
-        source: _connectSrcId, target: tgt.id(),
-        edgeType: 'user', relation: 'related_to',
-      }}])[0];
-      _cancelConnectMode();
-      _showRelDialog(tempEdge, srcNode, tgt);
+      if (_connectMode) {
+        if (tgt.id() === _connectSrcId) { _cancelConnectMode(); return; }
+        const srcNode  = cy.getElementById(_connectSrcId);
+        const tempEdge = cy.add([{ data: { id: `tmp_${Date.now()}`, source: _connectSrcId, target: tgt.id(), edgeType: 'user', relation: 'related_to' } }])[0];
+        _cancelConnectMode();
+        _showRelDialog(tempEdge, srcNode, tgt);
+        evt.stopPropagation();
+        return;
+      }
+      if (_onNodeClick) _onNodeClick({ type: 'custom', nodeData: tgt.data() });
       evt.stopPropagation();
+    });
+
+    // Tap group node — detail panel + expand/collapse in overview
+    cy.on('tap', 'node[type="group"]', (evt) => {
+      const tgt = evt.target;
+      if (_onNodeClick) _onNodeClick({ type: 'group', nodeData: tgt.data() });
+      evt.stopPropagation();
+    });
+
+    // Double-click group → expand (show member papers, remove group node)
+    cy.on('dblclick', 'node[type="group"]', (evt) => {
+      const tgt    = evt.target;
+      const pids   = tgt.data('paper_ids') || [];
+      const gid    = tgt.id();
+      cy.remove(cy.getElementById(gid));
+      pids.forEach(pid => cy.getElementById(`p_${pid}`).style('display', 'element'));
+      _applyFlowLayout();
     });
 
     // Drag end → save positions
@@ -1068,7 +1365,7 @@ window.MapView = (() => {
 
     // Keyboard
     container.addEventListener('keydown', async (e) => {
-      if (e.key === 'Escape') { _cancelConnectMode(); _hideAllMenus(); return; }
+      if (e.key === 'Escape') { _cancelConnectMode(); _hideAllMenus(); if (_focusKwNorm) _exitFocus(); return; }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       const sel = cy.$(':selected');
       for (const el of sel.toArray()) {
@@ -1082,6 +1379,7 @@ window.MapView = (() => {
     cy.on('tap', (evt) => {
       if (evt.target !== cy) return;
       if (_connectMode) { _cancelConnectMode(); return; }
+      if (_focusKwNorm) { _exitFocus(); return; }
       _hideAllMenus();
       if (opts.onCanvasTap) opts.onCanvasTap();
     });
@@ -1123,6 +1421,7 @@ window.MapView = (() => {
     _initEditDialog(container);
     _initRelDialog(container);
     _addZoomControls(container);
+    _addModeToggle(container);
 
     // Legend
     const legend = document.createElement('div');
@@ -1132,8 +1431,12 @@ window.MapView = (() => {
       .map(([cat, col]) =>
         `<span class="legend-item"><span style="background:${col};border-radius:3px;width:10px;height:10px;display:inline-block;vertical-align:middle;margin-right:4px;"></span>${cat}</span>`
       ).join('') +
-      `<span class="legend-item" style="margin-left:10px;color:#64748b;font-size:0.7rem">Dbl-click paper to expand · Right-click object for menu · Drag border + to connect</span>`;
+      `<span class="legend-item" style="margin-left:10px;color:#64748b;font-size:0.7rem">Dbl-click paper to expand · Right-click for menu · Click keyword to focus</span>`;
     container.appendChild(legend);
+
+    // Start in Overview mode by default
+    _viewMode = 'full';  // enter overview will set to 'overview'
+    _enterOverviewMode();
 
     return cy;
   };
@@ -1142,5 +1445,29 @@ window.MapView = (() => {
     init,
     fit:                () => { if (cy) cy.fit(undefined, 50); },
     applyKeywordFilter: (norms) => _applyFilter(norms),
+    enterOverviewMode:  () => _enterOverviewMode(),
+    enterFullMode:      () => _enterFullMode(),
+    exitFocus:          () => _exitFocus(),
+    refreshGroup:       (g) => {
+      _groups = _groups.map(x => x.id === g.id ? g : x);
+      const gNode = cy && cy.getElementById(`grp_${g.id}`);
+      if (gNode && gNode.length) {
+        gNode.data({ label: g.name, color: g.color, count: g.paper_ids.length, paper_ids: g.paper_ids });
+        gNode.style('background-image', _groupSvg(g.name, g.paper_ids.length, g.color, gNode.data('expanded')));
+      }
+    },
+    deleteGroup: async (groupId) => {
+      try {
+        await _fetch(`/map-groups/${groupId}`, { method: 'DELETE' });
+        _groups = _groups.filter(g => g.id !== groupId);
+        const gNode = cy && cy.getElementById(`grp_${groupId}`);
+        if (gNode && gNode.length) {
+          const pids = gNode.data('paper_ids') || [];
+          cy.remove(gNode);
+          pids.forEach(pid => cy.getElementById(`p_${pid}`).style('display', 'element'));
+          if (_viewMode === 'overview') _applyFlowLayout();
+        }
+      } catch (e) { _showToast('Failed to delete group: ' + e.message, 'error'); }
+    },
   };
 })();
