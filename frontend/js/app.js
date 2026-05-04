@@ -633,7 +633,7 @@ const loadOverview = async () => {
       : '<li style="color:var(--text-muted);font-size:0.82rem;padding:4px 0">No findings generated yet.</li>';
     findingsList.querySelectorAll('.save-finding-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const id  = btn.dataset.id;
+        const { id } = btn.dataset;
         const txt = btn.closest('li').querySelector('.finding-input').value;
         try {
           await apiFetch(`/summaries/${id}`, { method: 'PUT', body: JSON.stringify({ summary_text: txt }) });
@@ -1273,6 +1273,7 @@ let _smKeywords    = [];
 let _smRelations   = [];
 let _smMetrics     = [];
 let _smHighlightId = null;
+let _smGraph       = { nodes: new Map(), edges: [] };
 
 const _SM_FLOW_ORDER = ['Material', 'Structure', 'Property', 'Application'];
 const _SM_CAT_COLORS = {
@@ -1421,18 +1422,45 @@ const _smRenderConceptPanel = () => {
 const _smHighlight = (kwId) => {
   const same = _smHighlightId === kwId;
   _smHighlightId = same ? null : kwId;
+
   document.querySelectorAll('.sm-kw-chip').forEach(c =>
     c.classList.toggle('sm-highlighted', !same && parseInt(c.dataset.kwid) === kwId));
+
+  const canvas = document.getElementById('sm-pg-canvas');
+  const svgEl  = document.getElementById('sm-pg-svg');
+  if (!canvas || !svgEl) return;
+
   if (_smHighlightId === null) {
-    document.querySelectorAll('.sm-rel-row').forEach(r => r.classList.remove('sm-highlighted'));
+    canvas.querySelectorAll('.pg-node').forEach(n => n.classList.remove('pg-dim', 'pg-lit'));
+    svgEl.querySelectorAll('.pg-edge').forEach(e => e.classList.remove('pg-dim', 'pg-edge-active'));
     return;
   }
-  const kw = _smKeywords.find(k => k.id === kwId);
-  const kn = (kw?.normalized_name || kw?.keyword_name || '').toLowerCase();
-  document.querySelectorAll('.sm-rel-row').forEach(row => {
-    const s = (row.dataset.src || '').toLowerCase();
-    const t = (row.dataset.tgt || '').toLowerCase();
-    row.classList.toggle('sm-highlighted', s.includes(kn) || t.includes(kn) || kn.includes(s) || kn.includes(t));
+
+  // BFS from selected keyword node — collect connected subgraph
+  const rootNid   = `kw_${kwId}`;
+  const connected = new Set([rootNid]);
+  const activeEids = new Set();
+  let frontier = [rootNid];
+  while (frontier.length) {
+    const next = [];
+    frontier.forEach(nid => {
+      svgEl.querySelectorAll('.pg-edge').forEach(edgeEl => {
+        const f = edgeEl.dataset.fromNid, t = edgeEl.dataset.toNid;
+        if (f === nid && !connected.has(t)) { connected.add(t); next.push(t); activeEids.add(edgeEl.dataset.eid); }
+        if (t === nid && !connected.has(f)) { connected.add(f); next.push(f); activeEids.add(edgeEl.dataset.eid); }
+      });
+    });
+    frontier = next;
+  }
+  canvas.querySelectorAll('.pg-node').forEach(n => {
+    const lit = connected.has(n.dataset.nid);
+    n.classList.toggle('pg-dim', !lit);
+    n.classList.toggle('pg-lit',  lit);
+  });
+  svgEl.querySelectorAll('.pg-edge').forEach(e => {
+    const active = activeEids.has(e.dataset.eid);
+    e.classList.toggle('pg-dim',         !active);
+    e.classList.toggle('pg-edge-active',  active);
   });
 };
 
@@ -1476,59 +1504,221 @@ const _smOpenKwEdit = (chip) => {
   setTimeout(() => document.addEventListener('click', close), 0);
 };
 
-const _smRenderRelationsPanel = () => {
-  const list = document.getElementById('sm-rel-list');
-  if (!list) return;
-  if (!_smRelations.length) {
-    list.innerHTML = '<div class="sm-empty-msg">No relations yet.</div>';
-    return;
+// ─── Pipeline graph constants ─────────────────────────────────────────────
+const _PG_CAT_COLORS = {
+  Material: '#22c55e', Structure: '#3b82f6', Property: '#f59e0b',
+  Method: '#a855f7', Application: '#06b6d4', Metric: '#14b8a6',
+  Transform: '#818cf8', Other: '#64748b',
+};
+const _PG_W    = 152;   // node width
+const _PG_KH   = 64;    // keyword node height
+const _PG_TXH  = 72;    // transform node height
+const _PG_METH = 48;    // metric node height
+const _PG_COL_X = [24, 222, 420, 618];
+const _PG_VGAP  = 14;
+
+const _pgNodeH = n => n.kind === 'tx' ? _PG_TXH : n.kind === 'met' ? _PG_METH : _PG_KH;
+
+const _smFindKw = name => {
+  const n = (name || '').toLowerCase().trim();
+  return _smKeywords.find(k => {
+    const kn = (k.normalized_name || k.keyword_name || '').toLowerCase();
+    return kn === n || kn.includes(n) || n.includes(kn);
+  });
+};
+
+const _smBuildPipelineGraph = () => {
+  const nodes = new Map();
+  const edges = [];
+  const CAT_COL = { Material:0, Structure:0, Method:0, Other:0, Property:2, Application:2, Metric:3 };
+
+  _smKeywords.forEach(kw => {
+    const nid = `kw_${kw.id}`;
+    nodes.set(nid, { nid, kind:'kw', type: kw.category||'Other', label: kw.normalized_name||kw.keyword_name,
+                     kwId: kw.id, confidence: kw.confidence, col: CAT_COL[kw.category]??0, x:0, y:0 });
+  });
+
+  _smMetrics.forEach(m => {
+    const nid = `met_${m.id}`;
+    const label = m.metric_name + (m.value ? ` = ${m.value}` : '') + (m.unit ? ` ${m.unit}` : '');
+    nodes.set(nid, { nid, kind:'met', type:'Metric', label, metId: m.id,
+                     linkedKwId: m.linked_keyword_id, col:3, x:0, y:0 });
+  });
+
+  _smRelations.forEach(rel => {
+    const txNid = `tx_${rel.id}`;
+    const srcKw = _smFindKw(rel.source_name);
+    const tgtKw = _smFindKw(rel.target_name);
+    nodes.set(txNid, { nid: txNid, kind:'tx', type:'Transform',
+                       label: rel.relation_type||'related_to', description: rel.evidence_text,
+                       confidence: rel.confidence, relId: rel.id,
+                       srcName: rel.source_name, tgtName: rel.target_name, col:1, x:0, y:0 });
+    if (srcKw) edges.push({ id:`es_${rel.id}`, fromNid:`kw_${srcKw.id}`, toNid: txNid });
+    if (tgtKw) edges.push({ id:`et_${rel.id}`, fromNid: txNid, toNid:`kw_${tgtKw.id}` });
+  });
+
+  _smMetrics.forEach(m => {
+    if (m.linked_keyword_id && nodes.has(`kw_${m.linked_keyword_id}`))
+      edges.push({ id:`em_${m.id}`, fromNid:`kw_${m.linked_keyword_id}`, toNid:`met_${m.id}` });
+  });
+
+  return { nodes, edges };
+};
+
+const _smLayoutPipelineGraph = graph => {
+  const cols = [[],[],[],[]];
+  graph.nodes.forEach(n => { if (n.col >= 0 && n.col <= 3) cols[n.col].push(n); });
+  const rank = { Material:0, Structure:1, Method:2, Other:3, Property:4, Application:5, Metric:6, Transform:7 };
+  cols.forEach(col => col.sort((a,b) => {
+    const ar = rank[a.type]??99, br = rank[b.type]??99;
+    return ar !== br ? ar-br : (b.confidence||0)-(a.confidence||0);
+  }));
+  cols.forEach((col, ci) => {
+    let y = 20;
+    col.forEach(n => { n.x = _PG_COL_X[ci]; n.y = y; y += _pgNodeH(n) + _PG_VGAP; });
+  });
+};
+
+const _smCreateNodeEl = node => {
+  const el  = document.createElement('div');
+  const col = _PG_CAT_COLORS[node.type] || '#64748b';
+  el.dataset.nid = node.nid;
+  el.style.cssText = `left:${node.x}px;top:${node.y}px;width:${_PG_W}px;border-color:${col}55`;
+
+  if (node.kind === 'tx') {
+    el.className = 'pg-node';
+    const desc = node.description
+      ? node.description.substring(0, 58) + (node.description.length > 58 ? '…' : '') : '';
+    el.innerHTML = `
+      <div class="pg-node-hd" style="background:${col}18;border-bottom:1px solid ${col}44">
+        <span class="pg-icon" style="color:${col}">⇉</span>
+        <span class="pg-label">${escHtml(node.label)}</span>
+        <span class="pg-conf">${Math.round((node.confidence||0)*100)}%</span>
+      </div>
+      ${desc ? `<div class="pg-tx-desc">${escHtml(desc)}</div>` : ''}`;
+  } else if (node.kind === 'met') {
+    el.className = 'pg-node';
+    el.innerHTML = `
+      <div class="pg-node-hd" style="background:${col}18;border-bottom:1px solid ${col}44">
+        <span class="pg-icon" style="color:${col}">=</span>
+        <span class="pg-label">${escHtml(node.label)}</span>
+      </div>`;
+  } else {
+    el.className = 'pg-node';
+    el.dataset.kwid = node.kwId;
+    el.innerHTML = `
+      <div class="pg-node-hd" style="background:${col}18;border-bottom:1px solid ${col}44">
+        <span class="pg-icon" style="color:${col}">⬡</span>
+        <span class="pg-label">${escHtml(node.label)}</span>
+      </div>
+      <div class="pg-node-bd">
+        <span class="pg-cat" style="color:${col}">${escHtml(node.type)}</span>
+        <span class="pg-conf">${Math.round((node.confidence||0)*100)}%</span>
+      </div>`;
   }
-  list.innerHTML = _smRelations.map(rel => {
-    const conf = Math.round((rel.confidence || 0) * 100);
-    return `<div class="sm-rel-row" data-relid="${rel.id}"
-        data-src="${escHtml(rel.source_name || '')}" data-tgt="${escHtml(rel.target_name || '')}">
-      <div class="sm-rel-main">
-        <span class="sm-rel-source">${escHtml(rel.source_name || '—')}</span>
-        <span class="sm-rel-arrow">→</span>
-        <span class="sm-rel-type">${escHtml(rel.relation_type || 'related_to')}</span>
-        <span class="sm-rel-arrow">→</span>
-        <span class="sm-rel-target">${escHtml(rel.target_name || '—')}</span>
-      </div>
-      <div class="sm-rel-meta">
-        <span>${conf}% confidence</span>
-        ${rel.source_section ? `<span>· ${escHtml(rel.source_section)}</span>` : ''}
-      </div>
-      ${rel.evidence_text ? `<div class="sm-rel-evidence">${escHtml(rel.evidence_text)}</div>` : ''}
-      <div class="sm-rel-edit-bar">
-        <select class="mini-input sm-rel-type-sel">${[...RELATION_TYPES,..._customRelTypes].map(t=>`<option${t===rel.relation_type?' selected':''}>${t}</option>`).join('')}</select>
-        <button class="btn btn-sm btn-primary sm-rel-save" data-relid="${rel.id}">Save</button>
-        <button class="btn btn-sm btn-danger sm-rel-del" data-relid="${rel.id}">Delete</button>
-      </div>
+  return el;
+};
+
+const _smShowTxPopup = (node, anchorEl) => {
+  document.querySelectorAll('.pg-tx-popup').forEach(p => p.remove());
+  const popup = document.createElement('div');
+  popup.className = 'pg-tx-popup';
+  popup.innerHTML = `
+    <div class="pg-tx-popup-header">
+      <span title="${escHtml(node.srcName||'')} → ${escHtml(node.tgtName||'')}">${escHtml(node.srcName||'?')} → ${escHtml(node.tgtName||'?')}</span>
+      <button class="icon-btn pg-tx-close" style="flex-shrink:0">✕</button>
+    </div>
+    <div style="padding:7px 12px 3px;font-size:.7rem;color:var(--text-muted)">Relation type</div>
+    <select class="mini-input" style="margin:0 12px;width:calc(100% - 24px)" id="pg-tx-sel">
+      ${[...RELATION_TYPES,..._customRelTypes].map(t=>`<option${t===node.label?' selected':''}>${t}</option>`).join('')}
+    </select>
+    ${node.description ? `<div style="padding:6px 12px 2px;font-size:.68rem;color:var(--text-muted);font-style:italic">"${escHtml(node.description.substring(0,80))}${node.description.length>80?'…':''}"</div>` : ''}
+    <div class="pg-tx-popup-actions">
+      <button class="btn btn-sm btn-primary pg-tx-save">Save</button>
+      <button class="btn btn-sm btn-danger pg-tx-del">Delete</button>
     </div>`;
-  }).join('');
-  list.querySelectorAll('.sm-rel-row').forEach(row =>
-    row.addEventListener('click', e => {
-      if (e.target.closest('button,select')) return;
-      row.classList.toggle('sm-expanded');
-    }));
-  list.querySelectorAll('.sm-rel-save').forEach(btn =>
-    btn.addEventListener('click', async e => {
+  document.body.appendChild(popup);
+  const rect = anchorEl.getBoundingClientRect();
+  popup.style.left = Math.min(rect.left, window.innerWidth - 250) + 'px';
+  popup.style.top  = (rect.bottom + 4) + 'px';
+
+  popup.querySelector('.pg-tx-close').addEventListener('click', () => popup.remove());
+  popup.querySelector('.pg-tx-save').addEventListener('click', async () => {
+    const relType = popup.querySelector('#pg-tx-sel').value;
+    try {
+      await apiFetch(`/relations/${node.relId}`, { method:'PUT', body: JSON.stringify({ relation_type: relType }) });
+      toast('Updated.', 'ok'); popup.remove(); await loadStoryMap();
+    } catch (err) { toast('Failed: ' + err.message, 'error'); }
+  });
+  popup.querySelector('.pg-tx-del').addEventListener('click', async () => {
+    if (!confirm('Delete this relation?')) return;
+    try {
+      await apiFetch(`/relations/${node.relId}`, { method:'DELETE' });
+      toast('Deleted.', 'ok'); popup.remove(); await loadStoryMap();
+    } catch (err) { toast('Failed: ' + err.message, 'error'); }
+  });
+  const close = e => { if (!popup.contains(e.target)) { popup.remove(); document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
+};
+
+const _smRenderRelationsPanel = () => {
+  const canvas = document.getElementById('sm-pg-canvas');
+  const svgEl  = document.getElementById('sm-pg-svg');
+  if (!canvas || !svgEl) return;
+
+  canvas.querySelectorAll('.pg-node,.sm-empty-msg').forEach(n => n.remove());
+  svgEl.innerHTML = '';
+
+  _smGraph = _smBuildPipelineGraph();
+  _smLayoutPipelineGraph(_smGraph);
+  const { nodes, edges } = _smGraph;
+
+  if (!nodes.size) {
+    const msg = document.createElement('div');
+    msg.className = 'sm-empty-msg'; msg.style.padding = '20px';
+    msg.textContent = 'No relations yet.';
+    canvas.appendChild(msg); return;
+  }
+
+  // Size SVG to fit all nodes
+  let maxX = 0, maxY = 0;
+  nodes.forEach(n => {
+    maxX = Math.max(maxX, n.x + _PG_W + 24);
+    maxY = Math.max(maxY, n.y + _pgNodeH(n) + 24);
+  });
+  svgEl.setAttribute('width', maxX);
+  svgEl.setAttribute('height', maxY);
+  canvas.style.minWidth  = maxX + 'px';
+  canvas.style.minHeight = maxY + 'px';
+
+  // Edges (SVG paths, rendered first so they're behind nodes)
+  edges.forEach(edge => {
+    const from = nodes.get(edge.fromNid);
+    const to   = nodes.get(edge.toNid);
+    if (!from || !to) return;
+    const x1 = from.x + _PG_W,          y1 = from.y + _pgNodeH(from) / 2;
+    const x2 = to.x,                     y2 = to.y   + _pgNodeH(to)   / 2;
+    const cx = (x1 + x2) / 2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
+    path.setAttribute('class', 'pg-edge');
+    path.dataset.fromNid = edge.fromNid;
+    path.dataset.toNid   = edge.toNid;
+    path.dataset.eid     = edge.id;
+    svgEl.appendChild(path);
+  });
+
+  // Nodes (HTML absolutely positioned)
+  nodes.forEach(node => {
+    const el = _smCreateNodeEl(node);
+    el.addEventListener('click', e => {
       e.stopPropagation();
-      const relType = btn.closest('.sm-rel-row').querySelector('.sm-rel-type-sel').value;
-      try {
-        await apiFetch(`/relations/${btn.dataset.relid}`, { method: 'PUT', body: JSON.stringify({ relation_type: relType }) });
-        toast('Updated.', 'ok'); await loadStoryMap();
-      } catch (err) { toast('Failed: ' + err.message, 'error'); }
-    }));
-  list.querySelectorAll('.sm-rel-del').forEach(btn =>
-    btn.addEventListener('click', async e => {
-      e.stopPropagation();
-      if (!confirm('Delete this relation?')) return;
-      try {
-        await apiFetch(`/relations/${btn.dataset.relid}`, { method: 'DELETE' });
-        toast('Deleted.', 'ok'); await loadStoryMap();
-      } catch (err) { toast('Failed: ' + err.message, 'error'); }
-    }));
+      document.querySelectorAll('.pg-tx-popup').forEach(p => p.remove());
+      if (node.kind === 'kw') _smHighlight(node.kwId);
+      else if (node.kind === 'tx') _smShowTxPopup(node, el);
+    });
+    canvas.appendChild(el);
+  });
 };
 
 document.getElementById('refresh-graph-btn').addEventListener('click', async () => {
@@ -1869,7 +2059,7 @@ const showMapNodePanel = async ({ type, paperId, kwId, nodeData }) => {
         <button class="btn btn-sm btn-danger" id="mnp-cn-del" style="width:100%">Delete</button>
       `;
       body.querySelector('#mnp-cn-save').onclick = async () => {
-        const nodeId = d.nodeId;
+        const { nodeId } = d;
         if (!nodeId) return;
         const label = body.querySelector('#mnp-cn-label').value;
         const category = body.querySelector('#mnp-cn-cat').value;
@@ -1879,7 +2069,7 @@ const showMapNodePanel = async ({ type, paperId, kwId, nodeData }) => {
       };
       body.querySelector('#mnp-cn-del').onclick = async () => {
         if (!confirm('Delete this node?')) return;
-        const nodeId = d.nodeId;
+        const { nodeId } = d;
         if (!nodeId) return;
         try { await apiFetch(`/map-custom-nodes/${nodeId}`, { method: 'DELETE' }); hideMapNodePanel(); loadMapView(); } catch(e) { toast(e.message, 'error'); }
       };
@@ -1904,7 +2094,7 @@ const showMapNodePanel = async ({ type, paperId, kwId, nodeData }) => {
         <button class="btn btn-sm btn-danger" id="mnp-grp-del" style="width:100%">Dissolve Group</button>
       `;
       body.querySelector('#mnp-grp-save').onclick = async () => {
-        const groupId = d.groupId;
+        const { groupId } = d;
         if (!groupId) return;
         const name  = body.querySelector('#mnp-grp-name').value;
         const color = body.querySelector('#mnp-grp-color').value;
@@ -1916,7 +2106,7 @@ const showMapNodePanel = async ({ type, paperId, kwId, nodeData }) => {
       };
       body.querySelector('#mnp-grp-del').onclick = async () => {
         if (!confirm('Dissolve this group?')) return;
-        const groupId = d.groupId;
+        const { groupId } = d;
         if (!groupId) return;
         hideMapNodePanel();
         if (window.MapView) await MapView.deleteGroup(groupId);

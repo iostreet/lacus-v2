@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=11" />
+  <link rel="stylesheet" href="/static/css/style.css?v=12" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -319,10 +319,12 @@
           </div>
           <div class="sm-rel-panel">
             <div class="sm-panel-header">
-              <span>Relations</span>
-              <button class="btn btn-sm btn-primary" id="sm-add-rel-btn">+ Add</button>
+              <span>Pipeline Graph</span>
+              <button class="btn btn-sm btn-primary" id="sm-add-rel-btn">+ Add Relation</button>
             </div>
-            <div class="sm-rel-scroll" id="sm-rel-list"></div>
+            <div class="pg-canvas" id="sm-pg-canvas">
+              <svg class="pg-svg" id="sm-pg-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+            </div>
           </div>
         </div>
       </div>
@@ -491,6 +493,6 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=4"></script>
-<script src="/static/js/app.js?v=9"></script>
+<script src="/static/js/app.js?v=10"></script>
 </body>
 </html>
