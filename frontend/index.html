@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=10" />
+  <link rel="stylesheet" href="/static/css/style.css?v=11" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -301,15 +301,30 @@
 
       <!-- Story Map tab -->
       <div class="tab-pane" id="tab-storymap">
-        <div class="storymap-toolbar">
-          <div class="legend" id="storymap-legend"></div>
-          <div class="storymap-btns">
-            <button class="btn btn-sm" id="fit-graph-btn">Fit</button>
-            <button class="btn btn-sm" id="reset-layout-btn">Re-layout</button>
-            <button class="btn btn-sm btn-primary" id="refresh-graph-btn" title="Reload graph from latest saved data">↻ Refresh</button>
+        <!-- Flow Bar -->
+        <div class="sm-flow-bar">
+          <div class="sm-flow-header">
+            <span class="sm-flow-label">Paper Story — Causal Flow</span>
+            <button class="btn btn-sm btn-primary" id="refresh-graph-btn">↻ Refresh</button>
+          </div>
+          <div class="sm-flow-nodes" id="sm-flow-nodes">
+            <span class="sm-flow-empty">Loading…</span>
           </div>
         </div>
-        <div class="storymap-container" id="storymap-container"></div>
+        <!-- Two-panel layout -->
+        <div class="sm-panels">
+          <div class="sm-concept-panel">
+            <div class="sm-panel-header">Concepts</div>
+            <div class="sm-concept-scroll" id="sm-concept-scroll"></div>
+          </div>
+          <div class="sm-rel-panel">
+            <div class="sm-panel-header">
+              <span>Relations</span>
+              <button class="btn btn-sm btn-primary" id="sm-add-rel-btn">+ Add</button>
+            </div>
+            <div class="sm-rel-scroll" id="sm-rel-list"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Summary tab -->
@@ -476,6 +491,6 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=4"></script>
-<script src="/static/js/app.js?v=8"></script>
+<script src="/static/js/app.js?v=9"></script>
 </body>
 </html>

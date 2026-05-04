@@ -1265,86 +1265,279 @@ document.getElementById('amet-save').addEventListener('click', async () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Story Map tab
+// Story Map tab — Flow View
 // ─────────────────────────────────────────────────────────────────────────────
+
+let _smFlowSlots   = {};
+let _smKeywords    = [];
+let _smRelations   = [];
+let _smMetrics     = [];
+let _smHighlightId = null;
+
+const _SM_FLOW_ORDER = ['Material', 'Structure', 'Property', 'Application'];
+const _SM_CAT_COLORS = {
+  Material: '#22c55e', Structure: '#3b82f6', Property: '#f59e0b',
+  Method: '#a855f7', Application: '#06b6d4', Metric: '#f472b6', Other: '#64748b',
+};
+const _SM_CONCEPT_GROUPS = [
+  { label: 'Object',      cats: ['Material', 'Structure'] },
+  { label: 'Method',      cats: ['Method'] },
+  { label: 'Property',    cats: ['Property'] },
+  { label: 'Metric',      cats: ['Metric'] },
+  { label: 'Application', cats: ['Application'] },
+  { label: 'Other',       cats: ['Other'] },
+];
+
 const loadStoryMap = async () => {
   try {
-    const [graph, metrics] = await Promise.all([
-      apiFetch(`/papers/${activePaperId}/graph`),
+    const [keywords, relations, metrics] = await Promise.all([
+      apiFetch(`/papers/${activePaperId}/keywords`),
+      apiFetch(`/papers/${activePaperId}/relations`),
       apiFetch(`/papers/${activePaperId}/metrics`),
     ]);
-    graph.paper_id = activePaperId;
+    _smKeywords  = keywords;
+    _smRelations = relations;
+    _smMetrics   = metrics;
+    _smHighlightId = null;
 
-    // Auto-link metrics to keyword nodes by name matching when linked_keyword_id is null
-    const kwLookup = {}; // numeric_id -> { label, norm }
-    (graph.elements || []).forEach(el => {
-      if (el.data && !el.data.source && (el.data.id || '').startsWith('kw_')) {
-        const nid = parseInt(el.data.id.replace('kw_', ''));
-        kwLookup[nid] = (el.data.label || '').toLowerCase().trim();
+    const byCategory = {};
+    for (const kw of keywords) {
+      const cat = kw.category || 'Other';
+      if (!byCategory[cat]) byCategory[cat] = [];
+      byCategory[cat].push(kw);
+    }
+    for (const cat of Object.keys(byCategory)) {
+      byCategory[cat].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+    }
+    const newSlots = {};
+    for (const cat of [..._SM_FLOW_ORDER, 'Method']) {
+      if (_smFlowSlots[cat] && keywords.some(k => k.id === _smFlowSlots[cat])) {
+        newSlots[cat] = _smFlowSlots[cat];
+      } else if (byCategory[cat] && byCategory[cat].length > 0) {
+        newSlots[cat] = byCategory[cat][0].id;
       }
-    });
-    metrics.forEach(m => {
-      if (m.linked_keyword_id != null) return;
-      const mname = (m.metric_name || '').toLowerCase().trim();
-      for (const [kidStr, klabel] of Object.entries(kwLookup)) {
-        if (!klabel) continue;
-        if (mname === klabel || klabel.includes(mname) || mname.includes(klabel)) {
-          m.linked_keyword_id = parseInt(kidStr);
-          break;
-        }
-      }
-    });
+    }
+    _smFlowSlots = newSlots;
 
-    graph.all_metrics = metrics;
-    StoryMap.buildLegend(graph.category_colors, 'storymap-legend');
-    StoryMap.init('storymap-container', graph, {
-      onNodeEdit: async (nodeData, newLabel) => {
-        try {
-          if (nodeData.type === 'keyword') {
-            const id = nodeData.id.replace('kw_', '');
-            await apiFetch(`/keywords/${id}`, {
-              method: 'PUT',
-              body: JSON.stringify({ keyword_name: newLabel, normalized_name: newLabel }),
-            });
-          } else if (nodeData.type === 'metric') {
-            const id = nodeData.id.replace('met_', '');
-            await apiFetch(`/metrics/${id}`, {
-              method: 'PUT',
-              body: JSON.stringify({ metric_name: newLabel }),
-            });
-          }
-          toast('Saved.', 'ok');
-          await loadStoryMap();
-        } catch (e) { toast('Save failed: ' + e.message, 'error'); }
-      },
-      onNodeDelete: async (nodeData) => {
-        if (!confirm('Delete this node and all its connections?')) return;
-        try {
-          if (nodeData.type === 'keyword') {
-            const id = nodeData.id.replace('kw_', '');
-            await apiFetch(`/keywords/${id}`, { method: 'DELETE' });
-          } else if (nodeData.type === 'metric') {
-            const id = nodeData.id.replace('met_', '');
-            await apiFetch(`/metrics/${id}`, { method: 'DELETE' });
-          }
-          toast('Deleted.', 'ok');
-          await loadStoryMap();
-        } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
-      },
-      onEdgeSave:   async () => { toast('Relation updated.', 'ok');   await loadStoryMap(); },
-      onEdgeDelete: async () => { toast('Relation deleted.', 'ok');   await loadStoryMap(); },
-    });
+    _smRenderFlowBar();
+    _smRenderConceptPanel();
+    _smRenderRelationsPanel();
   } catch (e) {
     toast('Failed to load story map: ' + e.message, 'error');
   }
 };
 
-document.getElementById('fit-graph-btn').addEventListener('click', () => StoryMap.fit());
-document.getElementById('reset-layout-btn').addEventListener('click', () => StoryMap.relayout());
+const _smRenderFlowBar = () => {
+  const container = document.getElementById('sm-flow-nodes');
+  if (!container) return;
+  const kwById = Object.fromEntries(_smKeywords.map(k => [k.id, k]));
+  const methodKw = _smFlowSlots['Method'] ? kwById[_smFlowSlots['Method']] : null;
+  const presentSlots = _SM_FLOW_ORDER.filter(cat => _smFlowSlots[cat] != null);
+
+  if (!presentSlots.length) {
+    container.innerHTML = '<span class="sm-flow-empty">No keywords detected yet.</span>';
+    return;
+  }
+  let html = '';
+  presentSlots.forEach((cat, i) => {
+    const kw = kwById[_smFlowSlots[cat]];
+    const name = kw ? (kw.normalized_name || kw.keyword_name) : '—';
+    const color = _SM_CAT_COLORS[cat] || '#64748b';
+    let metricText = '';
+    if (cat === 'Property' && kw) {
+      const kwLow = (kw.normalized_name || kw.keyword_name || '').toLowerCase();
+      const m = _smMetrics.find(m =>
+        m.linked_keyword_id === kw.id ||
+        (m.metric_name || '').toLowerCase().includes(kwLow.substring(0, 4))
+      ) || _smMetrics[0];
+      if (m) metricText = m.metric_name + (m.value ? ' = ' + m.value : '') + (m.unit ? ' ' + m.unit : '');
+    }
+    html += `<div class="sm-flow-slot"><div class="sm-flow-node" data-cat="${cat}" data-kwid="${_smFlowSlots[cat]}" style="border-color:${color}55">
+      <div class="sm-flow-node-cat" style="color:${color}">${cat}</div>
+      <div class="sm-flow-node-name">${escHtml(name)}</div>
+      ${metricText ? `<div class="sm-flow-node-metric">${escHtml(metricText)}</div>` : ''}
+    </div></div>`;
+    if (i < presentSlots.length - 1) {
+      const sm = i === 0 && methodKw;
+      html += `<div class="sm-flow-arrow"><span class="sm-flow-arrow-line">→</span>${sm ? `<span class="sm-flow-arrow-method">(${escHtml(methodKw.normalized_name || methodKw.keyword_name)})</span>` : ''}</div>`;
+    }
+  });
+  container.innerHTML = html;
+  container.querySelectorAll('.sm-flow-node').forEach(node =>
+    node.addEventListener('click', e => { e.stopPropagation(); _smFlowDropdown(node); }));
+};
+
+const _smFlowDropdown = (node) => {
+  document.querySelectorAll('.sm-flow-dd').forEach(d => d.remove());
+  const { cat, kwid } = node.dataset;
+  const currentId = parseInt(kwid) || null;
+  const alts = _smKeywords.filter(k => k.category === cat);
+  if (alts.length <= 1) return;
+  const dd = document.createElement('div');
+  dd.className = 'sm-flow-dd';
+  alts.forEach(kw => {
+    const item = document.createElement('div');
+    item.className = 'sm-flow-dd-item' + (kw.id === currentId ? ' selected' : '');
+    item.textContent = kw.normalized_name || kw.keyword_name;
+    item.addEventListener('click', e => {
+      e.stopPropagation(); _smFlowSlots[cat] = kw.id; dd.remove(); _smRenderFlowBar();
+    });
+    dd.appendChild(item);
+  });
+  node.appendChild(dd);
+  const close = e => { if (!dd.contains(e.target)) { dd.remove(); document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
+};
+
+const _smRenderConceptPanel = () => {
+  const scroll = document.getElementById('sm-concept-scroll');
+  if (!scroll) return;
+  let html = '';
+  for (const group of _SM_CONCEPT_GROUPS) {
+    const kws = _smKeywords.filter(k => group.cats.includes(k.category));
+    if (!kws.length) continue;
+    const dotColor = _SM_CAT_COLORS[group.cats[0]] || '#64748b';
+    html += `<div class="sm-concept-section">
+      <div class="sm-concept-section-title">
+        <span class="sm-concept-section-dot" style="background:${dotColor}"></span>
+        ${escHtml(group.label)}
+      </div>
+      <div class="sm-concept-chips">
+        ${kws.map(kw => {
+          const pct = Math.round((kw.confidence || 0) * 100);
+          const col = _SM_CAT_COLORS[kw.category] || '#64748b';
+          return `<span class="sm-kw-chip" data-kwid="${kw.id}" style="--kw-color:${col}" title="Click to highlight · Double-click to edit">${escHtml(kw.normalized_name || kw.keyword_name)}<span class="sm-kw-chip-conf">${pct}%</span></span>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+  scroll.innerHTML = html || '<div class="sm-empty-msg">No keywords yet.</div>';
+  scroll.querySelectorAll('.sm-kw-chip').forEach(chip => {
+    chip.addEventListener('click', e => { e.stopPropagation(); _smHighlight(parseInt(chip.dataset.kwid)); });
+    chip.addEventListener('dblclick', e => { e.stopPropagation(); _smOpenKwEdit(chip); });
+  });
+};
+
+const _smHighlight = (kwId) => {
+  const same = _smHighlightId === kwId;
+  _smHighlightId = same ? null : kwId;
+  document.querySelectorAll('.sm-kw-chip').forEach(c =>
+    c.classList.toggle('sm-highlighted', !same && parseInt(c.dataset.kwid) === kwId));
+  if (_smHighlightId === null) {
+    document.querySelectorAll('.sm-rel-row').forEach(r => r.classList.remove('sm-highlighted'));
+    return;
+  }
+  const kw = _smKeywords.find(k => k.id === kwId);
+  const kn = (kw?.normalized_name || kw?.keyword_name || '').toLowerCase();
+  document.querySelectorAll('.sm-rel-row').forEach(row => {
+    const s = (row.dataset.src || '').toLowerCase();
+    const t = (row.dataset.tgt || '').toLowerCase();
+    row.classList.toggle('sm-highlighted', s.includes(kn) || t.includes(kn) || kn.includes(s) || kn.includes(t));
+  });
+};
+
+const _smOpenKwEdit = (chip) => {
+  document.querySelectorAll('.sm-kw-edit-popup').forEach(p => p.remove());
+  const kwId = parseInt(chip.dataset.kwid);
+  const kw = _smKeywords.find(k => k.id === kwId);
+  if (!kw) return;
+  const CATS = ['Material','Structure','Method','Property','Application','Metric','Other'];
+  const popup = document.createElement('div');
+  popup.className = 'sm-kw-edit-popup';
+  popup.innerHTML = `
+    <input type="text" class="sm-kw-edit-name" value="${escHtml(kw.keyword_name)}" />
+    <select class="sm-kw-edit-cat">${CATS.map(c => `<option${c === kw.category ? ' selected' : ''}>${c}</option>`).join('')}</select>
+    <div class="sm-kw-edit-actions">
+      <button class="btn btn-sm btn-primary sm-kw-save">Save</button>
+      <button class="btn btn-sm btn-danger sm-kw-del">Delete</button>
+      <button class="btn btn-sm sm-kw-cancel">Cancel</button>
+    </div>`;
+  chip.appendChild(popup);
+  popup.querySelector('.sm-kw-save').addEventListener('click', async e => {
+    e.stopPropagation();
+    const name = popup.querySelector('.sm-kw-edit-name').value.trim();
+    const cat  = popup.querySelector('.sm-kw-edit-cat').value;
+    if (!name) return;
+    try {
+      await apiFetch(`/keywords/${kwId}`, { method: 'PUT', body: JSON.stringify({ keyword_name: name, normalized_name: name, category: cat }) });
+      toast('Keyword updated.', 'ok'); popup.remove(); await loadStoryMap();
+    } catch (err) { toast('Save failed: ' + err.message, 'error'); }
+  });
+  popup.querySelector('.sm-kw-del').addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!confirm('Delete this keyword?')) return;
+    try {
+      await apiFetch(`/keywords/${kwId}`, { method: 'DELETE' });
+      toast('Deleted.', 'ok'); popup.remove(); await loadStoryMap();
+    } catch (err) { toast('Failed: ' + err.message, 'error'); }
+  });
+  popup.querySelector('.sm-kw-cancel').addEventListener('click', e => { e.stopPropagation(); popup.remove(); });
+  const close = e => { if (!popup.contains(e.target)) { popup.remove(); document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
+};
+
+const _smRenderRelationsPanel = () => {
+  const list = document.getElementById('sm-rel-list');
+  if (!list) return;
+  if (!_smRelations.length) {
+    list.innerHTML = '<div class="sm-empty-msg">No relations yet.</div>';
+    return;
+  }
+  list.innerHTML = _smRelations.map(rel => {
+    const conf = Math.round((rel.confidence || 0) * 100);
+    return `<div class="sm-rel-row" data-relid="${rel.id}"
+        data-src="${escHtml(rel.source_name || '')}" data-tgt="${escHtml(rel.target_name || '')}">
+      <div class="sm-rel-main">
+        <span class="sm-rel-source">${escHtml(rel.source_name || '—')}</span>
+        <span class="sm-rel-arrow">→</span>
+        <span class="sm-rel-type">${escHtml(rel.relation_type || 'related_to')}</span>
+        <span class="sm-rel-arrow">→</span>
+        <span class="sm-rel-target">${escHtml(rel.target_name || '—')}</span>
+      </div>
+      <div class="sm-rel-meta">
+        <span>${conf}% confidence</span>
+        ${rel.source_section ? `<span>· ${escHtml(rel.source_section)}</span>` : ''}
+      </div>
+      ${rel.evidence_text ? `<div class="sm-rel-evidence">${escHtml(rel.evidence_text)}</div>` : ''}
+      <div class="sm-rel-edit-bar">
+        <select class="mini-input sm-rel-type-sel">${[...RELATION_TYPES,..._customRelTypes].map(t=>`<option${t===rel.relation_type?' selected':''}>${t}</option>`).join('')}</select>
+        <button class="btn btn-sm btn-primary sm-rel-save" data-relid="${rel.id}">Save</button>
+        <button class="btn btn-sm btn-danger sm-rel-del" data-relid="${rel.id}">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.sm-rel-row').forEach(row =>
+    row.addEventListener('click', e => {
+      if (e.target.closest('button,select')) return;
+      row.classList.toggle('sm-expanded');
+    }));
+  list.querySelectorAll('.sm-rel-save').forEach(btn =>
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const relType = btn.closest('.sm-rel-row').querySelector('.sm-rel-type-sel').value;
+      try {
+        await apiFetch(`/relations/${btn.dataset.relid}`, { method: 'PUT', body: JSON.stringify({ relation_type: relType }) });
+        toast('Updated.', 'ok'); await loadStoryMap();
+      } catch (err) { toast('Failed: ' + err.message, 'error'); }
+    }));
+  list.querySelectorAll('.sm-rel-del').forEach(btn =>
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm('Delete this relation?')) return;
+      try {
+        await apiFetch(`/relations/${btn.dataset.relid}`, { method: 'DELETE' });
+        toast('Deleted.', 'ok'); await loadStoryMap();
+      } catch (err) { toast('Failed: ' + err.message, 'error'); }
+    }));
+};
+
 document.getElementById('refresh-graph-btn').addEventListener('click', async () => {
   _storymapDirty = false;
   _updateStorymapTabBadge();
   await loadStoryMap();
+});
+document.getElementById('sm-add-rel-btn').addEventListener('click', () => {
+  document.getElementById('add-rel-modal').classList.remove('hidden');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
