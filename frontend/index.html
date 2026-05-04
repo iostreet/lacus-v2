@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=16" />
+  <link rel="stylesheet" href="/static/css/style.css?v=17" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -24,9 +24,14 @@
       } else {
         window._authToken = session.access_token;
         window._authUser  = session.user;
-        // Show user email in header
-        const emailEl = document.getElementById('header-user-email');
-        if (emailEl) emailEl.textContent = session.user.email || '';
+        const nameEl = document.getElementById('header-username-btn');
+        if (nameEl) {
+          const u = session.user;
+          nameEl.textContent = u.user_metadata?.username
+            || u.user_metadata?.name
+            || u.user_metadata?.full_name
+            || (u.email ? u.email.split('@')[0] : 'Account');
+        }
       }
     });
     window._sb.auth.onAuthStateChange((event, session) => {
@@ -57,7 +62,7 @@
     <a href="/app"       class="site-nav-link active">Papers</a>
   </div>
   <div class="site-nav-auth">
-    <span id="header-user-email" class="site-nav-email"></span>
+    <button id="header-username-btn" class="site-nav-username-btn" title="Account settings"></button>
     <button class="site-nav-link" id="header-signout-btn">Sign Out</button>
   </div>
 </nav>
@@ -489,10 +494,58 @@
   </div>
 </div>
 
+<!-- ══════════════════════ PROFILE MODAL ══════════════════════ -->
+<div class="prof-overlay hidden" id="prof-overlay">
+  <div class="prof-box" id="prof-box">
+    <div class="prof-header">
+      <div class="prof-avatar" id="prof-avatar">—</div>
+      <div class="prof-identity">
+        <div class="prof-display-name" id="prof-display-name"></div>
+        <div class="prof-email-label"  id="prof-email-label"></div>
+      </div>
+      <button class="prof-close" id="prof-close-btn" title="Close">✕</button>
+    </div>
+
+    <div class="prof-body">
+      <div class="prof-section">
+        <div class="prof-label">Username</div>
+        <div class="prof-row">
+          <input class="prof-input" id="prof-username-input" placeholder="Your username" autocomplete="off" />
+          <button class="btn btn-sm btn-primary" id="prof-save-username">Save</button>
+        </div>
+        <div class="prof-hint" id="prof-username-msg"></div>
+      </div>
+
+      <div class="prof-section">
+        <div class="prof-label">Email</div>
+        <div class="prof-row">
+          <input class="prof-input" id="prof-email-input" type="email" placeholder="New email address" autocomplete="off" />
+          <button class="btn btn-sm btn-primary" id="prof-save-email">Update</button>
+        </div>
+        <div class="prof-hint">A confirmation link will be sent to the new address.</div>
+        <div class="prof-hint" id="prof-email-msg"></div>
+      </div>
+
+      <div class="prof-section">
+        <div class="prof-label">Change Password</div>
+        <div class="prof-row">
+          <input class="prof-input" id="prof-pw-input" type="password" placeholder="New password (min 8 chars)" autocomplete="new-password" />
+          <button class="btn btn-sm btn-primary" id="prof-save-pw">Change</button>
+        </div>
+        <div class="prof-hint" id="prof-pw-msg"></div>
+      </div>
+
+      <div class="prof-section prof-section-danger">
+        <button class="btn btn-sm prof-signout-btn" id="prof-signout-btn">Sign Out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="hover-tooltip hidden" id="hover-tooltip"></div>
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=6"></script>
-<script src="/static/js/app.js?v=14"></script>
+<script src="/static/js/app.js?v=15"></script>
 </body>
 </html>

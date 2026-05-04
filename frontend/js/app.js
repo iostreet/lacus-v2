@@ -2375,6 +2375,97 @@ document.getElementById('admin-close')?.addEventListener('click', () => {
   document.body.style.overflow = '';
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Profile Modal
+// ─────────────────────────────────────────────────────────────────────────────
+const _getUserDisplayName = u =>
+  u?.user_metadata?.username
+  || u?.user_metadata?.name
+  || u?.user_metadata?.full_name
+  || (u?.email ? u.email.split('@')[0] : 'Account');
+
+const openProfileModal = () => {
+  const user = window._authUser;
+  if (!user) return;
+
+  const name = _getUserDisplayName(user);
+
+  document.getElementById('prof-avatar').textContent      = name.charAt(0).toUpperCase();
+  document.getElementById('prof-display-name').textContent = name;
+  document.getElementById('prof-email-label').textContent  = user.email || '';
+  document.getElementById('prof-username-input').value     = name;
+  document.getElementById('prof-email-input').value        = '';
+  document.getElementById('prof-pw-input').value           = '';
+  document.getElementById('prof-username-msg').textContent = '';
+  document.getElementById('prof-email-msg').textContent    = '';
+  document.getElementById('prof-pw-msg').textContent       = '';
+
+  document.getElementById('prof-overlay').classList.remove('hidden');
+};
+
+const closeProfileModal = () =>
+  document.getElementById('prof-overlay').classList.add('hidden');
+
+const _profMsg = (id, text, type) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className   = 'prof-hint' + (type ? ' ' + type : '');
+};
+
+document.getElementById('header-username-btn')?.addEventListener('click', openProfileModal);
+document.getElementById('prof-close-btn')?.addEventListener('click', closeProfileModal);
+document.getElementById('prof-overlay')?.addEventListener('click', e => {
+  if (e.target === document.getElementById('prof-overlay')) closeProfileModal();
+});
+
+document.getElementById('prof-save-username')?.addEventListener('click', async () => {
+  const val = document.getElementById('prof-username-input').value.trim();
+  if (!val) return _profMsg('prof-username-msg', 'Username cannot be empty.', 'error');
+  try {
+    const { error } = await window._sb.auth.updateUser({ data: { username: val } });
+    if (error) throw error;
+    window._authUser = (await window._sb.auth.getUser()).data.user;
+    document.getElementById('prof-display-name').textContent = val;
+    document.getElementById('prof-avatar').textContent       = val.charAt(0).toUpperCase();
+    const btn = document.getElementById('header-username-btn');
+    if (btn) btn.textContent = val;
+    _profMsg('prof-username-msg', 'Username updated.', 'ok');
+  } catch (e) {
+    _profMsg('prof-username-msg', e.message || 'Failed to update.', 'error');
+  }
+});
+
+document.getElementById('prof-save-email')?.addEventListener('click', async () => {
+  const val = document.getElementById('prof-email-input').value.trim();
+  if (!val || !val.includes('@')) return _profMsg('prof-email-msg', 'Enter a valid email.', 'error');
+  try {
+    const { error } = await window._sb.auth.updateUser({ email: val });
+    if (error) throw error;
+    _profMsg('prof-email-msg', 'Confirmation email sent. Check your inbox.', 'ok');
+  } catch (e) {
+    _profMsg('prof-email-msg', e.message || 'Failed to update.', 'error');
+  }
+});
+
+document.getElementById('prof-save-pw')?.addEventListener('click', async () => {
+  const val = document.getElementById('prof-pw-input').value;
+  if (val.length < 8) return _profMsg('prof-pw-msg', 'Password must be at least 8 characters.', 'error');
+  try {
+    const { error } = await window._sb.auth.updateUser({ password: val });
+    if (error) throw error;
+    document.getElementById('prof-pw-input').value = '';
+    _profMsg('prof-pw-msg', 'Password changed successfully.', 'ok');
+  } catch (e) {
+    _profMsg('prof-pw-msg', e.message || 'Failed to change password.', 'error');
+  }
+});
+
+document.getElementById('prof-signout-btn')?.addEventListener('click', async () => {
+  await window._sb.auth.signOut();
+  window.location.href = '/';
+});
+
 document.getElementById('header-signout-btn')?.addEventListener('click', async () => {
   await window._sb.auth.signOut();
   window.location.href = '/';
