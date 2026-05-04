@@ -269,6 +269,15 @@ class MapEdgeUpdate(BaseModel):
     relation_type: Optional[str] = None
     label:         Optional[str] = None
 
+class ConfirmReviewKw(BaseModel):
+    id:       int
+    category: str
+    include:  bool = True
+
+class ConfirmReview(BaseModel):
+    field:    Optional[str] = None
+    keywords: list[ConfirmReviewKw] = []
+
 class MapGroupCreate(BaseModel):
     name:      str
     color:     str        = '#334155'
@@ -423,7 +432,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
         }
 
         # Step 2 — Keywords
-        _set_progress(paper_id, "Extracting keywords…", 30)
+        _set_progress(paper_id, "Matching ontology dictionaries…", 30)
         kw_data = [kw for kw in extract_keywords(sections) if kw.get("confidence", 0) > 0.40]
         kw_id_map: dict[str, int] = {}
         for kw in kw_data:
@@ -451,7 +460,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
             pass  # non-critical — don't abort pipeline
 
         # Step 4 — Metrics
-        _set_progress(paper_id, "Extracting performance metrics…", 52)
+        _set_progress(paper_id, "Extracting metrics & classifying categories…", 52)
         for met in extract_metrics(sections):
             sb.table("metrics").insert({
                 "paper_id":    paper_id,
@@ -463,8 +472,8 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 "display_order": 0,
             }).execute()
 
-        # Step 4 — Relations
-        _set_progress(paper_id, "Building keyword relations…", 70)
+        # Step 5 — Relations
+        _set_progress(paper_id, "Calculating confidence scores…", 70)
         for rel in extract_relations(sections, kw_data):
             sb.table("relations").insert({
                 "paper_id":          paper_id,
@@ -479,7 +488,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 "display_order":     0,
             }).execute()
 
-        # Step 5 — Summaries
+        # Step 6 — Summaries
         _set_progress(paper_id, "Generating key findings…", 88)
         kws  = (sb.table("keywords").select("*").eq("paper_id", paper_id).execute().data or [])
         rels = (sb.table("relations").select("*").eq("paper_id", paper_id).execute().data or [])
@@ -493,13 +502,60 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 "confidence":   s["confidence"],
             }).execute()
 
-        sb.table("papers").update({"status": "confirmed"}).eq("id", paper_id).execute()
-        _set_progress(paper_id, "Analysis complete!", 100)
+        sb.table("papers").update({"status": "pending_review"}).eq("id", paper_id).execute()
+        _set_progress(paper_id, "Ready to review…", 100)
 
     except Exception as exc:
         with contextlib.suppress(Exception):
             sb.table("papers").update({"status": "error"}).eq("id", paper_id).execute()
         _set_progress(paper_id, f"Error: {exc}", -1, error=str(exc))
+
+
+# ── Review endpoints ──────────────────────────────────────────────────────────
+
+@app.get("/api/papers/{paper_id}/review")
+async def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
+    """Return field + extracted keywords for the post-analysis review modal."""
+    sb = _sb()
+    paper = (sb.table("papers")
+               .select("id, user_id, title, field, field_confidence, field_scores, status")
+               .eq("id", paper_id).execute().data or [None])[0]
+    if not paper or paper["user_id"] != user_id:
+        raise HTTPException(404)
+    kws = (sb.table("keywords").select("*")
+             .eq("paper_id", paper_id)
+             .order("confidence", desc=True)
+             .execute().data or [])
+    return {
+        "paper_id":         paper_id,
+        "title":            paper.get("title") or "",
+        "field":            paper.get("field"),
+        "field_confidence": paper.get("field_confidence"),
+        "field_scores":     paper.get("field_scores") or {},
+        "keywords":         [_kw_to_dict(k) for k in kws],
+    }
+
+
+@app.post("/api/papers/{paper_id}/confirm")
+async def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(get_current_user)):
+    """Apply user edits from the review modal and mark paper as confirmed."""
+    sb = _sb()
+    paper = (sb.table("papers").select("id, user_id")
+               .eq("id", paper_id).execute().data or [None])[0]
+    if not paper or paper["user_id"] != user_id:
+        raise HTTPException(404)
+
+    if body.field is not None:
+        sb.table("papers").update({"field": body.field}).eq("id", paper_id).execute()
+
+    for kw in body.keywords:
+        if not kw.include:
+            sb.table("keywords").delete().eq("id", kw.id).execute()
+        else:
+            sb.table("keywords").update({"category": kw.category}).eq("id", kw.id).execute()
+
+    sb.table("papers").update({"status": "confirmed"}).eq("id", paper_id).execute()
+    return {"ok": True}
 
 
 # ── Import (upload) endpoint ──────────────────────────────────────────────────

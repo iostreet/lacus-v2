@@ -403,9 +403,9 @@ const setupUpload = () => {
 
           if (pct === 100) {
             stopPoll();
-            toast('Paper added and analyzed successfully.', 'ok');
+            resetProgress();
             await loadPapers();
-            setTimeout(resetProgress, 1500);
+            showReviewModal(paperId);
           } else if (pct === -1) {
             stopPoll();
             resetProgress();
@@ -1400,6 +1400,162 @@ document.getElementById('search-input').addEventListener('input', (e) => {
 const _CAT_COLORS = {
   Material: '#22c55e', Structure: '#3b82f6', Property: '#f59e0b',
   Method: '#a855f7', Application: '#06b6d4', Metric: '#f472b6', Other: '#64748b',
+};
+
+// ── Review Modal ──────────────────────────────────────────────────────────────
+const _rvKwState = new Map(); // id → {category, include}
+
+const showReviewModal = async (paperId) => {
+  let data;
+  try { data = await apiFetch(`/papers/${paperId}/review`); }
+  catch (_) { toast('분석 결과를 불러오지 못했습니다.', 'error'); return; }
+
+  _rvKwState.clear();
+  data.keywords.forEach(kw => _rvKwState.set(kw.id, { category: kw.category, include: true }));
+
+  const overlay = document.getElementById('rv-overlay');
+  document.getElementById('rv-paper-title').textContent = data.title || '';
+
+  // 대그룹
+  const badge = document.getElementById('rv-field-badge');
+  badge.textContent = data.field || '—';
+  document.getElementById('rv-field-conf').textContent = data.field_confidence != null
+    ? `${Math.round(data.field_confidence * 100)}% confidence` : '';
+  const altsEl = document.getElementById('rv-field-alts');
+  altsEl.innerHTML = '';
+  const topKey = (data.field || '').toLowerCase().replace(/\s+/g, '_');
+  Object.entries(data.field_scores || {})
+    .filter(([k]) => k !== topKey)
+    .sort(([,a],[,b]) => b - a).slice(0, 3)
+    .forEach(([k, v]) => {
+      const s = document.createElement('span');
+      s.textContent = `${_fieldKeyToDisplay(k)}: ${Math.round(v * 100)}%`;
+      altsEl.appendChild(s);
+    });
+  const fieldSel = document.getElementById('rv-field-select');
+  fieldSel.value = data.field || '';
+
+  _rvRenderGroups(data.keywords);
+
+  // footer hint
+  const total = data.keywords.length;
+  document.getElementById('rv-footer-hint').textContent = `${total}개 키워드 추출됨`;
+
+  overlay.classList.remove('hidden');
+
+  // + 추가 버튼
+  const addBtn = document.getElementById('rv-add-kw-btn');
+  const newAddBtn = addBtn.cloneNode(true);
+  addBtn.replaceWith(newAddBtn);
+  newAddBtn.addEventListener('click', () => {
+    const inp = document.getElementById('rv-new-kw-input');
+    const cat = document.getElementById('rv-new-kw-cat').value;
+    const name = inp.value.trim();
+    if (!name) return;
+    const fakeId = `new_${Date.now()}`;
+    _rvKwState.set(fakeId, { category: cat, include: true, isNew: true, name });
+    data.keywords.push({ id: fakeId, keyword_name: name, normalized_name: name.toLowerCase(), category: cat, confidence: 1.0 });
+    _rvRenderGroups(data.keywords);
+    inp.value = '';
+  });
+
+  // 닫기
+  const closeOverlay = () => overlay.classList.add('hidden');
+  document.getElementById('rv-close-btn').onclick = closeOverlay;
+  document.getElementById('rv-later-btn').onclick  = closeOverlay;
+
+  // 저장
+  const saveBtn = document.getElementById('rv-save-btn');
+  const newSave = saveBtn.cloneNode(true);
+  saveBtn.replaceWith(newSave);
+  newSave.addEventListener('click', async () => {
+    newSave.disabled = true;
+    newSave.textContent = '저장 중…';
+    try {
+      const kwPayload = [];
+      for (const [id, st] of _rvKwState.entries()) {
+        if (st.isNew && st.include) {
+          // new keyword: insert first
+          try {
+            await apiFetch(`/papers/${paperId}/keywords`, {
+              method: 'POST',
+              body: JSON.stringify({ keyword_name: st.name, normalized_name: st.name.toLowerCase(), category: st.category, confidence: 1.0 }),
+            });
+          } catch (_) {}
+        } else if (!st.isNew) {
+          kwPayload.push({ id, category: st.category, include: st.include });
+        }
+      }
+      const field = fieldSel.value || data.field;
+      await apiFetch(`/papers/${paperId}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({ field, keywords: kwPayload }),
+      });
+      closeOverlay();
+      await loadPapers();
+      toast('저장 완료!', 'ok');
+    } catch (e) {
+      toast('저장 실패: ' + e.message, 'error');
+      newSave.disabled = false;
+      newSave.textContent = 'DB에 저장 →';
+    }
+  });
+};
+
+const _rvRenderGroups = (keywords) => {
+  const container = document.getElementById('rv-kw-groups');
+  container.innerHTML = '';
+  const CAT_ORDER = ['Material','Structure','Method','Property','Application','Metric','Other'];
+  const groups = {};
+  CAT_ORDER.forEach(c => { groups[c] = []; });
+  keywords.forEach(kw => {
+    const state = _rvKwState.get(kw.id);
+    const cat = state ? state.category : kw.category;
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(kw);
+  });
+
+  CAT_ORDER.forEach(cat => {
+    const kws = groups[cat];
+    if (!kws || kws.length === 0) return;
+    const block = document.createElement('div');
+    block.className = 'rv-cat-block';
+    const color = _CAT_COLORS[cat] || '#64748b';
+    block.innerHTML = `<div class="rv-cat-title">
+      <span class="rv-cat-dot" style="background:${color}"></span>
+      ${cat} <span class="rv-cat-count">(${kws.length})</span>
+    </div>`;
+    kws.forEach(kw => {
+      const state = _rvKwState.get(kw.id);
+      const included = state ? state.include : true;
+      const confPct = Math.round((kw.confidence || 0) * 100);
+      const row = document.createElement('div');
+      row.className = 'rv-kw-row' + (included ? '' : ' rv-kw-unchecked');
+      row.innerHTML = `
+        <input type="checkbox" class="rv-kw-cb" ${included ? 'checked' : ''} style="accent-color:var(--accent)" />
+        <span class="rv-kw-name" title="${escHtml(kw.keyword_name)}">${escHtml(kw.keyword_name)}</span>
+        <div class="rv-kw-bar-wrap"><div class="rv-kw-bar" style="width:${confPct}%;background:${color}"></div></div>
+        <span class="rv-kw-pct">${confPct}%</span>
+        <select class="mini-input rv-kw-cat-select">
+          ${['Material','Structure','Property','Method','Application','Metric','Other'].map(c => `<option value="${c}" ${c === (state?.category || kw.category) ? 'selected' : ''}>${c}</option>`).join('')}
+        </select>`;
+      const cb  = row.querySelector('.rv-kw-cb');
+      const sel = row.querySelector('.rv-kw-cat-select');
+      cb.addEventListener('change', () => {
+        const s = _rvKwState.get(kw.id) || { category: kw.category, include: true };
+        s.include = cb.checked;
+        _rvKwState.set(kw.id, s);
+        row.className = 'rv-kw-row' + (cb.checked ? '' : ' rv-kw-unchecked');
+      });
+      sel.addEventListener('change', () => {
+        const s = _rvKwState.get(kw.id) || { category: kw.category, include: true };
+        s.category = sel.value;
+        _rvKwState.set(kw.id, s);
+      });
+      block.appendChild(row);
+    });
+    container.appendChild(block);
+  });
 };
 
 let _mnpPaperId = null;
