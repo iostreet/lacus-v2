@@ -514,7 +514,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
 # ── Review endpoints ──────────────────────────────────────────────────────────
 
 @app.get("/api/papers/{paper_id}/review")
-async def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
+def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
     """Return field + extracted keywords for the post-analysis review modal."""
     sb = _sb()
     paper = (sb.table("papers")
@@ -537,7 +537,7 @@ async def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
 
 
 @app.post("/api/papers/{paper_id}/confirm")
-async def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(get_current_user)):
+def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(get_current_user)):
     """Apply user edits from the review modal and mark paper as confirmed."""
     sb = _sb()
     paper = (sb.table("papers").select("id, user_id")
