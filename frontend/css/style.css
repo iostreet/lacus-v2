@@ -2157,6 +2157,25 @@ tr.row-dragging { opacity: 0.45; background: rgba(168,85,247,0.08); }
   color: var(--text-muted);
 }
 .field-panel-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.kw-rereview-bar {
+  padding: 8px 0 4px;
+  display: flex;
+}
+.btn-rereview {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-rereview:hover {
+  color: #c084fc;
+  border-color: rgba(168,85,247,0.5);
+}
+
 .card-field-badge {
   display: inline-block;
   padding: 1px 6px;

@@ -773,7 +773,12 @@ const loadFieldPanel = async () => {
 };
 
 const loadKeywords = async () => {
-  await loadFieldPanel();
+  const rrBtn = document.getElementById('kw-rereview-btn');
+  if (rrBtn) {
+    const newBtn = rrBtn.cloneNode(true);
+    rrBtn.replaceWith(newBtn);
+    newBtn.addEventListener('click', () => showReviewModal(activePaperId));
+  }
   const keywords = await apiFetch(`/papers/${activePaperId}/keywords`);
   document.getElementById('kw-count-label').textContent = `${keywords.length} keywords`;
   selectedKwIds.clear();

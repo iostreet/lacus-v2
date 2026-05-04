@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=8" />
+  <link rel="stylesheet" href="/static/css/style.css?v=9" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -212,30 +212,8 @@
 
       <!-- Keywords tab -->
       <div class="tab-pane" id="tab-keywords">
-        <!-- Research field detection banner -->
-        <div class="field-panel hidden" id="field-panel">
-          <div class="field-panel-left">
-            <span class="field-panel-label">Detected Research Field</span>
-            <div class="field-panel-main">
-              <span class="field-badge" id="field-badge-name">—</span>
-              <span class="field-confidence" id="field-confidence-text"></span>
-            </div>
-            <div class="field-alt-scores" id="field-alt-scores"></div>
-          </div>
-          <div class="field-panel-right">
-            <select class="mini-input" id="field-override-select">
-              <option value="">— override field —</option>
-              <option value="Materials Science">Materials Science</option>
-              <option value="Physics">Physics</option>
-              <option value="Chemistry">Chemistry</option>
-              <option value="Electrical Engineering">Electrical Engineering</option>
-              <option value="Biology">Biology</option>
-              <option value="Biomedical Engineering">Biomedical Engineering</option>
-              <option value="Computer Science">Computer Science</option>
-              <option value="Unknown">Unknown / Other</option>
-            </select>
-            <button class="btn btn-sm btn-primary" id="field-confirm-btn">Confirm</button>
-          </div>
+        <div class="kw-rereview-bar">
+          <button class="btn btn-sm btn-rereview" id="kw-rereview-btn">↺ Re-review Keywords &amp; Field</button>
         </div>
         <div class="table-toolbar">
           <span class="toolbar-label" id="kw-count-label">Keywords</span>
@@ -500,6 +478,6 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=4"></script>
-<script src="/static/js/app.js?v=7"></script>
+<script src="/static/js/app.js?v=8"></script>
 </body>
 </html>
