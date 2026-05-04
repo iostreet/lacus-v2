@@ -1308,26 +1308,6 @@ const loadStoryMap = async () => {
     _smMetrics   = metrics;
     _smHighlightId = null;
 
-    const byCategory = {};
-    for (const kw of keywords) {
-      const cat = kw.category || 'Other';
-      if (!byCategory[cat]) byCategory[cat] = [];
-      byCategory[cat].push(kw);
-    }
-    for (const cat of Object.keys(byCategory)) {
-      byCategory[cat].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
-    }
-    const newSlots = {};
-    for (const cat of [..._SM_FLOW_ORDER, 'Method']) {
-      if (_smFlowSlots[cat] && keywords.some(k => k.id === _smFlowSlots[cat])) {
-        newSlots[cat] = _smFlowSlots[cat];
-      } else if (byCategory[cat] && byCategory[cat].length > 0) {
-        newSlots[cat] = byCategory[cat][0].id;
-      }
-    }
-    _smFlowSlots = newSlots;
-
-    _smRenderFlowBar();
     _smRenderConceptPanel();
     _smRenderRelationsPanel();
   } catch (e) {
@@ -1335,67 +1315,6 @@ const loadStoryMap = async () => {
   }
 };
 
-const _smRenderFlowBar = () => {
-  const container = document.getElementById('sm-flow-nodes');
-  if (!container) return;
-  const kwById = Object.fromEntries(_smKeywords.map(k => [k.id, k]));
-  const methodKw = _smFlowSlots['Method'] ? kwById[_smFlowSlots['Method']] : null;
-  const presentSlots = _SM_FLOW_ORDER.filter(cat => _smFlowSlots[cat] != null);
-
-  if (!presentSlots.length) {
-    container.innerHTML = '<span class="sm-flow-empty">No keywords detected yet.</span>';
-    return;
-  }
-  let html = '';
-  presentSlots.forEach((cat, i) => {
-    const kw = kwById[_smFlowSlots[cat]];
-    const name = kw ? (kw.normalized_name || kw.keyword_name) : '—';
-    const color = _SM_CAT_COLORS[cat] || '#64748b';
-    let metricText = '';
-    if (cat === 'Property' && kw) {
-      const kwLow = (kw.normalized_name || kw.keyword_name || '').toLowerCase();
-      const m = _smMetrics.find(m =>
-        m.linked_keyword_id === kw.id ||
-        (m.metric_name || '').toLowerCase().includes(kwLow.substring(0, 4))
-      ) || _smMetrics[0];
-      if (m) metricText = m.metric_name + (m.value ? ' = ' + m.value : '') + (m.unit ? ' ' + m.unit : '');
-    }
-    html += `<div class="sm-flow-slot"><div class="sm-flow-node" data-cat="${cat}" data-kwid="${_smFlowSlots[cat]}" style="border-color:${color}55">
-      <div class="sm-flow-node-cat" style="color:${color}">${cat}</div>
-      <div class="sm-flow-node-name">${escHtml(name)}</div>
-      ${metricText ? `<div class="sm-flow-node-metric">${escHtml(metricText)}</div>` : ''}
-    </div></div>`;
-    if (i < presentSlots.length - 1) {
-      const sm = i === 0 && methodKw;
-      html += `<div class="sm-flow-arrow"><span class="sm-flow-arrow-line">→</span>${sm ? `<span class="sm-flow-arrow-method">(${escHtml(methodKw.normalized_name || methodKw.keyword_name)})</span>` : ''}</div>`;
-    }
-  });
-  container.innerHTML = html;
-  container.querySelectorAll('.sm-flow-node').forEach(node =>
-    node.addEventListener('click', e => { e.stopPropagation(); _smFlowDropdown(node); }));
-};
-
-const _smFlowDropdown = (node) => {
-  document.querySelectorAll('.sm-flow-dd').forEach(d => d.remove());
-  const { cat, kwid } = node.dataset;
-  const currentId = parseInt(kwid) || null;
-  const alts = _smKeywords.filter(k => k.category === cat);
-  if (alts.length <= 1) return;
-  const dd = document.createElement('div');
-  dd.className = 'sm-flow-dd';
-  alts.forEach(kw => {
-    const item = document.createElement('div');
-    item.className = 'sm-flow-dd-item' + (kw.id === currentId ? ' selected' : '');
-    item.textContent = kw.normalized_name || kw.keyword_name;
-    item.addEventListener('click', e => {
-      e.stopPropagation(); _smFlowSlots[cat] = kw.id; dd.remove(); _smRenderFlowBar();
-    });
-    dd.appendChild(item);
-  });
-  node.appendChild(dd);
-  const close = e => { if (!dd.contains(e.target)) { dd.remove(); document.removeEventListener('click', close); } };
-  setTimeout(() => document.addEventListener('click', close), 0);
-};
 
 const _smRenderConceptPanel = () => {
   const scroll = document.getElementById('sm-concept-scroll');
@@ -1517,14 +1436,12 @@ const _PG_CAT_COLORS = {
   Method: '#a855f7', Application: '#06b6d4', Metric: '#14b8a6',
   Transform: '#818cf8', Other: '#64748b',
 };
-const _PG_W    = 152;   // node width
-const _PG_KH   = 64;    // keyword node height
-const _PG_TXH  = 72;    // transform node height
-const _PG_METH = 48;    // metric node height
+const _PG_W    = 152;
+const _PG_KH   = 64;
 const _PG_COL_X = [24, 222, 420, 618];
 const _PG_VGAP  = 14;
 
-const _pgNodeH = n => n.kind === 'tx' ? _PG_TXH : n.kind === 'met' ? _PG_METH : _PG_KH;
+const _pgNodeH = n => _PG_KH + ((n.metrics||[]).length * 19);
 
 const _smFindKw = name => {
   const n = (name || '').toLowerCase().trim();
@@ -1537,36 +1454,32 @@ const _smFindKw = name => {
 const _smBuildPipelineGraph = () => {
   const nodes = new Map();
   const edges = [];
-  const CAT_COL = { Material:0, Structure:0, Method:0, Other:0, Property:2, Application:2, Metric:3 };
+  const CAT_COL = { Material:0, Structure:1, Method:1, Other:1, Property:2, Metric:2, Application:3 };
+
+  const kwMetrics = {};
+  _smMetrics.forEach(m => {
+    if (m.linked_keyword_id) {
+      if (!kwMetrics[m.linked_keyword_id]) kwMetrics[m.linked_keyword_id] = [];
+      kwMetrics[m.linked_keyword_id].push(m);
+    }
+  });
 
   _smKeywords.forEach(kw => {
     const nid = `kw_${kw.id}`;
-    nodes.set(nid, { nid, kind:'kw', type: kw.category||'Other', label: kw.normalized_name||kw.keyword_name,
-                     kwId: kw.id, confidence: kw.confidence, col: CAT_COL[kw.category]??0, x:0, y:0 });
-  });
-
-  _smMetrics.forEach(m => {
-    const nid = `met_${m.id}`;
-    const label = m.metric_name + (m.value ? ` = ${m.value}` : '') + (m.unit ? ` ${m.unit}` : '');
-    nodes.set(nid, { nid, kind:'met', type:'Metric', label, metId: m.id,
-                     linkedKwId: m.linked_keyword_id, col:3, x:0, y:0 });
+    const col = CAT_COL[kw.category] ?? 1;
+    const metrics = kwMetrics[kw.id] || [];
+    nodes.set(nid, { nid, kind:'kw', type: kw.category||'Other',
+                     label: kw.normalized_name||kw.keyword_name,
+                     kwId: kw.id, confidence: kw.confidence, col, metrics, x:0, y:0 });
   });
 
   _smRelations.forEach(rel => {
-    const txNid = `tx_${rel.id}`;
     const srcKw = _smFindKw(rel.source_name);
     const tgtKw = _smFindKw(rel.target_name);
-    nodes.set(txNid, { nid: txNid, kind:'tx', type:'Transform',
-                       label: rel.relation_type||'related_to', description: rel.evidence_text,
-                       confidence: rel.confidence, relId: rel.id,
-                       srcName: rel.source_name, tgtName: rel.target_name, col:1, x:0, y:0 });
-    if (srcKw) edges.push({ id:`es_${rel.id}`, fromNid:`kw_${srcKw.id}`, toNid: txNid });
-    if (tgtKw) edges.push({ id:`et_${rel.id}`, fromNid: txNid, toNid:`kw_${tgtKw.id}` });
-  });
-
-  _smMetrics.forEach(m => {
-    if (m.linked_keyword_id && nodes.has(`kw_${m.linked_keyword_id}`))
-      edges.push({ id:`em_${m.id}`, fromNid:`kw_${m.linked_keyword_id}`, toNid:`met_${m.id}` });
+    if (srcKw && tgtKw && srcKw.id !== tgtKw.id) {
+      edges.push({ id:`er_${rel.id}`, fromNid:`kw_${srcKw.id}`, toNid:`kw_${tgtKw.id}`,
+                   relType: rel.relation_type||'related_to' });
+    }
   });
 
   return { nodes, edges };
@@ -1589,37 +1502,26 @@ const _smLayoutPipelineGraph = graph => {
 const _smCreateNodeEl = node => {
   const el  = document.createElement('div');
   const col = _PG_CAT_COLORS[node.type] || '#64748b';
-  el.dataset.nid = node.nid;
-  el.style.cssText = `left:${node.x}px;top:${node.y}px;width:${_PG_W}px;border-color:${col}55`;
+  el.className = 'pg-node';
+  el.dataset.nid  = node.nid;
+  el.dataset.kwid = node.kwId;
+  el.style.cssText = `left:${node.x}px;top:${node.y}px;width:${_PG_W}px;border-color:${col}55;cursor:grab`;
 
-  if (node.kind === 'tx') {
-    el.className = 'pg-node';
-    el.innerHTML = `
-      <div class="pg-node-hd" style="background:${col}18;border-bottom:1px solid ${col}44">
-        <span class="pg-icon" style="color:${col}">⇉</span>
-        <span class="pg-label">${escHtml(node.label)}</span>
-        <span class="pg-conf">${Math.round((node.confidence||0)*100)}%</span>
-      </div>`;
-  } else if (node.kind === 'met') {
-    el.className = 'pg-node';
-    el.innerHTML = `
-      <div class="pg-node-hd" style="background:${col}18;border-bottom:1px solid ${col}44">
-        <span class="pg-icon" style="color:${col}">=</span>
-        <span class="pg-label">${escHtml(node.label)}</span>
-      </div>`;
-  } else {
-    el.className = 'pg-node';
-    el.dataset.kwid = node.kwId;
-    el.innerHTML = `
-      <div class="pg-node-hd" style="background:${col}18;border-bottom:1px solid ${col}44">
-        <span class="pg-icon" style="color:${col}">⬡</span>
-        <span class="pg-label">${escHtml(node.label)}</span>
-      </div>
-      <div class="pg-node-bd">
-        <span class="pg-cat" style="color:${col}">${escHtml(node.type)}</span>
-        <span class="pg-conf">${Math.round((node.confidence||0)*100)}%</span>
-      </div>`;
-  }
+  const metricsHtml = (node.metrics||[]).map(m => {
+    const val = (m.value||'') + (m.unit ? ' '+m.unit : '');
+    return `<div class="pg-met-row"><span class="pg-met-name">${escHtml(m.metric_name||'')}</span><span class="pg-met-val">${escHtml(val)}</span></div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="pg-node-hd" style="background:${col}18;border-bottom:1px solid ${col}44">
+      <span class="pg-icon" style="color:${col}">⬡</span>
+      <span class="pg-label">${escHtml(node.label)}</span>
+    </div>
+    <div class="pg-node-bd">
+      <span class="pg-cat" style="color:${col}">${escHtml(node.type)}</span>
+      <span class="pg-conf">${Math.round((node.confidence||0)*100)}%</span>
+    </div>
+    ${metricsHtml}`;
   return el;
 };
 
@@ -1690,6 +1592,20 @@ const _pgFit = () => {
   _pgOffsetX = (cw - gw * _pgScale) / 2 + (pad - minX) * _pgScale;
   _pgOffsetY = (ch - gh * _pgScale) / 2 + (pad - minY) * _pgScale;
   _pgApplyTransform();
+};
+
+const _pgRedrawAllEdges = () => {
+  const svgEl = document.getElementById('sm-pg-svg');
+  if (!svgEl) return;
+  svgEl.querySelectorAll('.pg-edge').forEach(path => {
+    const from = _smGraph.nodes.get(path.dataset.fromNid);
+    const to   = _smGraph.nodes.get(path.dataset.toNid);
+    if (!from || !to) return;
+    const x1 = from.x + _PG_W, y1 = from.y + _pgNodeH(from) / 2;
+    const x2 = to.x,           y2 = to.y   + _pgNodeH(to)   / 2;
+    const cx = (x1 + x2) / 2;
+    path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
+  });
 };
 
 const _pgInitCanvas = (canvas) => {
@@ -1780,14 +1696,33 @@ const _smRenderRelationsPanel = () => {
     svgEl.appendChild(path);
   });
 
-  // Nodes
+  // Nodes — drag to reposition, click to highlight
   nodes.forEach(node => {
     const el = _smCreateNodeEl(node);
-    el.addEventListener('click', e => {
+    let _nDragX = 0, _nDragY = 0, _nDragged = false;
+    el.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
       e.stopPropagation();
-      document.querySelectorAll('.pg-tx-popup').forEach(p => p.remove());
-      if (node.kind === 'kw') _smHighlight(node.kwId);
-      else if (node.kind === 'tx') _smShowTxPopup(node, el);
+      e.preventDefault();
+      _nDragX = e.clientX; _nDragY = e.clientY; _nDragged = false;
+      const onMove = ev => {
+        const dx = (ev.clientX - _nDragX) / _pgScale;
+        const dy = (ev.clientY - _nDragY) / _pgScale;
+        if (!_nDragged && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) _nDragged = true;
+        if (_nDragged) {
+          node.x += dx; node.y += dy;
+          el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
+          _nDragX = ev.clientX; _nDragY = ev.clientY;
+          _pgRedrawAllEdges();
+        }
+      };
+      const onUp = () => {
+        if (!_nDragged) _smHighlight(node.kwId);
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
     });
     viewport.appendChild(el);
   });

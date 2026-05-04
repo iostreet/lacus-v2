@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=13" />
+  <link rel="stylesheet" href="/static/css/style.css?v=14" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -301,16 +301,6 @@
 
       <!-- Story Map tab -->
       <div class="tab-pane" id="tab-storymap">
-        <!-- Flow Bar -->
-        <div class="sm-flow-bar">
-          <div class="sm-flow-header">
-            <span class="sm-flow-label">Paper Story — Causal Flow</span>
-            <button class="btn btn-sm btn-primary" id="refresh-graph-btn">↻ Refresh</button>
-          </div>
-          <div class="sm-flow-nodes" id="sm-flow-nodes">
-            <span class="sm-flow-empty">Loading…</span>
-          </div>
-        </div>
         <!-- Two-panel layout -->
         <div class="sm-panels">
           <div class="sm-concept-panel">
@@ -320,7 +310,10 @@
           <div class="sm-rel-panel">
             <div class="sm-panel-header">
               <span>Pipeline Graph</span>
-              <button class="btn btn-sm btn-primary" id="sm-add-rel-btn">+ Add Relation</button>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button class="btn btn-sm btn-primary" id="refresh-graph-btn">↻ Refresh</button>
+                <button class="btn btn-sm btn-primary" id="sm-add-rel-btn">+ Add Relation</button>
+              </div>
             </div>
             <div class="pg-canvas" id="sm-pg-canvas">
               <div class="pg-viewport" id="sm-pg-viewport">
@@ -500,6 +493,6 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=4"></script>
-<script src="/static/js/app.js?v=11"></script>
+<script src="/static/js/app.js?v=12"></script>
 </body>
 </html>

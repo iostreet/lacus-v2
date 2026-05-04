@@ -1147,6 +1147,14 @@ a:hover { text-decoration: underline; }
 .pg-edge.pg-edge-active { stroke: #818cf8; stroke-width: 2.5; opacity: 1; }
 .pg-edge.pg-dim { opacity: .05; }
 
+.pg-met-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 2px 10px 3px; font-size: .65rem;
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+.pg-met-name { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 58%; }
+.pg-met-val  { color: #14b8a6; font-weight: 600; flex-shrink: 0; }
+
 .pg-tx-popup {
   position: fixed; z-index: 200; width: 234px;
   background: var(--bg3); border: 1px solid var(--border);
