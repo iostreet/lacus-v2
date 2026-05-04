@@ -1088,12 +1088,32 @@ a:hover { text-decoration: underline; }
 /* ════════════════════════ PIPELINE GRAPH ════════════════════════ */
 
 .pg-canvas {
-  flex: 1; overflow: auto; position: relative; min-height: 0;
+  flex: 1; overflow: hidden; position: relative; min-height: 0; cursor: grab;
   background: var(--bg);
   background-image: radial-gradient(circle, #1a1f35 1.5px, transparent 1.5px);
   background-size: 24px 24px;
 }
+.pg-canvas:active { cursor: grabbing; }
+.pg-viewport {
+  position: absolute; top: 0; left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
 .pg-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.pg-controls {
+  position: absolute; bottom: 12px; right: 12px;
+  display: flex; flex-direction: column; gap: 4px; z-index: 10;
+}
+.pg-ctrl-btn {
+  width: 28px; height: 28px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-dim);
+  font-size: .9rem; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: color .12s, border-color .12s;
+  line-height: 1;
+}
+.pg-ctrl-btn:hover { color: var(--accent); border-color: rgba(168,85,247,.5); }
 
 .pg-node {
   position: absolute;

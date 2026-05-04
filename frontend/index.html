@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=12" />
+  <link rel="stylesheet" href="/static/css/style.css?v=13" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -323,7 +323,14 @@
               <button class="btn btn-sm btn-primary" id="sm-add-rel-btn">+ Add Relation</button>
             </div>
             <div class="pg-canvas" id="sm-pg-canvas">
-              <svg class="pg-svg" id="sm-pg-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+              <div class="pg-viewport" id="sm-pg-viewport">
+                <svg class="pg-svg" id="sm-pg-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+              </div>
+              <div class="pg-controls">
+                <button class="pg-ctrl-btn" id="pg-zoom-in"  title="Zoom in">+</button>
+                <button class="pg-ctrl-btn" id="pg-zoom-out" title="Zoom out">−</button>
+                <button class="pg-ctrl-btn" id="pg-fit-btn"  title="Fit all">⊡</button>
+              </div>
             </div>
           </div>
         </div>
@@ -493,6 +500,6 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=4"></script>
-<script src="/static/js/app.js?v=10"></script>
+<script src="/static/js/app.js?v=11"></script>
 </body>
 </html>

@@ -1274,6 +1274,13 @@ let _smRelations   = [];
 let _smMetrics     = [];
 let _smHighlightId = null;
 let _smGraph       = { nodes: new Map(), edges: [] };
+let _pgScale       = 1;
+let _pgOffsetX     = 0;
+let _pgOffsetY     = 0;
+let _pgDragging    = false;
+let _pgDragX       = 0;
+let _pgDragY       = 0;
+let _pgCanvasReady = false;
 
 const _SM_FLOW_ORDER = ['Material', 'Structure', 'Property', 'Application'];
 const _SM_CAT_COLORS = {
@@ -1587,15 +1594,12 @@ const _smCreateNodeEl = node => {
 
   if (node.kind === 'tx') {
     el.className = 'pg-node';
-    const desc = node.description
-      ? node.description.substring(0, 58) + (node.description.length > 58 ? '…' : '') : '';
     el.innerHTML = `
       <div class="pg-node-hd" style="background:${col}18;border-bottom:1px solid ${col}44">
         <span class="pg-icon" style="color:${col}">⇉</span>
         <span class="pg-label">${escHtml(node.label)}</span>
         <span class="pg-conf">${Math.round((node.confidence||0)*100)}%</span>
-      </div>
-      ${desc ? `<div class="pg-tx-desc">${escHtml(desc)}</div>` : ''}`;
+      </div>`;
   } else if (node.kind === 'met') {
     el.className = 'pg-node';
     el.innerHTML = `
@@ -1632,7 +1636,6 @@ const _smShowTxPopup = (node, anchorEl) => {
     <select class="mini-input" style="margin:0 12px;width:calc(100% - 24px)" id="pg-tx-sel">
       ${[...RELATION_TYPES,..._customRelTypes].map(t=>`<option${t===node.label?' selected':''}>${t}</option>`).join('')}
     </select>
-    ${node.description ? `<div style="padding:6px 12px 2px;font-size:.68rem;color:var(--text-muted);font-style:italic">"${escHtml(node.description.substring(0,80))}${node.description.length>80?'…':''}"</div>` : ''}
     <div class="pg-tx-popup-actions">
       <button class="btn btn-sm btn-primary pg-tx-save">Save</button>
       <button class="btn btn-sm btn-danger pg-tx-del">Delete</button>
@@ -1661,12 +1664,82 @@ const _smShowTxPopup = (node, anchorEl) => {
   setTimeout(() => document.addEventListener('click', close), 0);
 };
 
-const _smRenderRelationsPanel = () => {
-  const canvas = document.getElementById('sm-pg-canvas');
-  const svgEl  = document.getElementById('sm-pg-svg');
-  if (!canvas || !svgEl) return;
+// ─── Pan / zoom helpers ───────────────────────────────────────────────────
+const _pgApplyTransform = () => {
+  const vp = document.getElementById('sm-pg-viewport');
+  if (vp) vp.style.transform = `translate(${_pgOffsetX}px,${_pgOffsetY}px) scale(${_pgScale})`;
+};
 
-  canvas.querySelectorAll('.pg-node,.sm-empty-msg').forEach(n => n.remove());
+const _pgFit = () => {
+  const canvas = document.getElementById('sm-pg-canvas');
+  if (!canvas || !_smGraph.nodes.size) return;
+  let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+  _smGraph.nodes.forEach(n => {
+    const h = _pgNodeH(n);
+    if (n.x           < minX) minX = n.x;
+    if (n.y           < minY) minY = n.y;
+    if (n.x + _PG_W   > maxX) maxX = n.x + _PG_W;
+    if (n.y + h       > maxY) maxY = n.y + h;
+  });
+  const pad = 24;
+  const cw = canvas.clientWidth || 400;
+  const ch = canvas.clientHeight || 400;
+  const gw = maxX - minX + pad * 2;
+  const gh = maxY - minY + pad * 2;
+  _pgScale   = Math.min(1, (cw - pad) / gw, (ch - pad) / gh);
+  _pgOffsetX = (cw - gw * _pgScale) / 2 + (pad - minX) * _pgScale;
+  _pgOffsetY = (ch - gh * _pgScale) / 2 + (pad - minY) * _pgScale;
+  _pgApplyTransform();
+};
+
+const _pgInitCanvas = (canvas) => {
+  if (_pgCanvasReady) return;
+  _pgCanvasReady = true;
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const factor = e.deltaY > 0 ? 0.85 : 1.18;
+    const ns = Math.max(0.1, Math.min(4, _pgScale * factor));
+    _pgOffsetX = mx + (_pgOffsetX - mx) * (ns / _pgScale);
+    _pgOffsetY = my + (_pgOffsetY - my) * (ns / _pgScale);
+    _pgScale = ns;
+    _pgApplyTransform();
+  }, { passive: false });
+
+  const onMove = e => {
+    _pgOffsetX = e.clientX - _pgDragX;
+    _pgOffsetY = e.clientY - _pgDragY;
+    _pgApplyTransform();
+  };
+  const onUp = () => {
+    _pgDragging = false;
+    canvas.style.cursor = 'grab';
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  canvas.addEventListener('mousedown', e => {
+    if (e.button !== 0 || e.target.closest('.pg-node,.pg-ctrl-btn')) return;
+    e.preventDefault();
+    _pgDragging = true;
+    _pgDragX = e.clientX - _pgOffsetX;
+    _pgDragY = e.clientY - _pgOffsetY;
+    canvas.style.cursor = 'grabbing';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+};
+
+const _smRenderRelationsPanel = () => {
+  const canvas   = document.getElementById('sm-pg-canvas');
+  const svgEl    = document.getElementById('sm-pg-svg');
+  const viewport = document.getElementById('sm-pg-viewport');
+  if (!canvas || !svgEl || !viewport) return;
+
+  _pgInitCanvas(canvas);
+  viewport.querySelectorAll('.pg-node').forEach(n => n.remove());
+  canvas.querySelectorAll('.sm-empty-msg').forEach(n => n.remove());
   svgEl.innerHTML = '';
 
   _smGraph = _smBuildPipelineGraph();
@@ -1675,12 +1748,13 @@ const _smRenderRelationsPanel = () => {
 
   if (!nodes.size) {
     const msg = document.createElement('div');
-    msg.className = 'sm-empty-msg'; msg.style.padding = '20px';
+    msg.className = 'sm-empty-msg';
+    msg.style.cssText = 'padding:20px;position:absolute;top:0;left:0';
     msg.textContent = 'No relations yet.';
     canvas.appendChild(msg); return;
   }
 
-  // Size SVG to fit all nodes
+  // Size SVG large enough to cover all node positions
   let maxX = 0, maxY = 0;
   nodes.forEach(n => {
     maxX = Math.max(maxX, n.x + _PG_W + 24);
@@ -1688,16 +1762,14 @@ const _smRenderRelationsPanel = () => {
   });
   svgEl.setAttribute('width', maxX);
   svgEl.setAttribute('height', maxY);
-  canvas.style.minWidth  = maxX + 'px';
-  canvas.style.minHeight = maxY + 'px';
 
-  // Edges (SVG paths, rendered first so they're behind nodes)
+  // Edges (rendered first — behind nodes)
   edges.forEach(edge => {
     const from = nodes.get(edge.fromNid);
     const to   = nodes.get(edge.toNid);
     if (!from || !to) return;
-    const x1 = from.x + _PG_W,          y1 = from.y + _pgNodeH(from) / 2;
-    const x2 = to.x,                     y2 = to.y   + _pgNodeH(to)   / 2;
+    const x1 = from.x + _PG_W, y1 = from.y + _pgNodeH(from) / 2;
+    const x2 = to.x,           y2 = to.y   + _pgNodeH(to)   / 2;
     const cx = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
@@ -1708,7 +1780,7 @@ const _smRenderRelationsPanel = () => {
     svgEl.appendChild(path);
   });
 
-  // Nodes (HTML absolutely positioned)
+  // Nodes
   nodes.forEach(node => {
     const el = _smCreateNodeEl(node);
     el.addEventListener('click', e => {
@@ -1717,8 +1789,11 @@ const _smRenderRelationsPanel = () => {
       if (node.kind === 'kw') _smHighlight(node.kwId);
       else if (node.kind === 'tx') _smShowTxPopup(node, el);
     });
-    canvas.appendChild(el);
+    viewport.appendChild(el);
   });
+
+  // Auto-fit after layout paint
+  setTimeout(_pgFit, 0);
 };
 
 document.getElementById('refresh-graph-btn').addEventListener('click', async () => {
@@ -1729,6 +1804,27 @@ document.getElementById('refresh-graph-btn').addEventListener('click', async () 
 document.getElementById('sm-add-rel-btn').addEventListener('click', () => {
   document.getElementById('add-rel-modal').classList.remove('hidden');
 });
+document.getElementById('pg-zoom-in').addEventListener('click', () => {
+  const canvas = document.getElementById('sm-pg-canvas');
+  if (!canvas) return;
+  const { width: cw, height: ch } = canvas.getBoundingClientRect();
+  const mx = cw / 2, my = ch / 2;
+  const ns = Math.min(4, _pgScale * 1.25);
+  _pgOffsetX = mx + (_pgOffsetX - mx) * (ns / _pgScale);
+  _pgOffsetY = my + (_pgOffsetY - my) * (ns / _pgScale);
+  _pgScale = ns; _pgApplyTransform();
+});
+document.getElementById('pg-zoom-out').addEventListener('click', () => {
+  const canvas = document.getElementById('sm-pg-canvas');
+  if (!canvas) return;
+  const { width: cw, height: ch } = canvas.getBoundingClientRect();
+  const mx = cw / 2, my = ch / 2;
+  const ns = Math.max(0.1, _pgScale * 0.8);
+  _pgOffsetX = mx + (_pgOffsetX - mx) * (ns / _pgScale);
+  _pgOffsetY = my + (_pgOffsetY - my) * (ns / _pgScale);
+  _pgScale = ns; _pgApplyTransform();
+});
+document.getElementById('pg-fit-btn').addEventListener('click', _pgFit);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Summary tab
