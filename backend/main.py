@@ -11,7 +11,7 @@ import json
 import os
 import shutil
 import sys
-from collections import defaultdict
+from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Optional
 
@@ -277,6 +277,12 @@ class ConfirmReviewKw(BaseModel):
 class ConfirmReview(BaseModel):
     field:    Optional[str] = None
     keywords: list[ConfirmReviewKw] = []
+    theme:    Optional[str] = None
+    concept:  Optional[str] = None
+
+class ThemeConceptBody(BaseModel):
+    theme:   Optional[str] = None
+    concept: Optional[str] = None
 
 class MapGroupCreate(BaseModel):
     name:      str
@@ -502,6 +508,30 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 "confidence":   s["confidence"],
             }).execute()
 
+        # Step 7 — Auto-assign Theme/Concept
+        with contextlib.suppress(Exception):
+            title_low = title.lower()
+            kw_text   = " ".join((kw.get("normalized_name") or kw.get("keyword_name") or "") for kw in kw_data).lower()
+            text_low  = title_low * 3 + " " + kw_text * 2
+            t_scores: dict[str, int] = {}
+            for pattern, theme_name in _THEME_RULES.items():
+                if pattern in text_low:
+                    loc  = 5 if pattern in title_low else (4 if pattern in kw_text else 1)
+                    freq = min(4, text_low.count(pattern))
+                    t_scores[theme_name] = t_scores.get(theme_name, 0) + loc + freq
+            c_scores: dict[str, float] = {}
+            for kw in kw_data:
+                name = (kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
+                if len(name) >= 4 and not any(g == name.lower() for g in _GENERIC_WORDS):
+                    c_scores[name] = max(c_scores.get(name, 0.0), float(kw.get("confidence") or 0.5))
+            update: dict = {}
+            if t_scores:
+                update["theme"]   = max(t_scores, key=t_scores.get)  # type: ignore[arg-type]
+            if c_scores:
+                update["concept"] = max(c_scores, key=c_scores.get)  # type: ignore[arg-type]
+            if update:
+                sb.table("papers").update(update).eq("id", paper_id).execute()
+
         sb.table("papers").update({"status": "pending_review"}).eq("id", paper_id).execute()
         _set_progress(paper_id, "Ready to review…", 100)
 
@@ -533,6 +563,8 @@ def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
         "field_confidence": paper.get("field_confidence"),
         "field_scores":     paper.get("field_scores") or {},
         "keywords":         [_kw_to_dict(k) for k in kws],
+        "theme":            paper.get("theme"),
+        "concept":          paper.get("concept"),
     }
 
 
@@ -545,8 +577,12 @@ def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(ge
     if not paper or paper["user_id"] != user_id:
         raise HTTPException(404)
 
-    if body.field is not None:
-        sb.table("papers").update({"field": body.field}).eq("id", paper_id).execute()
+    meta: dict = {}
+    if body.field   is not None: meta["field"]   = body.field
+    if body.theme   is not None: meta["theme"]   = body.theme
+    if body.concept is not None: meta["concept"] = body.concept
+    if meta:
+        sb.table("papers").update(meta).eq("id", paper_id).execute()
 
     for kw in body.keywords:
         if not kw.include:
@@ -1104,96 +1140,219 @@ def delete_map_edge(edge_id: int, user_id: str = Depends(get_current_user)):
     return {"deleted": edge_id}
 
 
-# ── Map Overview (hierarchical from paper fields + keyword categories) ────────
+# ── Map Overview (Theme → Concept hierarchy) ─────────────────────────────────
+# Supabase migration required:
+#   ALTER TABLE papers ADD COLUMN IF NOT EXISTS theme text;
+#   ALTER TABLE papers ADD COLUMN IF NOT EXISTS concept text;
 
-_FIELD_COLORS = {
-    "Materials Science": "#22c55e", "Physics": "#3b82f6",
-    "Chemistry": "#a855f7", "Electrical Engineering": "#f59e0b",
-    "Energy Engineering": "#06b6d4", "Mechanical Engineering": "#f97316",
-    "Biomedical Engineering": "#ec4899", "Biology": "#84cc16",
-    "Computer Science": "#14b8a6", "Unknown": "#64748b",
+_THEME_COLORS = [
+    "#8b5cf6", "#3b82f6", "#06b6d4", "#22c55e",
+    "#f59e0b", "#f97316", "#ec4899", "#14b8a6",
+    "#a855f7", "#84cc16",
+]
+
+_THEME_RULES: dict[str, str] = {
+    "ferroelectric":       "Ferroelectric Materials",
+    "piezoelectric":       "Piezoelectric Materials",
+    "nanogenerator":       "Energy Harvesting",
+    "triboelectric":       "Energy Harvesting",
+    "energy harvesting":   "Energy Harvesting",
+    "energy storage":      "Energy Storage",
+    "li-ion":              "Energy Storage",
+    "lithium ion":         "Energy Storage",
+    "battery":             "Energy Storage",
+    "supercapacitor":      "Energy Storage",
+    "sensor":              "Sensors & Actuators",
+    "actuator":            "Sensors & Actuators",
+    "photovoltaic":        "Solar Energy",
+    "solar cell":          "Solar Energy",
+    "perovskite solar":    "Solar Energy",
+    "catalyst":            "Catalysis",
+    "photocatalyst":       "Catalysis",
+    "electrocatalyst":     "Catalysis",
+    "graphene":            "Carbon-based Materials",
+    "carbon nanotube":     "Carbon-based Materials",
+    "nanomaterial":        "Nanomaterials",
+    "nanoparticle":        "Nanomaterials",
+    "quantum dot":         "Quantum Materials",
+    "quantum well":        "Quantum Materials",
+    "superconductor":      "Superconductivity",
+    "superconducting":     "Superconductivity",
+    "ferromagnetic":       "Magnetic Materials",
+    "magnetic material":   "Magnetic Materials",
+    "spintronic":          "Spintronics",
+    "spin transport":      "Spintronics",
+    "dielectric":          "Dielectrics",
+    "polymer":             "Polymer Materials",
+    "composite material":  "Composite Materials",
+    "interface engineering": "Interface Physics",
+    "heterointerface":     "Interface Physics",
+    "thin film":           "Thin Film Technology",
+    "two-dimensional":     "2D Materials",
+    "2d material":         "2D Materials",
+    "heterostructure":     "2D Materials",
+    "photonic":            "Photonics",
+    "optical waveguide":   "Photonics",
+    "drug delivery":       "Biomedical Applications",
+    "bioimaging":          "Biomedical Applications",
+    "semiconductor":       "Semiconductor Devices",
+    "transistor":          "Semiconductor Devices",
+    "neuromorphic":        "Neuromorphic Computing",
+    "memristor":           "Neuromorphic Computing",
 }
-_CAT_TO_MED = {
-    "Material":    "Materials & Compositions",
-    "Structure":   "Structures & Architecture",
-    "Method":      "Synthesis & Methods",
-    "Property":    "Properties & Performance",
-    "Application": "Applications & Devices",
-}
+
+_GENERIC_WORDS = frozenset({
+    "study", "effect", "property", "properties", "performance", "material",
+    "materials", "method", "methods", "result", "results", "analysis",
+    "investigation", "behavior", "structure", "structures", "based", "using",
+    "novel", "high", "new", "improved", "enhanced", "synthesis", "fabrication",
+    "preparation", "characterization", "measurement", "experimental",
+    "theoretical", "review", "recent", "advanced", "via", "toward", "highly",
+    "efficient", "large", "small", "first", "various", "different", "application",
+})
 
 @app.get("/api/map-overview")
 def get_map_overview(user_id: str = Depends(get_current_user)):
     sb = _sb()
     papers = (sb.table("papers")
-                .select("id,title,year,field,doi,authors")
+                .select("id,title,year,field,theme,concept")
                 .eq("user_id", user_id).execute().data or [])
     if not papers:
-        return {"groups": []}
+        return {"themes": []}
 
     paper_ids = [p["id"] for p in papers]
     all_kws = (sb.table("keywords")
-                 .select("paper_id,keyword_name,normalized_name,category,confidence")
+                 .select("paper_id,keyword_name,normalized_name,confidence")
                  .in_("paper_id", paper_ids).execute().data or [])
     all_mets = (sb.table("metrics")
                   .select("paper_id,metric_name,value,unit")
                   .in_("paper_id", paper_ids).execute().data or [])
-    all_sums = (sb.table("summaries")
-                  .select("paper_id,summary_text")
-                  .eq("summary_type", "main")
-                  .in_("paper_id", paper_ids).execute().data or [])
 
-    kws_by = defaultdict(list)
+    kws_by: dict = defaultdict(list)
     for kw in all_kws:
         kws_by[kw["paper_id"]].append(kw)
-    mets_by = defaultdict(list)
+    mets_by: dict = defaultdict(list)
     for m in all_mets:
         mets_by[m["paper_id"]].append(m)
-    sums_by = {s["paper_id"]: s["summary_text"] for s in all_sums}
 
-    large_groups: dict[str, dict] = {}
+    theme_map: dict[str, dict] = {}
     for paper in papers:
-        field = paper.get("field") or "Unknown"
-        color = _FIELD_COLORS.get(field, "#64748b")
-        if field not in large_groups:
-            large_groups[field] = {"name": field, "color": color, "papers": [], "medMap": {}}
+        theme   = (paper.get("theme")   or "").strip() or "Uncategorized"
+        concept = (paper.get("concept") or "").strip() or "General"
+
+        if theme not in theme_map:
+            theme_map[theme] = {"name": theme, "papers": [], "conceptMap": {}}
 
         kws  = kws_by[paper["id"]]
         mets = mets_by[paper["id"]]
         top_kws = [(kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
                    for kw in sorted(kws, key=lambda k: -(k.get("confidence") or 0))
                    if kw.get("normalized_name") or kw.get("keyword_name")][:6]
-        top_mets = [{"name": m.get("metric_name",""), "value": m.get("value",""), "unit": m.get("unit","")}
+        top_mets = [{"name": m.get("metric_name", ""), "value": m.get("value", ""), "unit": m.get("unit", "")}
                     for m in mets if m.get("metric_name")][:4]
-        mediums  = list({_CAT_TO_MED[c] for c in {kw.get("category") for kw in kws} if c in _CAT_TO_MED})
 
         entry = {
-            "id": paper["id"], "title": (paper.get("title") or "Untitled").strip(),
-            "year": paper.get("year"), "field": field,
-            "keywords": top_kws, "metrics": top_mets,
-            "summary": sums_by.get(paper["id"]),
-            "mediums": mediums,
+            "id":      paper["id"],
+            "title":   (paper.get("title") or "Untitled").strip(),
+            "year":    paper.get("year"),
+            "field":   paper.get("field"),
+            "theme":   theme,
+            "concept": concept,
+            "keywords": top_kws,
+            "metrics":  top_mets,
         }
-        large_groups[field]["papers"].append(entry)
-        for med in mediums:
-            large_groups[field]["medMap"].setdefault(med, {"name": med, "papers": []})["papers"].append(entry)
+        theme_map[theme]["papers"].append(entry)
+        theme_map[theme]["conceptMap"].setdefault(concept, {"name": concept, "papers": []})["papers"].append(entry)
 
     result = []
-    for field, lg in sorted(large_groups.items(), key=lambda x: -len(x[1]["papers"])):
-        children = []
-        in_med: set[int] = set()
-        for med_name, mg in sorted(lg["medMap"].items(), key=lambda x: -len(x[1]["papers"])):
-            children.append({"name": med_name, "paper_count": len(mg["papers"]), "papers": mg["papers"]})
-            in_med.update(p["id"] for p in mg["papers"])
-        general = [p for p in lg["papers"] if p["id"] not in in_med]
-        if general:
-            children.append({"name": "General", "paper_count": len(general), "papers": general})
-        if not children:
-            children.append({"name": "General", "paper_count": len(lg["papers"]), "papers": lg["papers"]})
+    for i, (theme_name, td) in enumerate(sorted(theme_map.items(), key=lambda x: -len(x[1]["papers"]))):
+        concepts = [
+            {"name": cn, "paper_count": len(cd["papers"]), "papers": cd["papers"]}
+            for cn, cd in sorted(td["conceptMap"].items(), key=lambda x: -len(x[1]["papers"]))
+        ]
         result.append({
-            "name": field, "color": lg["color"],
-            "paper_count": len(lg["papers"]), "children": children,
+            "name":        theme_name,
+            "color":       _THEME_COLORS[i % len(_THEME_COLORS)],
+            "paper_count": len(td["papers"]),
+            "concepts":    concepts,
         })
-    return {"groups": result}
+    return {"themes": result}
+
+
+@app.get("/api/papers/{paper_id}/recommend-theme-concept")
+def recommend_theme_concept(paper_id: int, user_id: str = Depends(get_current_user)):
+    """Score theme and concept candidates for a paper based on its title + keywords."""
+    sb = _sb()
+    paper = (sb.table("papers").select("id,title,user_id,theme,concept")
+               .eq("id", paper_id).execute().data or [None])[0]
+    if not paper or paper["user_id"] != user_id:
+        raise HTTPException(404)
+
+    kws = (sb.table("keywords").select("keyword_name,normalized_name,confidence")
+             .eq("paper_id", paper_id).execute().data or [])
+
+    # Existing user map for similarity scoring
+    user_papers = (sb.table("papers").select("theme,concept")
+                     .eq("user_id", user_id).execute().data or [])
+    existing_themes  = Counter(p.get("theme","")   for p in user_papers if p.get("theme"))
+    existing_concepts = Counter(p.get("concept","") for p in user_papers if p.get("concept"))
+
+    title    = (paper.get("title") or "").strip()
+    kw_text  = " ".join((kw.get("normalized_name") or kw.get("keyword_name") or "") for kw in kws)
+    text_low = (title * 3 + " " + kw_text * 2).lower()
+
+    # Score themes
+    theme_scores: dict[str, float] = {}
+    for pattern, theme_name in _THEME_RULES.items():
+        if pattern in text_low:
+            cnt = text_low.count(pattern)
+            loc  = 5 if pattern in title.lower() else (4 if pattern in kw_text.lower() else 1)
+            freq = min(4, cnt)
+            sim  = 5 if theme_name in existing_themes else 0
+            theme_scores[theme_name] = theme_scores.get(theme_name, 0) + loc + freq + sim
+
+    # Score concepts from extracted keywords
+    concept_scores: dict[str, float] = {}
+    for kw in kws:
+        name = (kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
+        if not name or len(name) < 4:
+            continue
+        if any(g == name.lower() or name.lower().startswith(g + " ") for g in _GENERIC_WORDS):
+            continue
+        conf = float(kw.get("confidence") or 0.5)
+        sim  = 5 if name in existing_concepts else (2 if any(name in c for c in existing_concepts) else 0)
+        concept_scores[name] = max(concept_scores.get(name, 0.0), conf * 10 + sim)
+
+    def _normalize(scores: dict, top: int) -> list[dict]:
+        if not scores:
+            return []
+        mv = max(scores.values()) or 1
+        return sorted(
+            [{"name": k, "score": min(99, round(v / mv * 100))} for k, v in scores.items()],
+            key=lambda x: -x["score"]
+        )[:top]
+
+    return {
+        "paper_id":        paper_id,
+        "current_theme":   paper.get("theme"),
+        "current_concept": paper.get("concept"),
+        "themes":          _normalize(theme_scores, 3),
+        "concepts":        _normalize(concept_scores, 5),
+    }
+
+
+@app.put("/api/papers/{paper_id}/theme-concept")
+def set_theme_concept(paper_id: int, body: ThemeConceptBody, user_id: str = Depends(get_current_user)):
+    paper = (_sb().table("papers").select("id,user_id")
+               .eq("id", paper_id).execute().data or [None])[0]
+    if not paper or paper["user_id"] != user_id:
+        raise HTTPException(404)
+    update: dict = {}
+    if body.theme   is not None: update["theme"]   = body.theme
+    if body.concept is not None: update["concept"] = body.concept
+    if update:
+        _sb().table("papers").update(update).eq("id", paper_id).execute()
+    return {"ok": True}
 
 
 # ── Map Groups ────────────────────────────────────────────────────────────────

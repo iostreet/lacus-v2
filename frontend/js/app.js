@@ -1860,6 +1860,9 @@ const showReviewModal = async (paperId) => {
 
   _rvRenderGroups(data.keywords);
 
+  // Theme / Concept section
+  _rvRenderThemeConcept(paperId, data.theme, data.concept);
+
   // footer hint
   const total = data.keywords.length;
   document.getElementById('rv-footer-hint').textContent = `${total} keywords extracted`;
@@ -1909,10 +1912,14 @@ const showReviewModal = async (paperId) => {
           kwPayload.push({ id, category: st.category, include: st.include });
         }
       }
-      const field = fieldSel.value || data.field;
+      const field   = fieldSel.value || data.field;
+      const themeEl = document.getElementById('rv-tc-theme-input');
+      const concEl  = document.getElementById('rv-tc-concept-input');
+      const theme   = themeEl ? themeEl.value.trim() || null : null;
+      const concept = concEl  ? concEl.value.trim()  || null : null;
       await apiFetch(`/papers/${paperId}/confirm`, {
         method: 'POST',
-        body: JSON.stringify({ field, keywords: kwPayload }),
+        body: JSON.stringify({ field, keywords: kwPayload, theme, concept }),
       });
       closeOverlay();
       await loadPapers();
@@ -1923,6 +1930,63 @@ const showReviewModal = async (paperId) => {
       newSave.textContent = 'Save to DB →';
     }
   });
+};
+
+const _rvRenderThemeConcept = async (paperId, currentTheme, currentConcept) => {
+  // Inject container after the keywords section if not already present
+  let sec = document.getElementById('rv-tc-section');
+  if (!sec) {
+    sec = document.createElement('div');
+    sec.id = 'rv-tc-section';
+    sec.className = 'rv-section rv-tc-section';
+    const kwSec = document.querySelector('#rv-overlay .rv-section:last-of-type');
+    if (kwSec) kwSec.after(sec);
+  }
+  sec.innerHTML = `
+    <div class="rv-section-label">Theme &amp; Concept</div>
+    <div class="rv-tc-row">
+      <div class="rv-tc-pair">
+        <div class="rv-tc-field">
+          <div class="rv-tc-label">Theme</div>
+          <input class="rv-tc-input" id="rv-tc-theme-input" placeholder="e.g. Ferroelectric Materials" value="${escHtml(currentTheme || '')}" />
+          <div class="rv-tc-recs" id="rv-tc-theme-recs"></div>
+        </div>
+        <div class="rv-tc-field">
+          <div class="rv-tc-label">Concept</div>
+          <input class="rv-tc-input" id="rv-tc-concept-input" placeholder="e.g. Nanostructures" value="${escHtml(currentConcept || '')}" />
+          <div class="rv-tc-recs" id="rv-tc-concept-recs"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Load recommendations asynchronously
+  try {
+    const rec = await apiFetch(`/papers/${paperId}/recommend-theme-concept`);
+    const themeRecsEl   = document.getElementById('rv-tc-theme-recs');
+    const conceptRecsEl = document.getElementById('rv-tc-concept-recs');
+    const themeInput    = document.getElementById('rv-tc-theme-input');
+    const conceptInput  = document.getElementById('rv-tc-concept-input');
+    if (!themeRecsEl || !conceptRecsEl) return;
+
+    const renderRecs = (recs, container, inputEl) => {
+      container.innerHTML = '';
+      (recs || []).forEach(r => {
+        const row = document.createElement('div');
+        row.className = 'rv-tc-rec';
+        row.innerHTML = `
+          <div class="rv-tc-rec-bar"><div class="rv-tc-rec-bar-fill" style="width:${r.score}%"></div></div>
+          <span class="rv-tc-rec-name">${escHtml(r.name)}</span>
+          <span class="rv-tc-rec-pct">${r.score}%</span>
+        `;
+        row.addEventListener('click', () => { inputEl.value = r.name; container.innerHTML = ''; });
+        container.appendChild(row);
+      });
+    };
+
+    renderRecs(rec.themes,   themeRecsEl,   themeInput);
+    renderRecs(rec.concepts, conceptRecsEl, conceptInput);
+  } catch (_) {}
 };
 
 const _rvRenderGroups = (keywords) => {
@@ -2012,12 +2076,11 @@ const showMapNodePanel = async ({ type, paperId, kwId, nodeData }) => {
       const isNewFormat = Array.isArray(nd.keywords) && nd.keywords.length > 0 && typeof nd.keywords[0] === 'string';
 
       if (isNewFormat) {
-        // ── New paper card layout ──────────────────────────────────────────
-        const groupPath = [nd.field, ...(nd.mediums || []).slice(0, 1)].filter(Boolean);
-        const groupPathHtml = groupPath.length
+        // ── New Map View layout (theme → concept) ─────────────────────────
+        const pathHtml = (nd.theme || nd.concept)
           ? `<div class="mnp-group-path">
-              <span class="mnp-gp-lg">${escHtml(groupPath[0])}</span>
-              ${groupPath[1] ? `<span class="mnp-gp-sep">›</span><span class="mnp-gp-med">${escHtml(groupPath[1])}</span>` : ''}
+              ${nd.theme   ? `<span class="mnp-gp-lg">${escHtml(nd.theme)}</span>` : ''}
+              ${nd.concept ? `<span class="mnp-gp-sep">›</span><span class="mnp-gp-med">${escHtml(nd.concept)}</span>` : ''}
             </div>`
           : '';
         const kwHtml = (nd.keywords || []).filter(Boolean).slice(0, 6)
@@ -2030,7 +2093,7 @@ const showMapNodePanel = async ({ type, paperId, kwId, nodeData }) => {
         body.innerHTML = `
           <div class="mnp-title">${escHtml(nd.title || 'Untitled')}</div>
           <div class="mnp-meta">${nd.year ? escHtml(nd.year) : ''}</div>
-          ${groupPathHtml}
+          ${pathHtml}
           ${kwHtml ? `<div class="mnp-section-label">Key Concepts</div><div class="mnp-kw-names">${kwHtml}</div>` : ''}
           ${metHtml ? `<div class="mnp-section-label">Metrics</div><div class="mnp-met-list">${metHtml}</div>` : ''}
           ${sumHtml}

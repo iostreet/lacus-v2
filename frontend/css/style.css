@@ -1379,7 +1379,76 @@ a:hover { text-decoration: underline; }
   flex-shrink: 0;
 }
 .mv2-edit-note svg { flex-shrink: 0; margin-top: 1px; color: var(--accent); }
+/* Edit mode removed — kept for legacy compatibility */
 .mv2-edit-sub { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── Overview: SVG graph container ── */
+.mv2-ov-graph { overflow: hidden; }
+.mv2-ov-svg-wrap {
+  flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden;
+  display: flex; align-items: flex-start;
+}
+.mv2-ov-svg-wrap svg { flex-shrink: 0; }
+
+/* ── Focus mode: concept header ── */
+.mv2-focus-concept-hd {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px 6px; flex-shrink: 0; flex-wrap: wrap;
+}
+.mv2-fc-back {
+  background: none; border: 1px solid var(--border); color: var(--text-muted);
+  border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: .8rem;
+  line-height: 1.6;
+}
+.mv2-fc-back:hover { color: var(--text); border-color: var(--accent); }
+.mv2-fc-theme { font-size: .8rem; font-weight: 600; }
+.mv2-fc-name  { font-size: .95rem; font-weight: 700; color: var(--text); }
+
+/* ── Focus mode: related concepts section ── */
+.mv2-focus-related { padding: 8px 14px 0; flex-shrink: 0; }
+.mv2-focus-rel-hd  {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted); margin-bottom: 6px;
+}
+.mv2-focus-papers-hd {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted);
+  padding: 10px 14px 4px; flex-shrink: 0;
+}
+
+/* ── Paper card: concept badge (replaces field badge) ── */
+.mv2-pc-concept {
+  font-size: .68rem; font-weight: 600;
+  padding: 1px 6px; border-radius: 999px;
+  background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.25);
+}
+
+/* ── Review modal: Theme/Concept section ── */
+.rv-tc-section { margin-top: 14px; }
+.rv-tc-row     { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.rv-tc-pair    { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rv-tc-field   { display: flex; flex-direction: column; gap: 4px; }
+.rv-tc-label   { font-size: .72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.rv-tc-input   {
+  width: 100%; box-sizing: border-box;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  padding: 5px 8px; font-size: .82rem;
+}
+.rv-tc-input:focus { outline: none; border-color: var(--accent); }
+.rv-tc-recs    { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.rv-tc-rec     {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 6px; border-radius: 4px; cursor: pointer;
+  background: rgba(255,255,255,.03);
+}
+.rv-tc-rec:hover { background: rgba(139,92,246,.1); }
+.rv-tc-rec-name { font-size: .78rem; color: var(--text-dim); flex: 1; }
+.rv-tc-rec-pct  { font-size: .72rem; color: var(--accent); font-weight: 700; min-width: 32px; text-align: right; }
+.rv-tc-rec-bar  {
+  width: 60px; height: 4px; background: var(--bg3); border-radius: 999px; overflow: hidden;
+}
+.rv-tc-rec-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
 
 /* ── Paper panel (map-node-panel) new card format ── */
 .mnp-group-path {
