@@ -509,10 +509,14 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
             }).execute()
 
         # Step 7 — Auto-assign Theme/Concept
-        with contextlib.suppress(Exception):
+        try:
             title_low = title.lower()
-            kw_text   = " ".join((kw.get("normalized_name") or kw.get("keyword_name") or "") for kw in kw_data).lower()
-            text_low  = title_low * 3 + " " + kw_text * 2
+            kw_text   = " ".join(
+                (kw.get("normalized_name") or kw.get("keyword_name") or "")
+                for kw in kw_data
+            ).lower()
+            # Use spaces between repetitions so multi-word patterns stay intact
+            text_low  = f"{title_low} {title_low} {title_low} {kw_text} {kw_text}"
             t_scores: dict[str, int] = {}
             for pattern, theme_name in _THEME_RULES.items():
                 if pattern in text_low:
@@ -524,13 +528,16 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 name = (kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
                 if len(name) >= 4 and not any(g == name.lower() for g in _GENERIC_WORDS):
                     c_scores[name] = max(c_scores.get(name, 0.0), float(kw.get("confidence") or 0.5))
-            update: dict = {}
+            auto_update: dict = {}
             if t_scores:
-                update["theme"]   = max(t_scores, key=t_scores.get)  # type: ignore[arg-type]
+                auto_update["theme"]   = max(t_scores, key=t_scores.get)  # type: ignore[arg-type]
             if c_scores:
-                update["concept"] = max(c_scores, key=c_scores.get)  # type: ignore[arg-type]
-            if update:
-                sb.table("papers").update(update).eq("id", paper_id).execute()
+                auto_update["concept"] = max(c_scores, key=c_scores.get)  # type: ignore[arg-type]
+            if auto_update:
+                sb.table("papers").update(auto_update).eq("id", paper_id).execute()
+        except Exception as step7_err:
+            # Log but don't abort — columns may not exist yet in the DB
+            print(f"[warn] Step 7 theme/concept auto-assign failed for paper {paper_id}: {step7_err}")
 
         sb.table("papers").update({"status": "pending_review"}).eq("id", paper_id).execute()
         _set_progress(paper_id, "Ready to review…", 100)
@@ -1281,63 +1288,70 @@ def get_map_overview(user_id: str = Depends(get_current_user)):
 
 @app.get("/api/papers/{paper_id}/recommend-theme-concept")
 def recommend_theme_concept(paper_id: int, user_id: str = Depends(get_current_user)):
-    """Score theme and concept candidates for a paper based on its title + keywords."""
+    """Score theme and concept candidates based on title + extracted keywords."""
     sb = _sb()
-    paper = (sb.table("papers").select("id,title,user_id,theme,concept")
+    # Use only columns guaranteed to exist (no theme/concept — avoids missing-column errors)
+    paper = (sb.table("papers").select("id,title,user_id")
                .eq("id", paper_id).execute().data or [None])[0]
     if not paper or paper["user_id"] != user_id:
         raise HTTPException(404)
 
-    kws = (sb.table("keywords").select("keyword_name,normalized_name,confidence")
-             .eq("paper_id", paper_id).execute().data or [])
+    kws = (sb.table("keywords")
+             .select("keyword_name,normalized_name,category,confidence")
+             .eq("paper_id", paper_id)
+             .order("confidence", desc=True)
+             .execute().data or [])
 
-    # Existing user map for similarity scoring
-    user_papers = (sb.table("papers").select("theme,concept")
-                     .eq("user_id", user_id).execute().data or [])
-    existing_themes  = Counter(p.get("theme","")   for p in user_papers if p.get("theme"))
-    existing_concepts = Counter(p.get("concept","") for p in user_papers if p.get("concept"))
+    if not kws and not paper.get("title"):
+        return {"paper_id": paper_id, "themes": [], "concepts": []}
 
     title    = (paper.get("title") or "").strip()
-    kw_text  = " ".join((kw.get("normalized_name") or kw.get("keyword_name") or "") for kw in kws)
-    text_low = (title * 3 + " " + kw_text * 2).lower()
+    title_low = title.lower()
+    kw_names = [
+        (kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
+        for kw in kws
+    ]
+    kw_text  = " ".join(kw_names).lower()
 
-    # Score themes
+    # Spaces between repetitions so multi-word patterns aren't broken
+    text_low = f"{title_low} {title_low} {title_low} {kw_text} {kw_text}"
+
+    # ── Score themes ──────────────────────────────────────────────────────────
     theme_scores: dict[str, float] = {}
     for pattern, theme_name in _THEME_RULES.items():
         if pattern in text_low:
-            cnt = text_low.count(pattern)
-            loc  = 5 if pattern in title.lower() else (4 if pattern in kw_text.lower() else 1)
-            freq = min(4, cnt)
-            sim  = 5 if theme_name in existing_themes else 0
-            theme_scores[theme_name] = theme_scores.get(theme_name, 0) + loc + freq + sim
+            loc  = 5 if pattern in title_low else (4 if pattern in kw_text else 1)
+            freq = min(4, text_low.count(pattern))
+            theme_scores[theme_name] = theme_scores.get(theme_name, 0) + loc + freq
 
-    # Score concepts from extracted keywords
+    # ── Score concepts from extracted keywords ────────────────────────────────
     concept_scores: dict[str, float] = {}
     for kw in kws:
         name = (kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
         if not name or len(name) < 4:
             continue
-        if any(g == name.lower() or name.lower().startswith(g + " ") for g in _GENERIC_WORDS):
+        name_low = name.lower()
+        # Skip pure generic words
+        if name_low in _GENERIC_WORDS:
+            continue
+        # Skip names that start with a generic word and are only 1 token
+        words = name_low.split()
+        if len(words) == 1 and words[0] in _GENERIC_WORDS:
             continue
         conf = float(kw.get("confidence") or 0.5)
-        sim  = 5 if name in existing_concepts else (2 if any(name in c for c in existing_concepts) else 0)
-        concept_scores[name] = max(concept_scores.get(name, 0.0), conf * 10 + sim)
+        concept_scores[name] = max(concept_scores.get(name, 0.0), conf)
 
     def _normalize(scores: dict, top: int) -> list[dict]:
         if not scores:
             return []
-        mv = max(scores.values()) or 1
-        return sorted(
-            [{"name": k, "score": min(99, round(v / mv * 100))} for k, v in scores.items()],
-            key=lambda x: -x["score"]
-        )[:top]
+        mv = max(scores.values()) or 1.0
+        ranked = sorted(scores.items(), key=lambda x: -x[1])
+        return [{"name": k, "score": min(99, round(v / mv * 100))} for k, v in ranked][:top]
 
     return {
-        "paper_id":        paper_id,
-        "current_theme":   paper.get("theme"),
-        "current_concept": paper.get("concept"),
-        "themes":          _normalize(theme_scores, 3),
-        "concepts":        _normalize(concept_scores, 5),
+        "paper_id": paper_id,
+        "themes":   _normalize(theme_scores, 3),
+        "concepts": _normalize(concept_scores, 5),
     }
 
 

@@ -1966,8 +1966,12 @@ const _rvLoadRecommendations = async (paperId) => {
     themeInput.addEventListener('input',   () => renderAlts(rec.themes,   themeAlts,   themeInput), { once: true });
     conceptInput.addEventListener('input', () => renderAlts(rec.concepts, conceptAlts, conceptInput), { once: true });
 
-  } catch (_) {
-    if (loadingEl) loadingEl.classList.add('hidden');
+  } catch (err) {
+    console.error('Recommendation API failed:', err);
+    if (loadingEl) {
+      loadingEl.classList.remove('hidden');
+      loadingEl.textContent = 'Could not load recommendations';
+    }
   }
 };
 
