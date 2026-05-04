@@ -2157,10 +2157,6 @@ tr.row-dragging { opacity: 0.45; background: rgba(168,85,247,0.08); }
   color: var(--text-muted);
 }
 .field-panel-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.kw-rereview-bar {
-  padding: 8px 0 4px;
-  display: flex;
-}
 .btn-rereview {
   font-size: 0.75rem;
   color: var(--text-muted);

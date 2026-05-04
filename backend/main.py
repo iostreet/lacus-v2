@@ -550,7 +550,12 @@ def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(ge
 
     for kw in body.keywords:
         if not kw.include:
-            sb.table("keywords").delete().eq("id", kw.id).execute()
+            with contextlib.suppress(Exception):
+                sb.table("relations").update({"source_keyword_id": None}).eq("source_keyword_id", kw.id).execute()
+            with contextlib.suppress(Exception):
+                sb.table("relations").update({"target_keyword_id": None}).eq("target_keyword_id", kw.id).execute()
+            with contextlib.suppress(Exception):
+                sb.table("keywords").delete().eq("id", kw.id).execute()
         else:
             sb.table("keywords").update({"category": kw.category}).eq("id", kw.id).execute()
 
