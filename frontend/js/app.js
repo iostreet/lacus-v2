@@ -1410,7 +1410,7 @@ const showReviewModal = async (paperId) => {
   try { data = await apiFetch(`/papers/${paperId}/review`); }
   catch (e) {
     console.error('Review fetch failed:', e);
-    toast('분석 결과를 불러오지 못했습니다: ' + (e.message || e), 'error');
+    toast('Failed to load analysis results: ' + (e.message || e), 'error');
     return;
   }
 
@@ -1443,7 +1443,7 @@ const showReviewModal = async (paperId) => {
 
   // footer hint
   const total = data.keywords.length;
-  document.getElementById('rv-footer-hint').textContent = `${total}개 키워드 추출됨`;
+  document.getElementById('rv-footer-hint').textContent = `${total} keywords extracted`;
 
   overlay.classList.remove('hidden');
 
@@ -1474,7 +1474,7 @@ const showReviewModal = async (paperId) => {
   saveBtn.replaceWith(newSave);
   newSave.addEventListener('click', async () => {
     newSave.disabled = true;
-    newSave.textContent = '저장 중…';
+    newSave.textContent = 'Saving…';
     try {
       const kwPayload = [];
       for (const [id, st] of _rvKwState.entries()) {
@@ -1497,11 +1497,11 @@ const showReviewModal = async (paperId) => {
       });
       closeOverlay();
       await loadPapers();
-      toast('저장 완료!', 'ok');
+      toast('Saved successfully!', 'ok');
     } catch (e) {
-      toast('저장 실패: ' + e.message, 'error');
+      toast('Save failed: ' + e.message, 'error');
       newSave.disabled = false;
-      newSave.textContent = 'DB에 저장 →';
+      newSave.textContent = 'Save to DB →';
     }
   });
 };

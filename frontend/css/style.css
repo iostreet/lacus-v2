@@ -2032,7 +2032,7 @@ tr.row-dragging { opacity: 0.45; background: rgba(168,85,247,0.08); }
 .rv-overlay.hidden { display: none; }
 
 .rv-box {
-  background: var(--surface);
+  background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   width: 100%; max-width: 660px;

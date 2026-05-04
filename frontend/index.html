@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=7" />
+  <link rel="stylesheet" href="/static/css/style.css?v=8" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -435,23 +435,23 @@
   <div class="rv-box" id="rv-box">
     <div class="rv-header">
       <div>
-        <div class="rv-header-title">분석 완료 — 결과 확인 및 저장</div>
+        <div class="rv-header-title">Analysis Complete — Review &amp; Save</div>
         <div class="rv-paper-title" id="rv-paper-title"></div>
       </div>
-      <button class="rv-close-btn" id="rv-close-btn" title="나중에">✕</button>
+      <button class="rv-close-btn" id="rv-close-btn" title="Later">✕</button>
     </div>
 
     <div class="rv-body">
-      <!-- 대그룹 -->
+      <!-- Research Field (대그룹) -->
       <div class="rv-section">
-        <div class="rv-section-label">대그룹 · 연구 분야</div>
+        <div class="rv-section-label">Research Field</div>
         <div class="rv-field-row">
           <span class="field-badge" id="rv-field-badge">—</span>
           <span class="rv-field-conf" id="rv-field-conf"></span>
           <div class="rv-field-alts" id="rv-field-alts"></div>
         </div>
         <select class="mini-input rv-field-select" id="rv-field-select">
-          <option value="">— 분야 변경 —</option>
+          <option value="">— change field —</option>
           <option value="Materials Science">Materials Science</option>
           <option value="Physics">Physics</option>
           <option value="Chemistry">Chemistry</option>
@@ -464,14 +464,14 @@
         </select>
       </div>
 
-      <!-- 중그룹/소그룹 키워드 -->
+      <!-- Keywords by category (중그룹 / 소그룹) -->
       <div class="rv-section">
-        <div class="rv-section-label">중그룹 / 소그룹 · 키워드
-          <span class="rv-kw-hint">체크 해제 시 DB에 저장되지 않음</span>
+        <div class="rv-section-label">Keywords by Category
+          <span class="rv-kw-hint">Unchecked items will not be saved to DB</span>
         </div>
         <div id="rv-kw-groups"></div>
         <div class="rv-add-kw-row">
-          <input class="mini-input" id="rv-new-kw-input" placeholder="키워드 추가…" />
+          <input class="mini-input" id="rv-new-kw-input" placeholder="Add keyword…" />
           <select class="mini-input" id="rv-new-kw-cat">
             <option value="Material">Material</option>
             <option value="Structure">Structure</option>
@@ -481,7 +481,7 @@
             <option value="Metric">Metric</option>
             <option value="Other">Other</option>
           </select>
-          <button class="btn btn-sm" id="rv-add-kw-btn">+ 추가</button>
+          <button class="btn btn-sm" id="rv-add-kw-btn">+ Add</button>
         </div>
       </div>
     </div>
@@ -489,8 +489,8 @@
     <div class="rv-footer">
       <span class="rv-footer-hint" id="rv-footer-hint"></span>
       <div class="rv-footer-btns">
-        <button class="btn btn-sm" id="rv-later-btn">나중에</button>
-        <button class="btn btn-sm btn-primary" id="rv-save-btn">DB에 저장 →</button>
+        <button class="btn btn-sm" id="rv-later-btn">Later</button>
+        <button class="btn btn-sm btn-primary" id="rv-save-btn">Save to DB →</button>
       </div>
     </div>
   </div>
@@ -500,6 +500,6 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=4"></script>
-<script src="/static/js/app.js?v=6"></script>
+<script src="/static/js/app.js?v=7"></script>
 </body>
 </html>
