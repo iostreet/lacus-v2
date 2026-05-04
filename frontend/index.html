@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=17" />
+  <link rel="stylesheet" href="/static/css/style.css?v=18" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -440,29 +440,26 @@
     </div>
 
     <div class="rv-body">
-      <!-- Research Field (대그룹) -->
-      <div class="rv-section">
-        <div class="rv-section-label">Research Field</div>
-        <div class="rv-field-row">
-          <span class="field-badge" id="rv-field-badge">—</span>
-          <span class="rv-field-conf" id="rv-field-conf"></span>
-          <div class="rv-field-alts" id="rv-field-alts"></div>
+      <!-- Theme & Concept — TOP -->
+      <div class="rv-section" id="rv-tc-section">
+        <div class="rv-section-label">Theme &amp; Concept
+          <span class="rv-tc-loading hidden" id="rv-tc-loading">analysing…</span>
         </div>
-        <select class="mini-input rv-field-select" id="rv-field-select">
-          <option value="">— change field —</option>
-          <option value="Materials Science">Materials Science</option>
-          <option value="Physics">Physics</option>
-          <option value="Chemistry">Chemistry</option>
-          <option value="Electrical Engineering">Electrical Engineering</option>
-          <option value="Mechanical Engineering">Mechanical Engineering</option>
-          <option value="Biology">Biology</option>
-          <option value="Biomedical Engineering">Biomedical Engineering</option>
-          <option value="Computer Science">Computer Science</option>
-          <option value="Unknown">Unknown / Other</option>
-        </select>
+        <div class="rv-tc-pair">
+          <div class="rv-tc-field">
+            <div class="rv-tc-sublabel">Theme</div>
+            <input class="rv-tc-input" id="rv-tc-theme-input" placeholder="e.g. Ferroelectric Materials" autocomplete="off" />
+            <div class="rv-tc-alts" id="rv-tc-theme-alts"></div>
+          </div>
+          <div class="rv-tc-field">
+            <div class="rv-tc-sublabel">Concept</div>
+            <input class="rv-tc-input" id="rv-tc-concept-input" placeholder="e.g. Nanostructures" autocomplete="off" />
+            <div class="rv-tc-alts" id="rv-tc-concept-alts"></div>
+          </div>
+        </div>
       </div>
 
-      <!-- Keywords by category (중그룹 / 소그룹) -->
+      <!-- Keywords by category -->
       <div class="rv-section">
         <div class="rv-section-label">Keywords by Category
           <span class="rv-kw-hint">Unchecked items will not be saved to DB</span>
@@ -546,6 +543,6 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=6"></script>
-<script src="/static/js/app.js?v=15"></script>
+<script src="/static/js/app.js?v=16"></script>
 </body>
 </html>

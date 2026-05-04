@@ -1839,29 +1839,14 @@ const showReviewModal = async (paperId) => {
   const overlay = document.getElementById('rv-overlay');
   document.getElementById('rv-paper-title').textContent = data.title || '';
 
-  // 대그룹
-  const badge = document.getElementById('rv-field-badge');
-  badge.textContent = data.field || '—';
-  document.getElementById('rv-field-conf').textContent = data.field_confidence != null
-    ? `${Math.round(data.field_confidence * 100)}% confidence` : '';
-  const altsEl = document.getElementById('rv-field-alts');
-  altsEl.innerHTML = '';
-  const topKey = (data.field || '').toLowerCase().replace(/\s+/g, '_');
-  Object.entries(data.field_scores || {})
-    .filter(([k]) => k !== topKey)
-    .sort(([,a],[,b]) => b - a).slice(0, 3)
-    .forEach(([k, v]) => {
-      const s = document.createElement('span');
-      s.textContent = `${_fieldKeyToDisplay(k)}: ${Math.round(v * 100)}%`;
-      altsEl.appendChild(s);
-    });
-  const fieldSel = document.getElementById('rv-field-select');
-  fieldSel.value = data.field || '';
+  // Pre-fill Theme & Concept with auto-assigned values, then load recommendations
+  document.getElementById('rv-tc-theme-input').value   = data.theme   || '';
+  document.getElementById('rv-tc-concept-input').value = data.concept || '';
+  document.getElementById('rv-tc-theme-alts').innerHTML   = '';
+  document.getElementById('rv-tc-concept-alts').innerHTML = '';
+  _rvLoadRecommendations(paperId);
 
   _rvRenderGroups(data.keywords);
-
-  // Theme / Concept section
-  _rvRenderThemeConcept(paperId, data.theme, data.concept);
 
   // footer hint
   const total = data.keywords.length;
@@ -1912,11 +1897,9 @@ const showReviewModal = async (paperId) => {
           kwPayload.push({ id, category: st.category, include: st.include });
         }
       }
-      const field   = fieldSel.value || data.field;
-      const themeEl = document.getElementById('rv-tc-theme-input');
-      const concEl  = document.getElementById('rv-tc-concept-input');
-      const theme   = themeEl ? themeEl.value.trim() || null : null;
-      const concept = concEl  ? concEl.value.trim()  || null : null;
+      const field   = data.field || null; // kept internally, not shown in UI
+      const theme   = (document.getElementById('rv-tc-theme-input')?.value.trim())   || null;
+      const concept = (document.getElementById('rv-tc-concept-input')?.value.trim()) || null;
       await apiFetch(`/papers/${paperId}/confirm`, {
         method: 'POST',
         body: JSON.stringify({ field, keywords: kwPayload, theme, concept }),
@@ -1932,61 +1915,60 @@ const showReviewModal = async (paperId) => {
   });
 };
 
-const _rvRenderThemeConcept = async (paperId, currentTheme, currentConcept) => {
-  // Inject container after the keywords section if not already present
-  let sec = document.getElementById('rv-tc-section');
-  if (!sec) {
-    sec = document.createElement('div');
-    sec.id = 'rv-tc-section';
-    sec.className = 'rv-section rv-tc-section';
-    const kwSec = document.querySelector('#rv-overlay .rv-section:last-of-type');
-    if (kwSec) kwSec.after(sec);
-  }
-  sec.innerHTML = `
-    <div class="rv-section-label">Theme &amp; Concept</div>
-    <div class="rv-tc-row">
-      <div class="rv-tc-pair">
-        <div class="rv-tc-field">
-          <div class="rv-tc-label">Theme</div>
-          <input class="rv-tc-input" id="rv-tc-theme-input" placeholder="e.g. Ferroelectric Materials" value="${escHtml(currentTheme || '')}" />
-          <div class="rv-tc-recs" id="rv-tc-theme-recs"></div>
-        </div>
-        <div class="rv-tc-field">
-          <div class="rv-tc-label">Concept</div>
-          <input class="rv-tc-input" id="rv-tc-concept-input" placeholder="e.g. Nanostructures" value="${escHtml(currentConcept || '')}" />
-          <div class="rv-tc-recs" id="rv-tc-concept-recs"></div>
-        </div>
-      </div>
-    </div>
-  `;
+const _rvLoadRecommendations = async (paperId) => {
+  const loadingEl = document.getElementById('rv-tc-loading');
+  if (loadingEl) loadingEl.classList.remove('hidden');
 
-  // Load recommendations asynchronously
   try {
     const rec = await apiFetch(`/papers/${paperId}/recommend-theme-concept`);
-    const themeRecsEl   = document.getElementById('rv-tc-theme-recs');
-    const conceptRecsEl = document.getElementById('rv-tc-concept-recs');
-    const themeInput    = document.getElementById('rv-tc-theme-input');
-    const conceptInput  = document.getElementById('rv-tc-concept-input');
-    if (!themeRecsEl || !conceptRecsEl) return;
+    if (loadingEl) loadingEl.classList.add('hidden');
 
-    const renderRecs = (recs, container, inputEl) => {
+    const themeInput   = document.getElementById('rv-tc-theme-input');
+    const conceptInput = document.getElementById('rv-tc-concept-input');
+    const themeAlts    = document.getElementById('rv-tc-theme-alts');
+    const conceptAlts  = document.getElementById('rv-tc-concept-alts');
+    if (!themeInput || !conceptInput) return;
+
+    // Pre-fill with top recommendation if input is still empty
+    const topTheme   = rec.themes?.[0];
+    const topConcept = rec.concepts?.[0];
+    if (topTheme   && !themeInput.value)   themeInput.value   = topTheme.name;
+    if (topConcept && !conceptInput.value) conceptInput.value = topConcept.name;
+
+    // Render alternatives (skip the one already in the input)
+    const renderAlts = (recs, container, inputEl) => {
+      if (!container) return;
       container.innerHTML = '';
-      (recs || []).forEach(r => {
-        const row = document.createElement('div');
-        row.className = 'rv-tc-rec';
-        row.innerHTML = `
-          <div class="rv-tc-rec-bar"><div class="rv-tc-rec-bar-fill" style="width:${r.score}%"></div></div>
-          <span class="rv-tc-rec-name">${escHtml(r.name)}</span>
-          <span class="rv-tc-rec-pct">${r.score}%</span>
-        `;
-        row.addEventListener('click', () => { inputEl.value = r.name; container.innerHTML = ''; });
-        container.appendChild(row);
+      const current = inputEl.value.trim().toLowerCase();
+      const alts = (recs || []).filter(r => r.name.toLowerCase() !== current).slice(0, 3);
+      if (!alts.length) return;
+      const label = document.createElement('span');
+      label.className = 'rv-tc-alts-label';
+      label.textContent = 'Other suggestions:';
+      container.appendChild(label);
+      alts.forEach(r => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'rv-tc-alt-chip';
+        chip.innerHTML = `${escHtml(r.name)} <span class="rv-tc-alt-pct">${r.score}%</span>`;
+        chip.addEventListener('click', () => {
+          inputEl.value = r.name;
+          renderAlts(recs, container, inputEl); // refresh alts excluding new value
+        });
+        container.appendChild(chip);
       });
     };
 
-    renderRecs(rec.themes,   themeRecsEl,   themeInput);
-    renderRecs(rec.concepts, conceptRecsEl, conceptInput);
-  } catch (_) {}
+    renderAlts(rec.themes,   themeAlts,   themeInput);
+    renderAlts(rec.concepts, conceptAlts, conceptInput);
+
+    // Re-render alts when user manually edits the inputs
+    themeInput.addEventListener('input',   () => renderAlts(rec.themes,   themeAlts,   themeInput), { once: true });
+    conceptInput.addEventListener('input', () => renderAlts(rec.concepts, conceptAlts, conceptInput), { once: true });
+
+  } catch (_) {
+    if (loadingEl) loadingEl.classList.add('hidden');
+  }
 };
 
 const _rvRenderGroups = (keywords) => {

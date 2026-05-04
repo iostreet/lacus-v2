@@ -1494,31 +1494,39 @@ a:hover { text-decoration: underline; }
 }
 
 /* ── Review modal: Theme/Concept section ── */
-.rv-tc-section { margin-top: 14px; }
-.rv-tc-row     { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-.rv-tc-pair    { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.rv-tc-field   { display: flex; flex-direction: column; gap: 4px; }
-.rv-tc-label   { font-size: .72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+/* Theme & Concept — review modal top section */
+.rv-tc-loading {
+  font-size: .7rem; color: var(--text-muted); margin-left: 6px;
+  font-weight: 400; font-style: italic; animation: pulse 1.2s infinite;
+}
+.rv-tc-loading.hidden { display: none; }
+.rv-tc-pair    { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.rv-tc-field   { display: flex; flex-direction: column; gap: 5px; }
+.rv-tc-sublabel {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted);
+}
 .rv-tc-input   {
   width: 100%; box-sizing: border-box;
   background: var(--bg3); border: 1px solid var(--border);
   border-radius: var(--radius-sm); color: var(--text);
-  padding: 5px 8px; font-size: .82rem;
+  padding: 7px 10px; font-size: .88rem; font-weight: 500;
 }
-.rv-tc-input:focus { outline: none; border-color: var(--accent); }
-.rv-tc-recs    { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
-.rv-tc-rec     {
-  display: flex; align-items: center; gap: 8px;
-  padding: 3px 6px; border-radius: 4px; cursor: pointer;
-  background: rgba(255,255,255,.03);
+.rv-tc-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,92,246,.18); }
+/* Alternatives row */
+.rv-tc-alts { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-height: 20px; }
+.rv-tc-alts-label {
+  font-size: .67rem; color: var(--text-muted); white-space: nowrap;
 }
-.rv-tc-rec:hover { background: rgba(139,92,246,.1); }
-.rv-tc-rec-name { font-size: .78rem; color: var(--text-dim); flex: 1; }
-.rv-tc-rec-pct  { font-size: .72rem; color: var(--accent); font-weight: 700; min-width: 32px; text-align: right; }
-.rv-tc-rec-bar  {
-  width: 60px; height: 4px; background: var(--bg3); border-radius: 999px; overflow: hidden;
+.rv-tc-alt-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .72rem; padding: 2px 8px; border-radius: 999px; cursor: pointer;
+  background: rgba(139,92,246,.08); color: var(--text-dim);
+  border: 1px solid rgba(139,92,246,.22);
+  transition: background .12s, color .12s;
 }
-.rv-tc-rec-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+.rv-tc-alt-chip:hover { background: rgba(139,92,246,.2); color: var(--accent); border-color: rgba(139,92,246,.5); }
+.rv-tc-alt-pct { font-size: .65rem; color: var(--accent); font-weight: 700; }
 
 /* ── Paper panel (map-node-panel) new card format ── */
 .mnp-group-path {
