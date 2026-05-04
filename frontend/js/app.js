@@ -1408,7 +1408,11 @@ const _rvKwState = new Map(); // id → {category, include}
 const showReviewModal = async (paperId) => {
   let data;
   try { data = await apiFetch(`/papers/${paperId}/review`); }
-  catch (_) { toast('분석 결과를 불러오지 못했습니다.', 'error'); return; }
+  catch (e) {
+    console.error('Review fetch failed:', e);
+    toast('분석 결과를 불러오지 못했습니다: ' + (e.message || e), 'error');
+    return;
+  }
 
   _rvKwState.clear();
   data.keywords.forEach(kw => _rvKwState.set(kw.id, { category: kw.category, include: true }));

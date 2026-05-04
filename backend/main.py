@@ -518,7 +518,7 @@ async def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
     """Return field + extracted keywords for the post-analysis review modal."""
     sb = _sb()
     paper = (sb.table("papers")
-               .select("id, user_id, title, field, field_confidence, field_scores, status")
+               .select("*")
                .eq("id", paper_id).execute().data or [None])[0]
     if not paper or paper["user_id"] != user_id:
         raise HTTPException(404)
