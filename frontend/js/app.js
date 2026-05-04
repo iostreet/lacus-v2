@@ -233,6 +233,7 @@ const renderPaperCards = (list) => {
         ${paper.year    ? `<span class="card-tag tag-year">${escHtml(paper.year)}</span>` : ''}
         ${paper.journal ? `<span class="card-tag tag-journal">${escHtml(paper.journal)}</span>` : ''}
         <span class="card-tag tag-status-${paper.status}">${paper.status}</span>
+        ${paper.field   ? `<span class="card-field-badge">${escHtml(paper.field)}</span>` : ''}
       </div>
       <div class="card-one-liner">${escHtml(paper.one_liner || '')}</div>
       <div class="card-footer">
@@ -715,7 +716,64 @@ const _updateKwBulkBar = () => {
   }
 };
 
+// ── Field classification panel ────────────────────────────────────────────────
+const _fieldKeyToDisplay = (key) =>
+  (key || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+const loadFieldPanel = async () => {
+  const panel      = document.getElementById('field-panel');
+  const badgeName  = document.getElementById('field-badge-name');
+  const confText   = document.getElementById('field-confidence-text');
+  const altScores  = document.getElementById('field-alt-scores');
+  const overrideSel = document.getElementById('field-override-select');
+  const confirmBtn = document.getElementById('field-confirm-btn');
+  if (!panel) return;
+
+  let paper;
+  try { paper = await apiFetch(`/papers/${activePaperId}`); }
+  catch (_) { return; }
+
+  if (!paper.field) { panel.classList.add('hidden'); return; }
+
+  panel.classList.remove('hidden');
+  badgeName.textContent = paper.field;
+  confText.textContent  = paper.field_confidence != null
+    ? `${Math.round(paper.field_confidence * 100)}% confidence` : '';
+
+  altScores.innerHTML = '';
+  const scores = paper.field_scores || {};
+  const topKey = paper.field.toLowerCase().replace(/\s+/g, '_');
+  Object.entries(scores)
+    .filter(([k]) => k !== topKey)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3)
+    .forEach(([k, v]) => {
+      const span = document.createElement('span');
+      span.textContent = `${_fieldKeyToDisplay(k)}: ${Math.round(v * 100)}%`;
+      altScores.appendChild(span);
+    });
+
+  overrideSel.value = paper.field;
+
+  const newBtn = confirmBtn.cloneNode(true);
+  confirmBtn.replaceWith(newBtn);
+  newBtn.addEventListener('click', async () => {
+    const chosen = overrideSel.value || paper.field;
+    try {
+      await apiFetch(`/papers/${activePaperId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ field: chosen }),
+      });
+      badgeName.textContent = chosen;
+      paper.field = chosen;
+      toast('Research field confirmed.', 'ok');
+      await loadPapers();
+    } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+  });
+};
+
 const loadKeywords = async () => {
+  await loadFieldPanel();
   const keywords = await apiFetch(`/papers/${activePaperId}/keywords`);
   document.getElementById('kw-count-label').textContent = `${keywords.length} keywords`;
   selectedKwIds.clear();

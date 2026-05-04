@@ -37,6 +37,7 @@ from processors.keyword_extractor import extract_keywords
 from processors.metric_extractor  import extract_metrics
 from processors.relation_extractor import extract_relations
 from processors.summary_generator  import generate_summaries
+from processors.field_classifier   import detect_field
 
 # ── In-memory progress tracker ───────────────────────────────────────────────
 _progress: dict[int, dict] = {}
@@ -218,14 +219,16 @@ class MetricUpdate(BaseModel):
     confidence:  Optional[float] = None
 
 class PaperUpdate(BaseModel):
-    title:     Optional[str] = None
-    authors:   Optional[str] = None
-    doi:       Optional[str] = None
-    journal:   Optional[str] = None
-    year:      Optional[str] = None
-    abstract:  Optional[str] = None
-    relevance: Optional[int] = None
-    memo:      Optional[str] = None
+    title:            Optional[str]   = None
+    authors:          Optional[str]   = None
+    doi:              Optional[str]   = None
+    journal:          Optional[str]   = None
+    year:             Optional[str]   = None
+    abstract:         Optional[str]   = None
+    relevance:        Optional[int]   = None
+    memo:             Optional[str]   = None
+    field:            Optional[str]   = None
+    field_confidence: Optional[float] = None
 
 class ReorderItem(BaseModel):
     id:    int
@@ -294,18 +297,21 @@ def _paper_to_dict(p: dict) -> dict:
     except (json.JSONDecodeError, ValueError):
         authors = [a.strip() for a in (p.get("authors") or "").split(",") if a.strip()]
     return {
-        "id":         p["id"],
-        "title":      p.get("title")    or "",
-        "authors":    authors,
-        "doi":        p.get("doi")      or "",
-        "journal":    p.get("journal")  or "",
-        "year":       p.get("year")     or "",
-        "abstract":   p.get("abstract") or "",
-        "pdf_path":   p.get("pdf_path") or "",
-        "status":     p.get("status", "draft"),
-        "created_at": str(p.get("created_at", "")),
-        "relevance":  p.get("relevance") or 0,
-        "memo":       p.get("memo")      or "",
+        "id":               p["id"],
+        "title":            p.get("title")    or "",
+        "authors":          authors,
+        "doi":              p.get("doi")      or "",
+        "journal":          p.get("journal")  or "",
+        "year":             p.get("year")     or "",
+        "abstract":         p.get("abstract") or "",
+        "pdf_path":         p.get("pdf_path") or "",
+        "status":           p.get("status", "draft"),
+        "created_at":       str(p.get("created_at", "")),
+        "relevance":        p.get("relevance") or 0,
+        "memo":             p.get("memo")      or "",
+        "field":            p.get("field"),
+        "field_confidence": p.get("field_confidence"),
+        "field_scores":     p.get("field_scores") or {},
     }
 
 
@@ -432,7 +438,19 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
             if res.data:
                 kw_id_map[kw["normalized_name"].lower()] = res.data[0]["id"]
 
-        # Step 3 — Metrics
+        # Step 3b — Field detection
+        _set_progress(paper_id, "Detecting research field…", 42)
+        try:
+            field_name, field_conf, field_scores = detect_field(sections)
+            sb.table("papers").update({
+                "field":            field_name,
+                "field_confidence": field_conf,
+                "field_scores":     field_scores,
+            }).eq("id", paper_id).execute()
+        except Exception:
+            pass  # non-critical — don't abort pipeline
+
+        # Step 4 — Metrics
         _set_progress(paper_id, "Extracting performance metrics…", 52)
         for met in extract_metrics(sections):
             sb.table("metrics").insert({
@@ -936,6 +954,7 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
             "pos_x":        pos["pos_x"] if pos else None,
             "pos_y":        pos["pos_y"] if pos else None,
             "expanded":     expanded,
+            "field":        paper.get("field"),
         }
         if expanded:
             full_kws = (_sb().table("keywords").select("*").eq("paper_id", paper["id"]).execute().data or [])
