@@ -2006,39 +2006,71 @@ const showMapNodePanel = async ({ type, paperId, kwId, nodeData }) => {
     if (type === 'paper') {
       if (lbl) lbl.textContent = 'Paper';
       if (openBtn) openBtn.style.display = '';
-      const p = papers.find(x => x.id === paperId) || await apiFetch(`/papers/${paperId}`);
-      const kwCats = { Material:0, Structure:0, Method:0, Property:0, Application:0, Metric:0, Other:0 };
-      (await apiFetch(`/papers/${paperId}/keywords`)).forEach(k => { if (kwCats[k.category] !== undefined) kwCats[k.category]++; });
-      body.innerHTML = `
-        <div class="mnp-title">${escHtml(p.title || 'Untitled')}</div>
-        <div class="mnp-meta">${[p.year, p.journal].filter(Boolean).map(escHtml).join(' · ')}</div>
-        ${p.authors ? `<div class="mnp-meta" style="margin-bottom:8px">${escHtml((p.authors || []).slice(0,3).join(', '))}</div>` : ''}
-        <div class="mnp-kw-chips" style="margin-bottom:10px">
-          ${Object.entries(kwCats).filter(([,v])=>v>0).map(([cat,cnt])=>{
-            const col=_CAT_COLORS[cat]||'#64748b';
-            return `<span class="mnp-kw-chip" style="color:${col};border-color:${col}44">${escHtml(cat)} ${cnt}</span>`;
-          }).join('')}
-        </div>
-        <hr class="mnp-divider">
-        <div class="mnp-section-label">Relevance</div>
-        <div id="mnp-stars" style="display:flex;gap:6px;margin-bottom:10px">
-          ${[1,2,3,4,5].map(n=>`<span class="mnp-star" data-v="${n}" style="cursor:pointer;font-size:1.2rem;color:${(p.relevance||0)>=n?'#eab308':'#334155'}" title="${n}">★</span>`).join('')}
-        </div>
-        <div class="mnp-section-label">Memo</div>
-        <textarea id="mnp-memo" class="mv-nd-textarea" rows="4" style="margin-bottom:8px">${escHtml(p.memo||'')}</textarea>
-        <button class="btn btn-sm btn-primary" id="mnp-paper-save" style="width:100%">Save Memo</button>
-      `;
-      let selRel = p.relevance || 0;
-      body.querySelectorAll('.mnp-star').forEach(s => {
-        s.onclick = () => {
-          selRel = parseInt(s.dataset.v);
-          body.querySelectorAll('.mnp-star').forEach(x => { x.style.color = parseInt(x.dataset.v) <= selRel ? '#eab308' : '#334155'; });
+
+      // New Map View passes pre-fetched data in nodeData (has keywords[], metrics[], summary, mediums[])
+      const nd = nodeData || {};
+      const isNewFormat = Array.isArray(nd.keywords) && nd.keywords.length > 0 && typeof nd.keywords[0] === 'string';
+
+      if (isNewFormat) {
+        // ── New paper card layout ──────────────────────────────────────────
+        const groupPath = [nd.field, ...(nd.mediums || []).slice(0, 1)].filter(Boolean);
+        const groupPathHtml = groupPath.length
+          ? `<div class="mnp-group-path">
+              <span class="mnp-gp-lg">${escHtml(groupPath[0])}</span>
+              ${groupPath[1] ? `<span class="mnp-gp-sep">›</span><span class="mnp-gp-med">${escHtml(groupPath[1])}</span>` : ''}
+            </div>`
+          : '';
+        const kwHtml = (nd.keywords || []).filter(Boolean).slice(0, 6)
+          .map(k => `<span class="mnp-kw-name-chip">${escHtml(k)}</span>`).join('');
+        const metHtml = (nd.metrics || []).filter(m => m.name).slice(0, 4)
+          .map(m => `<div class="mnp-met-row"><span class="mnp-met-row-name">${escHtml(m.name)}</span><span class="mnp-met-row-val">${escHtml(m.value||'')}${m.unit?' '+escHtml(m.unit):''}</span></div>`).join('');
+        const sumHtml = nd.summary
+          ? `<div class="mnp-section-label">Core Summary</div><div class="mnp-summary-text">${escHtml(nd.summary)}</div>` : '';
+
+        body.innerHTML = `
+          <div class="mnp-title">${escHtml(nd.title || 'Untitled')}</div>
+          <div class="mnp-meta">${nd.year ? escHtml(nd.year) : ''}</div>
+          ${groupPathHtml}
+          ${kwHtml ? `<div class="mnp-section-label">Key Concepts</div><div class="mnp-kw-names">${kwHtml}</div>` : ''}
+          ${metHtml ? `<div class="mnp-section-label">Metrics</div><div class="mnp-met-list">${metHtml}</div>` : ''}
+          ${sumHtml}
+        `;
+      } else {
+        // ── Legacy layout (old Map View / Cytoscape) ──────────────────────
+        const p = papers.find(x => x.id === paperId) || await apiFetch(`/papers/${paperId}`);
+        const kwCats = { Material:0, Structure:0, Method:0, Property:0, Application:0, Metric:0, Other:0 };
+        (await apiFetch(`/papers/${paperId}/keywords`)).forEach(k => { if (kwCats[k.category] !== undefined) kwCats[k.category]++; });
+        body.innerHTML = `
+          <div class="mnp-title">${escHtml(p.title || 'Untitled')}</div>
+          <div class="mnp-meta">${[p.year, p.journal].filter(Boolean).map(escHtml).join(' · ')}</div>
+          ${p.authors ? `<div class="mnp-meta" style="margin-bottom:8px">${escHtml((p.authors || []).slice(0,3).join(', '))}</div>` : ''}
+          <div class="mnp-kw-chips" style="margin-bottom:10px">
+            ${Object.entries(kwCats).filter(([,v])=>v>0).map(([cat,cnt])=>{
+              const col=_CAT_COLORS[cat]||'#64748b';
+              return `<span class="mnp-kw-chip" style="color:${col};border-color:${col}44">${escHtml(cat)} ${cnt}</span>`;
+            }).join('')}
+          </div>
+          <hr class="mnp-divider">
+          <div class="mnp-section-label">Relevance</div>
+          <div id="mnp-stars" style="display:flex;gap:6px;margin-bottom:10px">
+            ${[1,2,3,4,5].map(n=>`<span class="mnp-star" data-v="${n}" style="cursor:pointer;font-size:1.2rem;color:${(p.relevance||0)>=n?'#eab308':'#334155'}" title="${n}">★</span>`).join('')}
+          </div>
+          <div class="mnp-section-label">Memo</div>
+          <textarea id="mnp-memo" class="mv-nd-textarea" rows="4" style="margin-bottom:8px">${escHtml(p.memo||'')}</textarea>
+          <button class="btn btn-sm btn-primary" id="mnp-paper-save" style="width:100%">Save Memo</button>
+        `;
+        let selRel = p.relevance || 0;
+        body.querySelectorAll('.mnp-star').forEach(s => {
+          s.onclick = () => {
+            selRel = parseInt(s.dataset.v);
+            body.querySelectorAll('.mnp-star').forEach(x => { x.style.color = parseInt(x.dataset.v) <= selRel ? '#eab308' : '#334155'; });
+          };
+        });
+        body.querySelector('#mnp-paper-save').onclick = async () => {
+          const memo = body.querySelector('#mnp-memo').value;
+          try { await apiFetch(`/papers/${paperId}`, { method: 'PUT', body: JSON.stringify({ memo, relevance: selRel }) }); toast('Saved', 'ok'); } catch(e) { toast(e.message, 'error'); }
         };
-      });
-      body.querySelector('#mnp-paper-save').onclick = async () => {
-        const memo = body.querySelector('#mnp-memo').value;
-        try { await apiFetch(`/papers/${paperId}`, { method: 'PUT', body: JSON.stringify({ memo, relevance: selRel }) }); toast('Saved', 'ok'); } catch(e) { toast(e.message, 'error'); }
-      };
+      }
 
     } else if (type === 'keyword') {
       if (lbl) lbl.textContent = 'Keyword';

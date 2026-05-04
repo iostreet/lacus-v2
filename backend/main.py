@@ -1104,6 +1104,98 @@ def delete_map_edge(edge_id: int, user_id: str = Depends(get_current_user)):
     return {"deleted": edge_id}
 
 
+# ── Map Overview (hierarchical from paper fields + keyword categories) ────────
+
+_FIELD_COLORS = {
+    "Materials Science": "#22c55e", "Physics": "#3b82f6",
+    "Chemistry": "#a855f7", "Electrical Engineering": "#f59e0b",
+    "Energy Engineering": "#06b6d4", "Mechanical Engineering": "#f97316",
+    "Biomedical Engineering": "#ec4899", "Biology": "#84cc16",
+    "Computer Science": "#14b8a6", "Unknown": "#64748b",
+}
+_CAT_TO_MED = {
+    "Material":    "Materials & Compositions",
+    "Structure":   "Structures & Architecture",
+    "Method":      "Synthesis & Methods",
+    "Property":    "Properties & Performance",
+    "Application": "Applications & Devices",
+}
+
+@app.get("/api/map-overview")
+def get_map_overview(user_id: str = Depends(get_current_user)):
+    sb = _sb()
+    papers = (sb.table("papers")
+                .select("id,title,year,field,doi,authors")
+                .eq("user_id", user_id).execute().data or [])
+    if not papers:
+        return {"groups": []}
+
+    paper_ids = [p["id"] for p in papers]
+    all_kws = (sb.table("keywords")
+                 .select("paper_id,keyword_name,normalized_name,category,confidence")
+                 .in_("paper_id", paper_ids).execute().data or [])
+    all_mets = (sb.table("metrics")
+                  .select("paper_id,metric_name,value,unit")
+                  .in_("paper_id", paper_ids).execute().data or [])
+    all_sums = (sb.table("summaries")
+                  .select("paper_id,summary_text")
+                  .eq("summary_type", "main")
+                  .in_("paper_id", paper_ids).execute().data or [])
+
+    kws_by = defaultdict(list)
+    for kw in all_kws:
+        kws_by[kw["paper_id"]].append(kw)
+    mets_by = defaultdict(list)
+    for m in all_mets:
+        mets_by[m["paper_id"]].append(m)
+    sums_by = {s["paper_id"]: s["summary_text"] for s in all_sums}
+
+    large_groups: dict[str, dict] = {}
+    for paper in papers:
+        field = paper.get("field") or "Unknown"
+        color = _FIELD_COLORS.get(field, "#64748b")
+        if field not in large_groups:
+            large_groups[field] = {"name": field, "color": color, "papers": [], "medMap": {}}
+
+        kws  = kws_by[paper["id"]]
+        mets = mets_by[paper["id"]]
+        top_kws = [(kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
+                   for kw in sorted(kws, key=lambda k: -(k.get("confidence") or 0))
+                   if kw.get("normalized_name") or kw.get("keyword_name")][:6]
+        top_mets = [{"name": m.get("metric_name",""), "value": m.get("value",""), "unit": m.get("unit","")}
+                    for m in mets if m.get("metric_name")][:4]
+        mediums  = list({_CAT_TO_MED[c] for c in {kw.get("category") for kw in kws} if c in _CAT_TO_MED})
+
+        entry = {
+            "id": paper["id"], "title": (paper.get("title") or "Untitled").strip(),
+            "year": paper.get("year"), "field": field,
+            "keywords": top_kws, "metrics": top_mets,
+            "summary": sums_by.get(paper["id"]),
+            "mediums": mediums,
+        }
+        large_groups[field]["papers"].append(entry)
+        for med in mediums:
+            large_groups[field]["medMap"].setdefault(med, {"name": med, "papers": []})["papers"].append(entry)
+
+    result = []
+    for field, lg in sorted(large_groups.items(), key=lambda x: -len(x[1]["papers"])):
+        children = []
+        in_med: set[int] = set()
+        for med_name, mg in sorted(lg["medMap"].items(), key=lambda x: -len(x[1]["papers"])):
+            children.append({"name": med_name, "paper_count": len(mg["papers"]), "papers": mg["papers"]})
+            in_med.update(p["id"] for p in mg["papers"])
+        general = [p for p in lg["papers"] if p["id"] not in in_med]
+        if general:
+            children.append({"name": "General", "paper_count": len(general), "papers": general})
+        if not children:
+            children.append({"name": "General", "paper_count": len(lg["papers"]), "papers": lg["papers"]})
+        result.append({
+            "name": field, "color": lg["color"],
+            "paper_count": len(lg["papers"]), "children": children,
+        })
+    return {"groups": result}
+
+
 # ── Map Groups ────────────────────────────────────────────────────────────────
 
 @app.get("/api/map-groups")
