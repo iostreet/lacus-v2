@@ -1,19 +1,19 @@
 /**
- * Lacus Map View v3 — Theme → Concept hierarchy (Field hidden)
- * Modes: Overview (SVG graph) · Hierarchy · Focus
+ * Lacus Map View v4 — Palantir-style concept cards
+ * Modes: Overview (card grid) · Hierarchy (tree + papers)
  */
 
 window.MapView = (() => {
   'use strict';
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let _mode         = 'overview'; // 'overview' | 'hierarchy' | 'focus'
-  let _data         = null;       // { themes: [{name,color,paper_count,concepts:[{name,paper_count,papers}]}] }
-  let _container    = null;
-  let _onNodeClick  = null;
-  let _selTheme     = null;       // selected theme name (hierarchy)
-  let _selConcept   = null;       // selected concept name (hierarchy)
-  let _focusConcept = null;       // focused concept name (focus mode)
+  let _mode        = 'overview'; // 'overview' | 'hierarchy'
+  let _data        = null;       // { themes: [{name,color,paper_count,concepts:[...]}] }
+  let _container   = null;
+  let _onNodeClick = null;
+  let _selTheme    = null;
+  let _selConcept  = null;
+  let _activeKws   = new Set(); // active filter keyword norms
 
   // ── Utils ─────────────────────────────────────────────────────────────────
   const _e   = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -27,17 +27,63 @@ window.MapView = (() => {
     return res.json();
   };
 
-  const _allPapers = () => {
-    const seen = new Set(), out = [];
+  // ── Build deduplicated keyword list for filter bar ────────────────────────
+  const _buildKwList = () => {
+    const kwMap = new Map(); // norm → { name, count }
     (_data?.themes || []).forEach(t =>
       (t.concepts || []).forEach(c =>
-        (c.papers || []).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); out.push(p); } })
+        (c.papers || []).forEach(p =>
+          (p.keywords || []).forEach(kw => {
+            const norm = kw.toLowerCase();
+            if (!kwMap.has(norm)) kwMap.set(norm, { name: kw, count: 0 });
+            kwMap.get(norm).count++;
+          })
+        )
       )
     );
-    return out;
+    return [...kwMap.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 30);
   };
 
-  // ── Paper card ────────────────────────────────────────────────────────────
+  // ── Filter bar (rendered above mode content) ──────────────────────────────
+  const _filterBar = () => {
+    const bar = document.createElement('div');
+    bar.className = 'mv2-filter';
+
+    const kwList = _buildKwList();
+    if (!kwList.length) return bar;
+
+    const label = document.createElement('span');
+    label.className = 'mv2-filter-label';
+    label.textContent = 'Filter:';
+    bar.appendChild(label);
+
+    kwList.forEach(({ name, count }) => {
+      const norm = name.toLowerCase();
+      const chip = document.createElement('span');
+      chip.className = 'mv2-fchip' + (_activeKws.has(norm) ? ' active' : '');
+      chip.title = `${count} paper${count !== 1 ? 's' : ''}`;
+      chip.textContent = name;
+      chip.addEventListener('click', () => {
+        if (_activeKws.has(norm)) _activeKws.delete(norm);
+        else _activeKws.add(norm);
+        _renderAll();
+      });
+      bar.appendChild(chip);
+    });
+
+    if (_activeKws.size) {
+      const clr = document.createElement('button');
+      clr.className = 'mv2-fclear';
+      clr.textContent = 'Clear';
+      clr.addEventListener('click', () => { _activeKws.clear(); _renderAll(); });
+      bar.appendChild(clr);
+    }
+    return bar;
+  };
+
+  // ── Paper card (for hierarchy mode) ──────────────────────────────────────
   const _paperCard = (p, color) => {
     const card = document.createElement('div');
     card.className = 'mv2-pc';
@@ -49,7 +95,7 @@ window.MapView = (() => {
         ${p.year    ? `<span>${_e(p.year)}</span>` : ''}
         ${p.concept ? `<span class="mv2-pc-concept" style="color:${_e(color || '#8b5cf6')}">${_e(p.concept)}</span>` : ''}
       </div>
-      ${kws.length  ? `<div class="mv2-pc-tags">${kws.map(k  => `<span class="mv2-pc-tag">${_e(k)}</span>`).join('')}</div>` : ''}
+      ${kws.length  ? `<div class="mv2-pc-tags">${kws.map(k => `<span class="mv2-pc-tag">${_e(k)}</span>`).join('')}</div>` : ''}
       ${mets.length ? `<div class="mv2-pc-mets">${mets.map(m => `<span class="mv2-pc-met">${_e(m.name)} = ${_e(m.value)}${m.unit ? ' ' + _e(m.unit) : ''}</span>`).join('')}</div>` : ''}
     `;
     card.addEventListener('click', () => {
@@ -58,19 +104,18 @@ window.MapView = (() => {
     return card;
   };
 
-  // ── Mode bar (3 modes, no Edit) ───────────────────────────────────────────
+  // ── Mode bar (Overview / Hierarchy) ──────────────────────────────────────
   const _modeBar = () => {
     const bar = document.createElement('div');
     bar.className = 'mv2-bar';
     [
-      { id: 'overview',   label: 'Overview' },
-      { id: 'hierarchy',  label: 'Hierarchy' },
-      { id: 'focus',      label: 'Focus' },
+      { id: 'overview',  label: 'Overview' },
+      { id: 'hierarchy', label: 'Hierarchy' },
     ].forEach(({ id, label }) => {
       const btn = document.createElement('button');
       btn.className = 'mv2-bar-btn' + (id === _mode ? ' active' : '');
       btn.textContent = label;
-      btn.onclick = () => _setMode(id);
+      btn.addEventListener('click', () => _setMode(id));
       bar.appendChild(btn);
     });
     return bar;
@@ -83,7 +128,9 @@ window.MapView = (() => {
     if (!_container) return;
     _container.innerHTML = '';
     const themes = _data?.themes || [];
+
     _container.appendChild(_modeBar());
+    _container.appendChild(_filterBar());
 
     const body = document.createElement('div');
     body.className = 'mv2-body';
@@ -97,155 +144,134 @@ window.MapView = (() => {
     switch (_mode) {
       case 'overview':  _overview(body,  themes); break;
       case 'hierarchy': _hierarchy(body, themes); break;
-      case 'focus':     _focus(body,     themes); break;
     }
     _container.appendChild(body);
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  // OVERVIEW — Palantir-style SVG node graph (Theme → Concept)
+  // OVERVIEW — Palantir-style concept card grid
   // ══════════════════════════════════════════════════════════════════════════
   const _overview = (body, themes) => {
-    body.classList.add('mv2-overview', 'mv2-ov-graph');
+    body.classList.add('mv2-ov-sections');
 
-    const wrap = document.createElement('div');
-    wrap.className = 'mv2-ov-svg-wrap';
-    body.appendChild(wrap);
+    themes.forEach(theme => {
+      const sec = document.createElement('div');
+      sec.className = 'mv2-ov-theme-sec';
 
-    requestAnimationFrame(() => {
-      const W = wrap.clientWidth  || 900;
-      const H = Math.max(wrap.clientHeight || 500, 480);
-      const T_R = 36, C_R = 22;
+      // Theme header
+      const thd = document.createElement('div');
+      thd.className = 'mv2-ov-theme-hd';
+      thd.style.borderBottomColor = theme.color + '55';
+      thd.innerHTML = `
+        <span class="mv2-ov-theme-dot" style="background:${_e(theme.color)}"></span>
+        <span style="color:${_e(theme.color)};font-weight:700;font-size:.82rem">${_e(theme.name)}</span>
+        <span class="mv2-ov-theme-cnt">${theme.paper_count} paper${theme.paper_count !== 1 ? 's' : ''}</span>
+      `;
+      sec.appendChild(thd);
 
-      const tCount  = themes.length;
-      const tSlotW  = Math.max(170, W / Math.max(tCount, 1));
-      const svgW    = Math.max(W, tCount * tSlotW);
-      const tyBase  = H * 0.36;
+      // Concept card row
+      const cRow = document.createElement('div');
+      cRow.className = 'mv2-ov-concepts';
 
-      const tNodes = []; // {name, color, paperCount, x, y}
-      const cNodes = []; // {name, color, paperCount, theme, papers, x, y}
-      const edges  = []; // {tx, ty, cx, cy, color}
+      (theme.concepts || []).forEach(concept => {
+        const matchPapers = _activeKws.size === 0
+          ? concept.papers || []
+          : (concept.papers || []).filter(p =>
+              (p.keywords || []).some(kw => _activeKws.has(kw.toLowerCase()))
+            );
+        const isDimmed = _activeKws.size > 0 && matchPapers.length === 0;
 
-      themes.forEach((t, ti) => {
-        const tx = (ti + 0.5) * tSlotW;
-        const ty = tyBase;
-        tNodes.push({ name: t.name, color: t.color, paperCount: t.paper_count, x: tx, y: ty });
+        const card = document.createElement('div');
+        card.className = 'mv2-ov-cc' + (isDimmed ? ' dimmed' : '');
 
-        const cCount = (t.concepts || []).length;
-        (t.concepts || []).forEach((c, ci) => {
-          const fan = Math.min(Math.PI * 0.65, cCount * 0.42);
-          const a   = cCount === 1
-            ? Math.PI / 2
-            : Math.PI / 2 - fan / 2 + (ci / (cCount - 1)) * fan;
-          const dist = 130;
-          const cx = Math.max(C_R + 12, Math.min(svgW - C_R - 12, tx + Math.cos(a) * dist * 0.72));
-          const cy = Math.min(H - C_R - 36, ty + Math.sin(a) * dist);
-          cNodes.push({ name: c.name, color: t.color, paperCount: c.paper_count, theme: t.name, papers: c.papers, x: cx, y: cy });
-          edges.push({ tx, ty, cx, cy, color: t.color });
+        // Collect top keywords across this concept's papers
+        const kwFreq = new Map();
+        (concept.papers || []).forEach(p =>
+          (p.keywords || []).forEach(kw => {
+            const k = kw.toLowerCase();
+            if (!kwFreq.has(k)) kwFreq.set(k, { name: kw, count: 0 });
+            kwFreq.get(k).count++;
+          })
+        );
+        const topKws = [...kwFreq.values()]
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 7)
+          .map(v => v.name);
+
+        // Card header
+        const chd = document.createElement('div');
+        chd.className = 'mv2-ov-cc-hd';
+        chd.innerHTML = `
+          <span class="mv2-ov-cc-dot" style="background:${_e(theme.color)}"></span>
+          <span class="mv2-ov-cc-name">${_e(concept.name)}</span>
+          <span class="mv2-ov-cc-badge">${concept.paper_count}</span>
+        `;
+        chd.style.cursor = 'pointer';
+        chd.addEventListener('click', () => {
+          _selTheme = theme.name;
+          _selConcept = concept.name;
+          _setMode('hierarchy');
         });
+        card.appendChild(chd);
+
+        // Keyword chips — act as the concept's description
+        if (topKws.length) {
+          const kwRow = document.createElement('div');
+          kwRow.className = 'mv2-ov-cc-kws';
+          topKws.forEach(kw => {
+            const chip = document.createElement('span');
+            const isActive = _activeKws.has(kw.toLowerCase());
+            chip.className = 'mv2-ov-cc-kw' + (isActive ? ' active' : '');
+            chip.textContent = kw;
+            kwRow.appendChild(chip);
+          });
+          card.appendChild(kwRow);
+        }
+
+        // Paper rows (filtered or all, max 5)
+        const displayPapers = _activeKws.size > 0 ? matchPapers : (concept.papers || []);
+        const showPapers = displayPapers.slice(0, 5);
+        const moreCnt   = displayPapers.length - showPapers.length;
+
+        if (showPapers.length) {
+          const pList = document.createElement('div');
+          pList.className = 'mv2-ov-cc-papers';
+          showPapers.forEach(p => {
+            const row = document.createElement('div');
+            row.className = 'mv2-ov-cp';
+            row.innerHTML = `
+              <span class="mv2-ov-cp-title">${_e(_cut(p.title, 62))}</span>
+              ${p.year ? `<span class="mv2-ov-cp-year">${_e(p.year)}</span>` : ''}
+            `;
+            row.addEventListener('click', () => {
+              if (_onNodeClick) _onNodeClick({ type: 'paper', paperId: p.id, nodeData: p });
+            });
+            pList.appendChild(row);
+          });
+          if (moreCnt > 0) {
+            const more = document.createElement('div');
+            more.className = 'mv2-ov-cc-more';
+            more.textContent = `+ ${moreCnt} more`;
+            more.addEventListener('click', () => {
+              _selTheme = theme.name;
+              _selConcept = concept.name;
+              _setMode('hierarchy');
+            });
+            pList.appendChild(more);
+          }
+          card.appendChild(pList);
+        }
+
+        cRow.appendChild(card);
       });
 
-      const NS  = 'http://www.w3.org/2000/svg';
-      const svg = document.createElementNS(NS, 'svg');
-      svg.setAttribute('width',  svgW);
-      svg.setAttribute('height', H);
-      svg.style.display = 'block';
-
-      // Edges (drawn first, behind nodes)
-      edges.forEach(e => {
-        const line = document.createElementNS(NS, 'line');
-        line.setAttribute('x1', e.tx); line.setAttribute('y1', e.ty);
-        line.setAttribute('x2', e.cx); line.setAttribute('y2', e.cy);
-        line.setAttribute('stroke', e.color + '50');
-        line.setAttribute('stroke-width', '1.5');
-        svg.appendChild(line);
-      });
-
-      // Concept nodes
-      cNodes.forEach(cn => {
-        const g = document.createElementNS(NS, 'g');
-        g.setAttribute('cursor', 'pointer');
-
-        const circle = document.createElementNS(NS, 'circle');
-        circle.setAttribute('cx', cn.x); circle.setAttribute('cy', cn.y); circle.setAttribute('r', C_R);
-        circle.setAttribute('fill', '#151d2e');
-        circle.setAttribute('stroke', cn.color + 'cc');
-        circle.setAttribute('stroke-width', '1.5');
-        g.appendChild(circle);
-
-        const countTxt = document.createElementNS(NS, 'text');
-        countTxt.setAttribute('x', cn.x); countTxt.setAttribute('y', cn.y + 5);
-        countTxt.setAttribute('text-anchor', 'middle');
-        countTxt.setAttribute('fill', cn.color);
-        countTxt.setAttribute('font-size', '12');
-        countTxt.setAttribute('font-weight', '600');
-        countTxt.textContent = cn.paperCount;
-        g.appendChild(countTxt);
-
-        const lbl = document.createElementNS(NS, 'text');
-        lbl.setAttribute('x', cn.x); lbl.setAttribute('y', cn.y + C_R + 14);
-        lbl.setAttribute('text-anchor', 'middle');
-        lbl.setAttribute('fill', '#94a3b8');
-        lbl.setAttribute('font-size', '10.5');
-        lbl.textContent = _cut(cn.name, 18);
-        g.appendChild(lbl);
-
-        g.addEventListener('mouseenter', () => { circle.setAttribute('fill', cn.color + '28'); circle.setAttribute('stroke-width', '2'); });
-        g.addEventListener('mouseleave', () => { circle.setAttribute('fill', '#151d2e');       circle.setAttribute('stroke-width', '1.5'); });
-        g.addEventListener('click', () => { _focusConcept = cn.name; _selTheme = cn.theme; _setMode('focus'); });
-
-        svg.appendChild(g);
-      });
-
-      // Theme nodes (on top)
-      tNodes.forEach(tn => {
-        const g = document.createElementNS(NS, 'g');
-        g.setAttribute('cursor', 'pointer');
-
-        const glow = document.createElementNS(NS, 'circle');
-        glow.setAttribute('cx', tn.x); glow.setAttribute('cy', tn.y); glow.setAttribute('r', T_R + 7);
-        glow.setAttribute('fill', tn.color + '18');
-        g.appendChild(glow);
-
-        const circle = document.createElementNS(NS, 'circle');
-        circle.setAttribute('cx', tn.x); circle.setAttribute('cy', tn.y); circle.setAttribute('r', T_R);
-        circle.setAttribute('fill', '#151d2e');
-        circle.setAttribute('stroke', tn.color);
-        circle.setAttribute('stroke-width', '2.5');
-        g.appendChild(circle);
-
-        const countTxt = document.createElementNS(NS, 'text');
-        countTxt.setAttribute('x', tn.x); countTxt.setAttribute('y', tn.y + 6);
-        countTxt.setAttribute('text-anchor', 'middle');
-        countTxt.setAttribute('fill', tn.color);
-        countTxt.setAttribute('font-size', '15');
-        countTxt.setAttribute('font-weight', '700');
-        countTxt.textContent = tn.paperCount;
-        g.appendChild(countTxt);
-
-        const lbl = document.createElementNS(NS, 'text');
-        lbl.setAttribute('x', tn.x); lbl.setAttribute('y', tn.y + T_R + 18);
-        lbl.setAttribute('text-anchor', 'middle');
-        lbl.setAttribute('fill', '#e2e8f0');
-        lbl.setAttribute('font-size', '11.5');
-        lbl.setAttribute('font-weight', '600');
-        lbl.textContent = _cut(tn.name, 20);
-        g.appendChild(lbl);
-
-        g.addEventListener('mouseenter', () => circle.setAttribute('stroke-width', '3.5'));
-        g.addEventListener('mouseleave', () => circle.setAttribute('stroke-width', '2.5'));
-        g.addEventListener('click', () => { _selTheme = tn.name; _selConcept = null; _setMode('hierarchy'); });
-
-        svg.appendChild(g);
-      });
-
-      if (svgW > W) wrap.style.overflowX = 'auto';
-      wrap.appendChild(svg);
+      sec.appendChild(cRow);
+      body.appendChild(sec);
     });
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  // HIERARCHY MODE — Left tree (Theme → Concept) + Right paper grid
+  // HIERARCHY — left tree + right paper grid
   // ══════════════════════════════════════════════════════════════════════════
   const _hierarchy = (body, themes) => {
     body.classList.add('mv2-hierarchy');
@@ -298,15 +324,23 @@ window.MapView = (() => {
     main.className = 'mv2-papers';
 
     if (selThemeObj) {
-      const displayPapers = _selConcept
-        ? ((selThemeObj.concepts || []).find(c => c.name === _selConcept)?.papers || [])
-        : (() => {
-            const seen = new Set(), out = [];
-            (selThemeObj.concepts || []).forEach(c =>
-              (c.papers || []).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); out.push(p); } })
-            );
-            return out;
-          })();
+      let displayPapers;
+      if (_selConcept) {
+        const conc = (selThemeObj.concepts || []).find(c => c.name === _selConcept);
+        displayPapers = conc?.papers || [];
+      } else {
+        const seen = new Set();
+        displayPapers = [];
+        (selThemeObj.concepts || []).forEach(c =>
+          (c.papers || []).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); displayPapers.push(p); } })
+        );
+      }
+
+      if (_activeKws.size) {
+        displayPapers = displayPapers.filter(p =>
+          (p.keywords || []).some(kw => _activeKws.has(kw.toLowerCase()))
+        );
+      }
 
       const bc = document.createElement('div');
       bc.className = 'mv2-breadcrumb';
@@ -320,7 +354,7 @@ window.MapView = (() => {
       const pgrid = document.createElement('div');
       pgrid.className = 'mv2-pgrid';
       if (!displayPapers.length) {
-        pgrid.innerHTML = '<div class="mv2-empty">No papers in this group.</div>';
+        pgrid.innerHTML = '<div class="mv2-empty">No papers match the current filter.</div>';
       } else {
         displayPapers.forEach(p => pgrid.appendChild(_paperCard(p, selThemeObj.color)));
       }
@@ -329,101 +363,6 @@ window.MapView = (() => {
 
     body.appendChild(tree);
     body.appendChild(main);
-  };
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // FOCUS MODE — Concept-centered view with related concepts + papers
-  // ══════════════════════════════════════════════════════════════════════════
-  const _focus = (body, themes) => {
-    body.classList.add('mv2-focus');
-
-    // Find the focused concept object
-    let focusConceptObj = null, focusThemeObj = null;
-    themes.forEach(t => (t.concepts || []).forEach(c => {
-      if (c.name === _focusConcept) { focusConceptObj = c; focusThemeObj = t; }
-    }));
-
-    if (!_focusConcept || !focusConceptObj) {
-      // Concept selection cloud
-      const hd = document.createElement('div');
-      hd.className = 'mv2-focus-hd';
-      hd.innerHTML = 'Select a <strong>Concept</strong> to explore:';
-      body.appendChild(hd);
-
-      const allConcepts = [];
-      themes.forEach(t => (t.concepts || []).forEach(c => allConcepts.push({ ...c, themeColor: t.color })));
-
-      const cloud = document.createElement('div');
-      cloud.className = 'mv2-focus-cloud';
-      allConcepts.sort((a, b) => b.paper_count - a.paper_count).forEach(c => {
-        const chip = document.createElement('span');
-        chip.className = 'mv2-focus-kw';
-        chip.style.borderColor = c.themeColor + '80';
-        chip.style.color       = c.themeColor;
-        chip.textContent = c.name;
-        chip.title = `${c.paper_count} paper${c.paper_count !== 1 ? 's' : ''}`;
-        chip.addEventListener('click', () => { _focusConcept = c.name; _renderAll(); });
-        cloud.appendChild(chip);
-      });
-      body.appendChild(cloud);
-      return;
-    }
-
-    // Focus header with back button
-    const focusHd = document.createElement('div');
-    focusHd.className = 'mv2-focus-concept-hd';
-    focusHd.innerHTML = `
-      <button class="mv2-fc-back" title="Back">←</button>
-      <span class="mv2-fc-theme" style="color:${_e(focusThemeObj.color)}">${_e(focusThemeObj.name)}</span>
-      <span class="mv2-bc-sep">›</span>
-      <span class="mv2-fc-name">${_e(_focusConcept)}</span>
-      <span class="mv2-bc-count">${focusConceptObj.paper_count} paper${focusConceptObj.paper_count !== 1 ? 's' : ''}</span>
-    `;
-    focusHd.querySelector('.mv2-fc-back').addEventListener('click', () => { _focusConcept = null; _renderAll(); });
-    body.appendChild(focusHd);
-
-    // Related concepts (share at least one paper)
-    const focusPaperIds = new Set((focusConceptObj.papers || []).map(p => p.id));
-    const relMap = new Map();
-    themes.forEach(t => (t.concepts || []).forEach(c => {
-      if (c.name === _focusConcept) return;
-      const shared = (c.papers || []).filter(p => focusPaperIds.has(p.id)).length;
-      if (shared > 0) relMap.set(c.name, { name: c.name, shared, color: t.color });
-    }));
-
-    if (relMap.size > 0) {
-      const relSec = document.createElement('div');
-      relSec.className = 'mv2-focus-related';
-      const relHd = document.createElement('div');
-      relHd.className = 'mv2-focus-rel-hd';
-      relHd.textContent = 'Related Concepts';
-      relSec.appendChild(relHd);
-
-      const cloud = document.createElement('div');
-      cloud.className = 'mv2-focus-cloud';
-      [...relMap.values()].sort((a, b) => b.shared - a.shared).forEach(rc => {
-        const chip = document.createElement('span');
-        chip.className = 'mv2-focus-kw';
-        chip.style.borderColor = rc.color + '80';
-        chip.style.color       = rc.color;
-        chip.textContent = `${rc.name} (${rc.shared})`;
-        chip.addEventListener('click', () => { _focusConcept = rc.name; _renderAll(); });
-        cloud.appendChild(chip);
-      });
-      relSec.appendChild(cloud);
-      body.appendChild(relSec);
-    }
-
-    // Evidence (papers)
-    const papersHd = document.createElement('div');
-    papersHd.className = 'mv2-focus-papers-hd';
-    papersHd.textContent = 'Evidence';
-    body.appendChild(papersHd);
-
-    const pgrid = document.createElement('div');
-    pgrid.className = 'mv2-pgrid';
-    (focusConceptObj.papers || []).forEach(p => pgrid.appendChild(_paperCard(p, focusThemeObj.color)));
-    body.appendChild(pgrid);
   };
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -439,30 +378,32 @@ window.MapView = (() => {
 
     try {
       _data = await _apiFetch('/map-overview');
-    } catch (e) {
+    } catch (_) {
       _data = { themes: [] };
     }
 
     if (!_data || Array.isArray(_data)) _data = { themes: [] };
-    if (_data.groups && !_data.themes)  _data = { themes: [] }; // old format fallback
+    if (_data.groups && !_data.themes)  _data = { themes: [] };
 
     _selTheme = (_data.themes || []).length ? _data.themes[0].name : null;
     _mode     = 'overview';
+    _activeKws.clear();
     _renderAll();
   };
 
   // ── Public API ─────────────────────────────────────────────────────────────
   return {
     init,
-    fit:               () => {},
+    fit: () => {},
     applyKeywordFilter: norms => {
-      if (norms && norms.length) { _focusConcept = norms[0]; _setMode('focus'); }
-      else { _focusConcept = null; if (_mode === 'focus') _setMode('overview'); }
+      _activeKws.clear();
+      (norms || []).forEach(n => _activeKws.add(n));
+      _renderAll();
     },
-    enterOverviewMode:  () => _setMode('overview'),
-    enterFullMode:      () => _setMode('hierarchy'),
-    exitFocus:          () => { _focusConcept = null; _setMode('overview'); },
-    refreshGroup:       () => {},
-    deleteGroup:        async () => {},
+    enterOverviewMode: () => _setMode('overview'),
+    enterFullMode:     () => _setMode('hierarchy'),
+    exitFocus:         () => { _activeKws.clear(); _setMode('overview'); },
+    refreshGroup:      () => {},
+    deleteGroup:       async () => {},
   };
 })();

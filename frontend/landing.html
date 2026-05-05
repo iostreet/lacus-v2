@@ -1389,7 +1389,17 @@
       <input class="auth-input" type="text" id="su-name" placeholder="Full name" required />
       <input class="auth-input" type="text" id="su-institution" placeholder="Institution / University" />
       <input class="auth-input" type="text" id="su-country" placeholder="Country" />
-      <input class="auth-input" type="text" id="su-research-field" placeholder="Research field (e.g. Materials Science)" />
+      <select class="auth-input auth-select" id="su-research-field">
+        <option value="" disabled selected>Research Field</option>
+        <option value="Materials Science">Materials Science</option>
+        <option value="Physics">Physics</option>
+        <option value="Chemistry">Chemistry</option>
+        <option value="Electrical/Semiconductor">Electrical / Semiconductor</option>
+        <option value="Energy Engineering">Energy Engineering</option>
+        <option value="Biomedical Engineering">Biomedical Engineering</option>
+        <option value="Computer Science">Computer Science</option>
+        <option value="Environmental Engineering">Environmental Engineering</option>
+      </select>
       <select class="auth-input auth-select" id="su-role">
         <option value="" disabled selected>Role</option>
         <option value="undergraduate">Undergraduate Student</option>

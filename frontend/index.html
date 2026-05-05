@@ -109,7 +109,6 @@
           </div>
         </div>
         <span class="paper-count-badge" id="paper-count-badge">0 papers</span>
-        <input class="search-input" id="search-input" type="text" placeholder="Search papers..." />
         <div class="view-toggle" id="view-toggle">
           <button class="view-toggle-btn active" id="view-card-btn" title="Card View">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -133,16 +132,6 @@
     </div>
     <div class="papers-grid" id="papers-grid">
       <!-- Paper cards injected here -->
-    </div>
-    <!-- Keyword filter bar (Map View only) -->
-    <div class="kw-filter-bar hidden" id="kw-filter-bar">
-      <span class="kw-filter-label">Filter:</span>
-      <div class="kw-filter-chips" id="kw-filter-chips"></div>
-      <div class="kw-filter-custom-wrap">
-        <input type="text" class="kw-filter-input" id="kw-custom-input" placeholder="Add keyword…" />
-        <button class="btn btn-sm" id="kw-custom-add">+</button>
-      </div>
-      <button class="btn btn-sm kw-filter-clear" id="kw-filter-clear">Clear</button>
     </div>
     <!-- Map View container -->
     <div class="papers-map hidden" id="papers-map"></div>
@@ -406,7 +395,7 @@
     <div style="color:var(--text-muted);font-size:0.8rem">Loading…</div>
   </div>
   <div class="map-node-panel-footer" id="map-node-panel-footer">
-    <button class="btn btn-sm btn-primary" id="map-node-panel-open">논문 전체 보기 →</button>
+    <button class="btn btn-sm btn-primary" id="map-node-panel-open">View Full Paper →</button>
   </div>
 </div>
 
@@ -542,7 +531,7 @@
 <div class="hover-tooltip hidden" id="hover-tooltip"></div>
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
-<script src="/static/js/mapview.js?v=6"></script>
-<script src="/static/js/app.js?v=16"></script>
+<script src="/static/js/mapview.js?v=7"></script>
+<script src="/static/js/app.js?v=17"></script>
 </body>
 </html>

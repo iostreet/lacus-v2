@@ -90,7 +90,6 @@ const _setViewMode = async (mode) => {
   if (mode === 'map') {
     await loadMapView();
   } else {
-    document.getElementById('kw-filter-bar').classList.add('hidden');
     renderPaperCards(papers);
   }
 };
@@ -103,78 +102,12 @@ document.getElementById('view-map-btn').addEventListener('click', () => _setView
 // ─────────────────────────────────────────────────────────────────────────────
 const loadMapView = async () => {
   try {
-    const canvasData = await apiFetch('/map-canvas');
-    MapView.init('papers-map', canvasData, { onNodeClick: showMapNodePanel, onCanvasTap: hideMapNodePanel });
-    _renderKwFilterBar(canvasData.keyword_stats || []);
+    MapView.init('papers-map', null, { onNodeClick: showMapNodePanel, onCanvasTap: hideMapNodePanel });
   } catch (e) {
     toast('Failed to load map view: ' + e.message, 'error');
   }
 };
 
-const _renderKwFilterBar = (kwStats) => {
-  const bar   = document.getElementById('kw-filter-bar');
-  const chips = document.getElementById('kw-filter-chips');
-  if (!bar || !chips) return;
-
-  bar.classList.remove('hidden');
-  chips.innerHTML = '';
-  kwStats.forEach(kw => {
-    const chip = document.createElement('label');
-    chip.className = 'kw-filter-chip';
-    chip.innerHTML =
-      `<input type="checkbox" value="${escHtml(kw.normalized)}" />` +
-      `${escHtml(kw.name)} <span style="color:var(--text-muted);font-size:0.7rem">(${kw.count})</span>`;
-    chips.appendChild(chip);
-  });
-
-  const getActive = () =>
-    Array.from(chips.querySelectorAll('input:checked')).map(cb => cb.value);
-
-  chips.addEventListener('change', () => {
-    chips.querySelectorAll('.kw-filter-chip').forEach(chip => {
-      chip.classList.toggle('active', chip.querySelector('input').checked);
-    });
-    MapView.applyKeywordFilter(getActive());
-  });
-
-  // Replace Clear button to avoid duplicate listeners across reloads
-  const clearBtn = document.getElementById('kw-filter-clear');
-  const newClear = clearBtn.cloneNode(true);
-  clearBtn.replaceWith(newClear);
-  newClear.addEventListener('click', () => {
-    chips.querySelectorAll('input').forEach(cb => { cb.checked = false; });
-    chips.querySelectorAll('.kw-filter-chip').forEach(chip => chip.classList.remove('active'));
-    MapView.applyKeywordFilter([]);
-  });
-
-  // Manual keyword input — add/remove custom filter chips
-  const customInput = document.getElementById('kw-custom-input');
-  const customAdd   = document.getElementById('kw-custom-add');
-  if (customInput && customAdd) {
-    const addCustomChip = () => {
-      const val = (customInput.value || '').trim().toLowerCase();
-      if (!val) return;
-      // Don't add duplicates
-      if (chips.querySelector(`input[value="${val}"]`)) { customInput.value = ''; return; }
-      const chip = document.createElement('label');
-      chip.className = 'kw-filter-chip active';
-      chip.innerHTML = `<input type="checkbox" value="${escHtml(val)}" checked />${escHtml(val)} <span style="color:var(--text-muted);font-size:0.7rem">✎</span>`;
-      chips.appendChild(chip);
-      chip.querySelector('input').addEventListener('change', () => {
-        chip.classList.toggle('active', chip.querySelector('input').checked);
-        MapView.applyKeywordFilter(getActive());
-      });
-      customInput.value = '';
-      MapView.applyKeywordFilter(getActive());
-    };
-    const newAdd = customAdd.cloneNode(true);
-    customAdd.replaceWith(newAdd);
-    newAdd.addEventListener('click', addCustomChip);
-    const newInput = customInput.cloneNode(true);
-    customInput.replaceWith(newInput);
-    newInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addCustomChip(); });
-  }
-};
 
 const escHtml = (str) =>
   String(str || '')
@@ -1808,10 +1741,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
-// Search
-document.getElementById('search-input').addEventListener('input', (e) => {
-  filterPapers(e.target.value);
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Map view — node summary panel
@@ -1875,8 +1804,10 @@ const showReviewModal = async (paperId) => {
   document.getElementById('rv-close-btn').onclick = closeOverlay;
   document.getElementById('rv-later-btn').onclick  = closeOverlay;
 
-  // 저장
+  // Save button — reset state first so re-opening modal never shows a stuck "Saving…" clone
   const saveBtn = document.getElementById('rv-save-btn');
+  saveBtn.disabled = false;
+  saveBtn.textContent = 'Save to DB →';
   const newSave = saveBtn.cloneNode(true);
   saveBtn.replaceWith(newSave);
   newSave.addEventListener('click', async () => {

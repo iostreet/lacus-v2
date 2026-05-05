@@ -1242,17 +1242,26 @@ def get_map_overview(user_id: str = Depends(get_current_user)):
     for m in all_mets:
         mets_by[m["paper_id"]].append(m)
 
+    def _cap(s: str) -> str:
+        s = (s or "").strip()
+        return s[0].upper() + s[1:] if s else s
+
     theme_map: dict[str, dict] = {}
     for paper in papers:
-        theme   = (paper.get("theme")   or "").strip() or "Uncategorized"
-        concept = (paper.get("concept") or "").strip() or "General"
+        # Use lowercase key so "ferroelectric" and "Ferroelectric" merge into one node
+        theme_raw   = (paper.get("theme")   or "").strip()
+        concept_raw = (paper.get("concept") or "").strip()
+        theme_key   = theme_raw.lower()   or "uncategorized"
+        concept_key = concept_raw.lower() or "general"
+        theme_name  = _cap(theme_raw)   or "Uncategorized"
+        concept_name = _cap(concept_raw) or "General"
 
-        if theme not in theme_map:
-            theme_map[theme] = {"name": theme, "papers": [], "conceptMap": {}}
+        if theme_key not in theme_map:
+            theme_map[theme_key] = {"name": theme_name, "papers": [], "conceptMap": {}}
 
         kws  = kws_by[paper["id"]]
         mets = mets_by[paper["id"]]
-        top_kws = [(kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
+        top_kws = [_cap((kw.get("keyword_name") or kw.get("normalized_name") or "").strip())
                    for kw in sorted(kws, key=lambda k: -(k.get("confidence") or 0))
                    if kw.get("normalized_name") or kw.get("keyword_name")][:6]
         top_mets = [{"name": m.get("metric_name", ""), "value": m.get("value", ""), "unit": m.get("unit", "")}
@@ -1263,13 +1272,13 @@ def get_map_overview(user_id: str = Depends(get_current_user)):
             "title":   (paper.get("title") or "Untitled").strip(),
             "year":    paper.get("year"),
             "field":   paper.get("field"),
-            "theme":   theme,
-            "concept": concept,
+            "theme":   theme_name,
+            "concept": concept_name,
             "keywords": top_kws,
             "metrics":  top_mets,
         }
-        theme_map[theme]["papers"].append(entry)
-        theme_map[theme]["conceptMap"].setdefault(concept, {"name": concept, "papers": []})["papers"].append(entry)
+        theme_map[theme_key]["papers"].append(entry)
+        theme_map[theme_key]["conceptMap"].setdefault(concept_key, {"name": concept_name, "papers": []})["papers"].append(entry)
 
     result = []
     for i, (theme_name, td) in enumerate(sorted(theme_map.items(), key=lambda x: -len(x[1]["papers"]))):

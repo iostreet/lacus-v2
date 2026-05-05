@@ -2791,3 +2791,100 @@ tr.row-dragging { opacity: 0.45; background: rgba(168,85,247,0.08); }
   font-size: 0.78rem;
   padding: 5px 8px;
 }
+
+/* ══════════════════ MAP VIEW v4 — OVERVIEW CARDS + FILTER ══════════════════ */
+
+/* Internal filter bar (inside map container, below mode bar) */
+.mv2-filter {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 9px 16px 8px; border-bottom: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0; min-height: 38px;
+}
+.mv2-filter-label {
+  font-size: .72rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .05em; margin-right: 2px; flex-shrink: 0;
+}
+.mv2-fchip {
+  padding: 3px 10px; border-radius: 99px;
+  border: 1px solid var(--border); color: var(--text-muted);
+  font-size: .72rem; cursor: pointer; transition: all .12s; user-select: none;
+}
+.mv2-fchip:hover { border-color: rgba(168,85,247,.4); color: var(--text); }
+.mv2-fchip.active {
+  background: rgba(168,85,247,.12); border-color: rgba(168,85,247,.45); color: #c084fc;
+}
+.mv2-fclear {
+  font-size: .7rem; color: var(--text-muted); background: none; border: none;
+  cursor: pointer; padding: 2px 6px; margin-left: 4px;
+}
+.mv2-fclear:hover { color: var(--accent); }
+
+/* Overview — scrollable section list */
+.mv2-ov-sections {
+  overflow-y: auto; flex: 1;
+  display: flex; flex-direction: column; gap: 24px; padding: 18px 20px 24px;
+}
+
+/* Theme section header */
+.mv2-ov-theme-sec { }
+.mv2-ov-theme-hd {
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 9px; border-bottom: 1.5px solid transparent; margin-bottom: 12px;
+}
+.mv2-ov-theme-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.mv2-ov-theme-cnt { margin-left: auto; font-size: .7rem; color: var(--text-muted); }
+
+/* Concept cards row */
+.mv2-ov-concepts { display: flex; flex-wrap: wrap; gap: 14px; }
+
+/* Individual concept card */
+.mv2-ov-cc {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; width: 260px; min-width: 210px; flex: 1 1 260px; max-width: 400px;
+  display: flex; flex-direction: column; transition: border-color .15s, opacity .15s;
+}
+.mv2-ov-cc:hover { border-color: rgba(168,85,247,.3); }
+.mv2-ov-cc.dimmed { opacity: .3; pointer-events: none; }
+
+/* Card header */
+.mv2-ov-cc-hd {
+  display: flex; align-items: center; gap: 7px;
+  padding: 11px 13px 9px; border-bottom: 1px solid var(--border);
+}
+.mv2-ov-cc-hd:hover { background: rgba(255,255,255,.03); border-radius: 10px 10px 0 0; }
+.mv2-ov-cc-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.mv2-ov-cc-name { font-size: .85rem; font-weight: 700; color: var(--text); flex: 1; }
+.mv2-ov-cc-badge {
+  font-size: .67rem; padding: 1px 7px; border-radius: 99px;
+  background: rgba(168,85,247,.1); color: var(--accent); font-weight: 600; flex-shrink: 0;
+}
+
+/* Keyword chips (description) */
+.mv2-ov-cc-kws {
+  display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 12px 5px;
+}
+.mv2-ov-cc-kw {
+  font-size: .67rem; padding: 2px 8px; border-radius: 99px;
+  background: rgba(255,255,255,.04); border: 1px solid var(--border); color: var(--text-muted);
+}
+.mv2-ov-cc-kw.active {
+  background: rgba(168,85,247,.12); border-color: rgba(168,85,247,.35); color: #c084fc;
+}
+
+/* Paper rows */
+.mv2-ov-cc-papers { display: flex; flex-direction: column; padding: 5px 10px 10px; gap: 1px; }
+.mv2-ov-cp {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 4px 4px; border-radius: 5px; cursor: pointer;
+}
+.mv2-ov-cp:hover { background: rgba(255,255,255,.04); }
+.mv2-ov-cp-title {
+  font-size: .73rem; color: var(--text-dim); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mv2-ov-cp:hover .mv2-ov-cp-title { color: var(--text); }
+.mv2-ov-cp-year  { font-size: .67rem; color: var(--text-muted); flex-shrink: 0; }
+.mv2-ov-cc-more {
+  font-size: .68rem; color: var(--text-muted); padding: 3px 4px; cursor: pointer;
+}
+.mv2-ov-cc-more:hover { color: var(--accent); }
