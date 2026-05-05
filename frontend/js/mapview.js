@@ -1,19 +1,30 @@
 /**
- * Lacus Map View v4 — Palantir-style concept cards
- * Modes: Overview (card grid) · Hierarchy (tree + papers)
+ * Lacus Map View v5 — Research flow tree (story-map style)
+ * Overview: Theme → Concept → Paper node tree with collapsible levels
+ * Hierarchy: left tree + paper grid (unchanged)
  */
 
 window.MapView = (() => {
   'use strict';
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let _mode        = 'overview'; // 'overview' | 'hierarchy'
-  let _data        = null;       // { themes: [{name,color,paper_count,concepts:[...]}] }
+  let _mode        = 'overview';
+  let _data        = null;
   let _container   = null;
   let _onNodeClick = null;
   let _selTheme    = null;
   let _selConcept  = null;
-  let _activeKws   = new Set(); // active filter keyword norms
+  let _activeKws   = new Set();
+  const _collapsed = new Set(); // IDs of collapsed nodes (dblclick)
+
+  // ── Layout constants ──────────────────────────────────────────────────────
+  const OV_W   = 190;  // node width
+  const OV_HG  = 14;   // horizontal gap between siblings
+  const OV_VG  = 62;   // vertical gap between levels (edge space)
+  const OV_TH  = 50;   // theme node height
+  const OV_CH  = 50;   // concept node height
+  const OV_PH  = 114;  // paper node height
+  const OV_PAD = 28;   // canvas side padding
 
   // ── Utils ─────────────────────────────────────────────────────────────────
   const _e   = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -27,9 +38,9 @@ window.MapView = (() => {
     return res.json();
   };
 
-  // ── Build deduplicated keyword list for filter bar ────────────────────────
+  // ── Keyword filter list ───────────────────────────────────────────────────
   const _buildKwList = () => {
-    const kwMap = new Map(); // norm → { name, count }
+    const kwMap = new Map();
     (_data?.themes || []).forEach(t =>
       (t.concepts || []).forEach(c =>
         (c.papers || []).forEach(p =>
@@ -41,16 +52,13 @@ window.MapView = (() => {
         )
       )
     );
-    return [...kwMap.values()]
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 30);
+    return [...kwMap.values()].sort((a, b) => b.count - a.count).slice(0, 30);
   };
 
-  // ── Filter bar (rendered above mode content) ──────────────────────────────
+  // ── Filter bar ────────────────────────────────────────────────────────────
   const _filterBar = () => {
     const bar = document.createElement('div');
     bar.className = 'mv2-filter';
-
     const kwList = _buildKwList();
     if (!kwList.length) return bar;
 
@@ -83,41 +91,18 @@ window.MapView = (() => {
     return bar;
   };
 
-  // ── Paper card (for hierarchy mode) ──────────────────────────────────────
-  const _paperCard = (p, color) => {
-    const card = document.createElement('div');
-    card.className = 'mv2-pc';
-    const kws  = (p.keywords || []).filter(Boolean).slice(0, 4);
-    const mets = (p.metrics  || []).filter(m => m.name).slice(0, 2);
-    card.innerHTML = `
-      <div class="mv2-pc-title">${_e(_cut(p.title, 80))}</div>
-      <div class="mv2-pc-sub">
-        ${p.year    ? `<span>${_e(p.year)}</span>` : ''}
-        ${p.concept ? `<span class="mv2-pc-concept" style="color:${_e(color || '#8b5cf6')}">${_e(p.concept)}</span>` : ''}
-      </div>
-      ${kws.length  ? `<div class="mv2-pc-tags">${kws.map(k => `<span class="mv2-pc-tag">${_e(k)}</span>`).join('')}</div>` : ''}
-      ${mets.length ? `<div class="mv2-pc-mets">${mets.map(m => `<span class="mv2-pc-met">${_e(m.name)} = ${_e(m.value)}${m.unit ? ' ' + _e(m.unit) : ''}</span>`).join('')}</div>` : ''}
-    `;
-    card.addEventListener('click', () => {
-      if (_onNodeClick) _onNodeClick({ type: 'paper', paperId: p.id, nodeData: p });
-    });
-    return card;
-  };
-
-  // ── Mode bar (Overview / Hierarchy) ──────────────────────────────────────
+  // ── Mode bar ──────────────────────────────────────────────────────────────
   const _modeBar = () => {
     const bar = document.createElement('div');
     bar.className = 'mv2-bar';
-    [
-      { id: 'overview',  label: 'Overview' },
-      { id: 'hierarchy', label: 'Hierarchy' },
-    ].forEach(({ id, label }) => {
-      const btn = document.createElement('button');
-      btn.className = 'mv2-bar-btn' + (id === _mode ? ' active' : '');
-      btn.textContent = label;
-      btn.addEventListener('click', () => _setMode(id));
-      bar.appendChild(btn);
-    });
+    [{ id: 'overview', label: 'Overview' }, { id: 'hierarchy', label: 'Hierarchy' }]
+      .forEach(({ id, label }) => {
+        const btn = document.createElement('button');
+        btn.className = 'mv2-bar-btn' + (id === _mode ? ' active' : '');
+        btn.textContent = label;
+        btn.addEventListener('click', () => _setMode(id));
+        bar.appendChild(btn);
+      });
     return bar;
   };
 
@@ -128,7 +113,6 @@ window.MapView = (() => {
     if (!_container) return;
     _container.innerHTML = '';
     const themes = _data?.themes || [];
-
     _container.appendChild(_modeBar());
     _container.appendChild(_filterBar());
 
@@ -136,158 +120,227 @@ window.MapView = (() => {
     body.className = 'mv2-body';
 
     if (!themes.length) {
-      body.innerHTML = '<div class="mv2-empty">No papers yet. Import a PDF and assign a Theme &amp; Concept to start building your research map.</div>';
+      body.innerHTML = '<div class="mv2-empty">No papers yet. Import a PDF and assign a Theme &amp; Concept to start.</div>';
       _container.appendChild(body);
       return;
     }
-
     switch (_mode) {
-      case 'overview':  _overview(body,  themes); break;
+      case 'overview':  _overview(body, themes); break;
       case 'hierarchy': _hierarchy(body, themes); break;
     }
     _container.appendChild(body);
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  // OVERVIEW — Palantir-style concept card grid
+  // OVERVIEW — research flow tree (Theme → Concept → Paper)
   // ══════════════════════════════════════════════════════════════════════════
+
+  // Calculate how many horizontal pixels a node's full subtree needs
+  const _subtreeW = node => {
+    if (_collapsed.has(node.id) || !node.children.length) return OV_W;
+    const childrenW = node.children.reduce((s, c) => s + _subtreeW(c), 0)
+                    + (node.children.length - 1) * OV_HG;
+    return Math.max(OV_W, childrenW);
+  };
+
+  // Assign x/y to every node in the subtree
+  const _layoutNode = (node, centerX, y) => {
+    const nodeH = node.type === 'theme' ? OV_TH : node.type === 'concept' ? OV_CH : OV_PH;
+    node.x = centerX - OV_W / 2;
+    node.y = y;
+    if (_collapsed.has(node.id) || !node.children.length) return;
+
+    const childY = y + nodeH + OV_VG;
+    const totalChildW = node.children.reduce((s, c) => s + _subtreeW(c), 0)
+                      + (node.children.length - 1) * OV_HG;
+    let cx = centerX - totalChildW / 2;
+    node.children.forEach(child => {
+      const sw = _subtreeW(child);
+      _layoutNode(child, cx + sw / 2, childY);
+      cx += sw + OV_HG;
+    });
+  };
+
+  // Does a paper match the active keyword filter?
+  const _paperMatches = p =>
+    !_activeKws.size || (p.keywords || []).some(kw => _activeKws.has(kw.toLowerCase()));
+
   const _overview = (body, themes) => {
-    body.classList.add('mv2-ov-sections');
+    body.classList.add('mv2-ov-tree');
 
-    themes.forEach(theme => {
-      const sec = document.createElement('div');
-      sec.className = 'mv2-ov-theme-sec';
+    // ── Build tree ──────────────────────────────────────────────────────────
+    const roots = themes.map(theme => ({
+      id: `t:${theme.name}`,
+      type: 'theme',
+      label: theme.name,
+      color: theme.color,
+      count: theme.paper_count,
+      children: (theme.concepts || []).map(concept => ({
+        id: `c:${theme.name}:${concept.name}`,
+        type: 'concept',
+        label: concept.name,
+        color: theme.color,
+        count: concept.paper_count,
+        children: (concept.papers || []).map(p => ({
+          id: `p:${p.id}`,
+          type: 'paper',
+          label: p.title || 'Untitled',
+          color: theme.color,
+          paper: p,
+          children: [],
+          dimmed: !_paperMatches(p),
+        })),
+      })),
+    }));
 
-      // Theme header
-      const thd = document.createElement('div');
-      thd.className = 'mv2-ov-theme-hd';
-      thd.style.borderBottomColor = theme.color + '55';
-      thd.innerHTML = `
-        <span class="mv2-ov-theme-dot" style="background:${_e(theme.color)}"></span>
-        <span style="color:${_e(theme.color)};font-weight:700;font-size:.82rem">${_e(theme.name)}</span>
-        <span class="mv2-ov-theme-cnt">${theme.paper_count} paper${theme.paper_count !== 1 ? 's' : ''}</span>
-      `;
-      sec.appendChild(thd);
+    // ── Layout ──────────────────────────────────────────────────────────────
+    const totalW = roots.reduce((s, r) => s + _subtreeW(r), 0)
+                 + (roots.length - 1) * OV_HG;
+    const canvasW = Math.max(totalW + OV_PAD * 2, 600);
 
-      // Concept card row
-      const cRow = document.createElement('div');
-      cRow.className = 'mv2-ov-concepts';
+    // Max canvas height: 3 levels deep
+    const canvasH = OV_PAD + OV_TH + OV_VG + OV_CH + OV_VG + OV_PH + OV_PAD;
 
-      (theme.concepts || []).forEach(concept => {
-        const matchPapers = _activeKws.size === 0
-          ? concept.papers || []
-          : (concept.papers || []).filter(p =>
-              (p.keywords || []).some(kw => _activeKws.has(kw.toLowerCase()))
-            );
-        const isDimmed = _activeKws.size > 0 && matchPapers.length === 0;
+    let startX = OV_PAD + (canvasW - OV_PAD * 2 - totalW) / 2;
+    roots.forEach(root => {
+      const sw = _subtreeW(root);
+      _layoutNode(root, startX + sw / 2, OV_PAD);
+      startX += sw + OV_HG;
+    });
 
-        const card = document.createElement('div');
-        card.className = 'mv2-ov-cc' + (isDimmed ? ' dimmed' : '');
+    // ── Canvas + viewport ───────────────────────────────────────────────────
+    const wrap = document.createElement('div');
+    wrap.className = 'mv2-ov-wrap';
 
-        // Collect top keywords across this concept's papers
-        const kwFreq = new Map();
-        (concept.papers || []).forEach(p =>
-          (p.keywords || []).forEach(kw => {
-            const k = kw.toLowerCase();
-            if (!kwFreq.has(k)) kwFreq.set(k, { name: kw, count: 0 });
-            kwFreq.get(k).count++;
-          })
-        );
-        const topKws = [...kwFreq.values()]
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 7)
-          .map(v => v.name);
+    const canvas = document.createElement('div');
+    canvas.className = 'mv2-ov-canvas';
+    canvas.style.width  = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
 
-        // Card header
-        const chd = document.createElement('div');
-        chd.className = 'mv2-ov-cc-hd';
-        chd.innerHTML = `
-          <span class="mv2-ov-cc-dot" style="background:${_e(theme.color)}"></span>
-          <span class="mv2-ov-cc-name">${_e(concept.name)}</span>
-          <span class="mv2-ov-cc-badge">${concept.paper_count}</span>
+    // SVG edge layer
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width',  canvasW);
+    svg.setAttribute('height', canvasH);
+    svg.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;overflow:visible';
+
+    // ── Render nodes + edges recursively ────────────────────────────────────
+    const renderSubtree = node => {
+      const nodeH = node.type === 'theme' ? OV_TH : node.type === 'concept' ? OV_CH : OV_PH;
+      const isCollapsed = _collapsed.has(node.id);
+      const hasChildren = node.children.length > 0;
+
+      // DOM node element
+      const el = document.createElement('div');
+      el.className = `mv2-ov-node mv2-ov-node-${node.type}${node.dimmed ? ' mv2-ov-dimmed' : ''}`;
+      el.style.left  = node.x + 'px';
+      el.style.top   = node.y + 'px';
+      el.style.width = OV_W + 'px';
+
+      if (node.type === 'paper') {
+        const p   = node.paper;
+        const kws = (p.keywords || []).slice(0, 5);
+        el.innerHTML = `
+          <div class="mv2-ov-node-hd" style="border-bottom:1px solid ${_e(node.color)}33">
+            <span class="mv2-ov-node-label" title="${_e(p.title)}">${_e(_cut(p.title, 56))}</span>
+          </div>
+          <div class="mv2-ov-node-sub">
+            ${p.year ? `<span class="mv2-ov-node-year">${_e(p.year)}</span>` : ''}
+          </div>
+          ${kws.length ? `<div class="mv2-ov-node-kws">${kws.map(k =>
+            `<span class="mv2-ov-node-kw" style="border-color:${_e(node.color)}55">${_e(k)}</span>`
+          ).join('')}</div>` : ''}
         `;
-        chd.style.cursor = 'pointer';
-        chd.addEventListener('click', () => {
-          _selTheme = theme.name;
-          _selConcept = concept.name;
-          _setMode('hierarchy');
+        el.addEventListener('click', () => {
+          if (_onNodeClick) _onNodeClick({ type: 'paper', paperId: p.id, nodeData: p });
         });
-        card.appendChild(chd);
-
-        // Keyword chips — act as the concept's description
-        if (topKws.length) {
-          const kwRow = document.createElement('div');
-          kwRow.className = 'mv2-ov-cc-kws';
-          topKws.forEach(kw => {
-            const chip = document.createElement('span');
-            const isActive = _activeKws.has(kw.toLowerCase());
-            chip.className = 'mv2-ov-cc-kw' + (isActive ? ' active' : '');
-            chip.textContent = kw;
-            kwRow.appendChild(chip);
+      } else {
+        const collHint = isCollapsed && hasChildren
+          ? `<span class="mv2-ov-coll-hint">${node.children.length} hidden ▶</span>` : '';
+        el.innerHTML = `
+          <div class="mv2-ov-node-hd" style="background:${_e(node.color)}15;border-bottom:1px solid ${_e(node.color)}33">
+            <span class="mv2-ov-node-icon" style="color:${_e(node.color)}">${node.type === 'theme' ? '◈' : '⬡'}</span>
+            <span class="mv2-ov-node-label">${_e(node.label)}</span>
+            <span class="mv2-ov-node-badge" style="background:${_e(node.color)}22;color:${_e(node.color)}">${node.count}</span>
+          </div>
+          <div class="mv2-ov-node-bd">
+            <span class="mv2-ov-node-type-lbl">${node.type}</span>
+            ${collHint}
+          </div>
+        `;
+        if (hasChildren) {
+          el.title = 'Double-click to collapse / expand';
+          el.addEventListener('dblclick', e => {
+            e.stopPropagation();
+            if (_collapsed.has(node.id)) _collapsed.delete(node.id);
+            else _collapsed.add(node.id);
+            _renderAll();
           });
-          card.appendChild(kwRow);
-        }
-
-        // Paper rows (filtered or all, max 5)
-        const displayPapers = _activeKws.size > 0 ? matchPapers : (concept.papers || []);
-        const showPapers = displayPapers.slice(0, 5);
-        const moreCnt   = displayPapers.length - showPapers.length;
-
-        if (showPapers.length) {
-          const pList = document.createElement('div');
-          pList.className = 'mv2-ov-cc-papers';
-          showPapers.forEach(p => {
-            const row = document.createElement('div');
-            row.className = 'mv2-ov-cp';
-            row.innerHTML = `
-              <span class="mv2-ov-cp-title">${_e(_cut(p.title, 62))}</span>
-              ${p.year ? `<span class="mv2-ov-cp-year">${_e(p.year)}</span>` : ''}
-            `;
-            row.addEventListener('click', () => {
-              if (_onNodeClick) _onNodeClick({ type: 'paper', paperId: p.id, nodeData: p });
-            });
-            pList.appendChild(row);
+          el.addEventListener('click', () => {
+            if (node.type === 'concept') {
+              _selTheme   = themes.find(t => t.concepts?.some(c => c.name === node.label))?.name || _selTheme;
+              _selConcept = node.label;
+            } else if (node.type === 'theme') {
+              _selTheme   = node.label;
+              _selConcept = null;
+            }
           });
-          if (moreCnt > 0) {
-            const more = document.createElement('div');
-            more.className = 'mv2-ov-cc-more';
-            more.textContent = `+ ${moreCnt} more`;
-            more.addEventListener('click', () => {
-              _selTheme = theme.name;
-              _selConcept = concept.name;
-              _setMode('hierarchy');
-            });
-            pList.appendChild(more);
-          }
-          card.appendChild(pList);
         }
+      }
 
-        cRow.appendChild(card);
-      });
+      if (isCollapsed) el.classList.add('mv2-ov-collapsed');
+      canvas.appendChild(el);
 
-      sec.appendChild(cRow);
-      body.appendChild(sec);
+      // Recurse into visible children
+      if (!isCollapsed) {
+        node.children.forEach(child => {
+          renderSubtree(child);
+
+          // Bezier edge from this node's bottom-center to child's top-center
+          const x1 = node.x  + OV_W / 2;
+          const y1 = node.y  + nodeH;
+          const x2 = child.x + OV_W / 2;
+          const y2 = child.y;
+          const my = (y1 + y2) / 2;
+
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${my} ${x2} ${my} ${x2} ${y2}`);
+          path.setAttribute('stroke', node.color + '55');
+          path.setAttribute('stroke-width', '1.8');
+          path.setAttribute('fill', 'none');
+          svg.appendChild(path);
+        });
+      }
+    };
+
+    roots.forEach(root => renderSubtree(root));
+
+    canvas.appendChild(svg);
+    wrap.appendChild(canvas);
+    body.appendChild(wrap);
+
+    // Center horizontally on load
+    requestAnimationFrame(() => {
+      if (canvasW > wrap.clientWidth) {
+        wrap.scrollLeft = (canvasW - wrap.clientWidth) / 2;
+      }
     });
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  // HIERARCHY — left tree + right paper grid
+  // HIERARCHY — left tree + right paper grid (unchanged)
   // ══════════════════════════════════════════════════════════════════════════
   const _hierarchy = (body, themes) => {
     body.classList.add('mv2-hierarchy');
-
     if (!_selTheme && themes.length) _selTheme = themes[0].name;
     const selThemeObj = themes.find(t => t.name === _selTheme);
 
-    // Left tree
     const tree = document.createElement('div');
     tree.className = 'mv2-tree';
-
     themes.forEach(t => {
       const isOpen = t.name === _selTheme;
       const wrap = document.createElement('div');
       wrap.className = 'mv2-tlg' + (isOpen ? ' open' : '');
-
       const row = document.createElement('div');
       row.className = 'mv2-tlg-row' + (isOpen && !_selConcept ? ' sel' : '');
       row.innerHTML = `
@@ -298,7 +351,6 @@ window.MapView = (() => {
       `;
       row.addEventListener('click', () => { _selTheme = t.name; _selConcept = null; _renderAll(); });
       wrap.appendChild(row);
-
       if (isOpen) {
         const kids = document.createElement('div');
         kids.className = 'mv2-tmg-list';
@@ -319,10 +371,8 @@ window.MapView = (() => {
       tree.appendChild(wrap);
     });
 
-    // Right paper area
     const main = document.createElement('div');
     main.className = 'mv2-papers';
-
     if (selThemeObj) {
       let displayPapers;
       if (_selConcept) {
@@ -335,13 +385,9 @@ window.MapView = (() => {
           (c.papers || []).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); displayPapers.push(p); } })
         );
       }
-
       if (_activeKws.size) {
-        displayPapers = displayPapers.filter(p =>
-          (p.keywords || []).some(kw => _activeKws.has(kw.toLowerCase()))
-        );
+        displayPapers = displayPapers.filter(p => _paperMatches(p));
       }
-
       const bc = document.createElement('div');
       bc.className = 'mv2-breadcrumb';
       bc.innerHTML = [
@@ -356,11 +402,28 @@ window.MapView = (() => {
       if (!displayPapers.length) {
         pgrid.innerHTML = '<div class="mv2-empty">No papers match the current filter.</div>';
       } else {
-        displayPapers.forEach(p => pgrid.appendChild(_paperCard(p, selThemeObj.color)));
+        displayPapers.forEach(p => {
+          const card = document.createElement('div');
+          card.className = 'mv2-pc';
+          const kws  = (p.keywords || []).filter(Boolean).slice(0, 4);
+          const mets = (p.metrics  || []).filter(m => m.name).slice(0, 2);
+          card.innerHTML = `
+            <div class="mv2-pc-title">${_e(_cut(p.title, 80))}</div>
+            <div class="mv2-pc-sub">
+              ${p.year    ? `<span>${_e(p.year)}</span>` : ''}
+              ${p.concept ? `<span class="mv2-pc-concept" style="color:${_e(selThemeObj.color)}">${_e(p.concept)}</span>` : ''}
+            </div>
+            ${kws.length  ? `<div class="mv2-pc-tags">${kws.map(k => `<span class="mv2-pc-tag">${_e(k)}</span>`).join('')}</div>` : ''}
+            ${mets.length ? `<div class="mv2-pc-mets">${mets.map(m => `<span class="mv2-pc-met">${_e(m.name)} = ${_e(m.value)}${m.unit ? ' ' + _e(m.unit) : ''}</span>`).join('')}</div>` : ''}
+          `;
+          card.addEventListener('click', () => {
+            if (_onNodeClick) _onNodeClick({ type: 'paper', paperId: p.id, nodeData: p });
+          });
+          pgrid.appendChild(card);
+        });
       }
       main.appendChild(pgrid);
     }
-
     body.appendChild(tree);
     body.appendChild(main);
   };
@@ -372,34 +435,25 @@ window.MapView = (() => {
     _onNodeClick = opts.onNodeClick || null;
     _container   = document.getElementById(containerId);
     if (!_container) return;
-
     _container.style.position = 'relative';
     _container.innerHTML = '<div class="mv2-loading"><span class="mv2-loading-dot"></span> Building research map…</div>';
-
     try {
       _data = await _apiFetch('/map-overview');
     } catch (_) {
       _data = { themes: [] };
     }
-
     if (!_data || Array.isArray(_data)) _data = { themes: [] };
     if (_data.groups && !_data.themes)  _data = { themes: [] };
-
     _selTheme = (_data.themes || []).length ? _data.themes[0].name : null;
     _mode     = 'overview';
     _activeKws.clear();
     _renderAll();
   };
 
-  // ── Public API ─────────────────────────────────────────────────────────────
   return {
     init,
-    fit: () => {},
-    applyKeywordFilter: norms => {
-      _activeKws.clear();
-      (norms || []).forEach(n => _activeKws.add(n));
-      _renderAll();
-    },
+    fit:               () => {},
+    applyKeywordFilter: norms => { _activeKws.clear(); (norms || []).forEach(n => _activeKws.add(n)); _renderAll(); },
     enterOverviewMode: () => _setMode('overview'),
     enterFullMode:     () => _setMode('hierarchy'),
     exitFocus:         () => { _activeKws.clear(); _setMode('overview'); },
