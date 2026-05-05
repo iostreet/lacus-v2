@@ -1,7 +1,6 @@
 /**
- * Lacus Map View v5 — Research flow tree (story-map style)
- * Overview: Theme → Concept → Paper node tree with collapsible levels
- * Hierarchy: left tree + paper grid (unchanged)
+ * Lacus Map View v6 — Research flow tree (story-map style)
+ * Overview: zoom/pan canvas, draggable nodes, collapse/expand
  */
 
 window.MapView = (() => {
@@ -15,16 +14,32 @@ window.MapView = (() => {
   let _selTheme    = null;
   let _selConcept  = null;
   let _activeKws   = new Set();
-  const _collapsed = new Set(); // IDs of collapsed nodes (dblclick)
+  const _collapsed = new Set();
+
+  // ── Canvas transform state ─────────────────────────────────────────────────
+  const NS = 'http://www.w3.org/2000/svg';
+  let _zoom       = 1;
+  let _panX       = 0;
+  let _panY       = 0;
+  let _didCenter  = false;
+  let _panActive  = false;
+  let _panOriginX = 0;
+  let _panOriginY = 0;
+  let _dragNode   = null; // { node, el, sx, sy, ox, oy, moved }
+  let _lastDragMoved = false;
+  let _wrapEl     = null;
+  let _viewEl     = null;
+  let _svgEl      = null;
+  let _rootsCache = [];
 
   // ── Layout constants ──────────────────────────────────────────────────────
-  const OV_W   = 190;  // node width
-  const OV_HG  = 14;   // horizontal gap between siblings
-  const OV_VG  = 62;   // vertical gap between levels (edge space)
-  const OV_TH  = 50;   // theme node height
-  const OV_CH  = 50;   // concept node height
-  const OV_PH  = 114;  // paper node height
-  const OV_PAD = 28;   // canvas side padding
+  const OV_W   = 190;
+  const OV_HG  = 14;
+  const OV_VG  = 62;
+  const OV_TH  = 50;
+  const OV_CH  = 50;
+  const OV_PH  = 114;
+  const OV_PAD = 28;
 
   // ── Utils ─────────────────────────────────────────────────────────────────
   const _e   = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -37,6 +52,67 @@ window.MapView = (() => {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return res.json();
   };
+
+  // ── Transform ─────────────────────────────────────────────────────────────
+  const _applyTransform = () => {
+    if (_viewEl) _viewEl.style.transform = `translate(${_panX}px,${_panY}px) scale(${_zoom})`;
+  };
+
+  // ── Edge drawing ──────────────────────────────────────────────────────────
+  const _drawEdgesFrom = node => {
+    const nodeH = node.type === 'theme' ? OV_TH : node.type === 'concept' ? OV_CH : OV_PH;
+    if (_collapsed.has(node.id)) return;
+    node.children.forEach(child => {
+      const x1 = node.x  + OV_W / 2, y1 = node.y  + nodeH;
+      const x2 = child.x + OV_W / 2, y2 = child.y;
+      const my = (y1 + y2) / 2;
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${my} ${x2} ${my} ${x2} ${y2}`);
+      path.setAttribute('stroke', node.color + '55');
+      path.setAttribute('stroke-width', '1.8');
+      path.setAttribute('fill', 'none');
+      _svgEl.appendChild(path);
+      _drawEdgesFrom(child);
+    });
+  };
+
+  const _redrawEdges = () => {
+    if (!_svgEl) return;
+    while (_svgEl.firstChild) _svgEl.removeChild(_svgEl.firstChild);
+    _rootsCache.forEach(_drawEdgesFrom);
+  };
+
+  // ── Document-level mouse handlers (set up once) ───────────────────────────
+  document.addEventListener('mousemove', e => {
+    if (_panActive) {
+      _panX = e.clientX - _panOriginX;
+      _panY = e.clientY - _panOriginY;
+      _applyTransform();
+    } else if (_dragNode) {
+      const dx = (e.clientX - _dragNode.sx) / _zoom;
+      const dy = (e.clientY - _dragNode.sy) / _zoom;
+      if (!_dragNode.moved && Math.sqrt(dx * dx + dy * dy) < 5) return;
+      _dragNode.moved = true;
+      _dragNode.node.x = _dragNode.ox + dx;
+      _dragNode.node.y = _dragNode.oy + dy;
+      _dragNode.el.style.left = _dragNode.node.x + 'px';
+      _dragNode.el.style.top  = _dragNode.node.y + 'px';
+      _redrawEdges();
+      document.body.style.cursor = 'grabbing';
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (_panActive) {
+      _panActive = false;
+      if (_wrapEl) _wrapEl.classList.remove('mv2-ov-panning');
+    }
+    if (_dragNode) {
+      _lastDragMoved = _dragNode.moved;
+      _dragNode = null;
+      document.body.style.cursor = '';
+    }
+  });
 
   // ── Keyword filter list ───────────────────────────────────────────────────
   const _buildKwList = () => {
@@ -135,7 +211,6 @@ window.MapView = (() => {
   // OVERVIEW — research flow tree (Theme → Concept → Paper)
   // ══════════════════════════════════════════════════════════════════════════
 
-  // Calculate how many horizontal pixels a node's full subtree needs
   const _subtreeW = node => {
     if (_collapsed.has(node.id) || !node.children.length) return OV_W;
     const childrenW = node.children.reduce((s, c) => s + _subtreeW(c), 0)
@@ -143,13 +218,11 @@ window.MapView = (() => {
     return Math.max(OV_W, childrenW);
   };
 
-  // Assign x/y to every node in the subtree
   const _layoutNode = (node, centerX, y) => {
     const nodeH = node.type === 'theme' ? OV_TH : node.type === 'concept' ? OV_CH : OV_PH;
     node.x = centerX - OV_W / 2;
     node.y = y;
     if (_collapsed.has(node.id) || !node.children.length) return;
-
     const childY = y + nodeH + OV_VG;
     const totalChildW = node.children.reduce((s, c) => s + _subtreeW(c), 0)
                       + (node.children.length - 1) * OV_HG;
@@ -161,7 +234,6 @@ window.MapView = (() => {
     });
   };
 
-  // Does a paper match the active keyword filter?
   const _paperMatches = p =>
     !_activeKws.size || (p.keywords || []).some(kw => _activeKws.has(kw.toLowerCase()));
 
@@ -197,8 +269,6 @@ window.MapView = (() => {
     const totalW = roots.reduce((s, r) => s + _subtreeW(r), 0)
                  + (roots.length - 1) * OV_HG;
     const canvasW = Math.max(totalW + OV_PAD * 2, 600);
-
-    // Max canvas height: 3 levels deep
     const canvasH = OV_PAD + OV_TH + OV_VG + OV_CH + OV_VG + OV_PH + OV_PAD;
 
     let startX = OV_PAD + (canvasW - OV_PAD * 2 - totalW) / 2;
@@ -208,9 +278,17 @@ window.MapView = (() => {
       startX += sw + OV_HG;
     });
 
-    // ── Canvas + viewport ───────────────────────────────────────────────────
+    // ── Store for live edge redraw ──────────────────────────────────────────
+    _rootsCache = roots;
+
+    // ── Viewport + canvas ───────────────────────────────────────────────────
     const wrap = document.createElement('div');
     wrap.className = 'mv2-ov-wrap';
+    _wrapEl = wrap;
+
+    const viewport = document.createElement('div');
+    viewport.className = 'mv2-ov-viewport';
+    _viewEl = viewport;
 
     const canvas = document.createElement('div');
     canvas.className = 'mv2-ov-canvas';
@@ -218,19 +296,18 @@ window.MapView = (() => {
     canvas.style.height = canvasH + 'px';
 
     // SVG edge layer
-    const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('width',  canvasW);
     svg.setAttribute('height', canvasH);
     svg.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;overflow:visible';
+    _svgEl = svg;
 
-    // ── Render nodes + edges recursively ────────────────────────────────────
+    // ── Render nodes recursively ─────────────────────────────────────────────
     const renderSubtree = node => {
       const nodeH = node.type === 'theme' ? OV_TH : node.type === 'concept' ? OV_CH : OV_PH;
       const isCollapsed = _collapsed.has(node.id);
       const hasChildren = node.children.length > 0;
 
-      // DOM node element
       const el = document.createElement('div');
       el.className = `mv2-ov-node mv2-ov-node-${node.type}${node.dimmed ? ' mv2-ov-dimmed' : ''}`;
       el.style.left  = node.x + 'px';
@@ -252,6 +329,7 @@ window.MapView = (() => {
           ).join('')}</div>` : ''}
         `;
         el.addEventListener('click', () => {
+          if (_lastDragMoved) { _lastDragMoved = false; return; }
           if (_onNodeClick) _onNodeClick({ type: 'paper', paperId: p.id, nodeData: p });
         });
       } else {
@@ -272,11 +350,13 @@ window.MapView = (() => {
           el.title = 'Double-click to collapse / expand';
           el.addEventListener('dblclick', e => {
             e.stopPropagation();
+            _lastDragMoved = false;
             if (_collapsed.has(node.id)) _collapsed.delete(node.id);
             else _collapsed.add(node.id);
             _renderAll();
           });
           el.addEventListener('click', () => {
+            if (_lastDragMoved) { _lastDragMoved = false; return; }
             if (node.type === 'concept') {
               _selTheme   = themes.find(t => t.concepts?.some(c => c.name === node.label))?.name || _selTheme;
               _selConcept = node.label;
@@ -288,47 +368,101 @@ window.MapView = (() => {
         }
       }
 
+      // Node drag (mousedown)
+      el.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        _dragNode = { node, el, sx: e.clientX, sy: e.clientY, ox: node.x, oy: node.y, moved: false };
+        e.preventDefault();
+      });
+
       if (isCollapsed) el.classList.add('mv2-ov-collapsed');
       canvas.appendChild(el);
 
-      // Recurse into visible children
-      if (!isCollapsed) {
-        node.children.forEach(child => {
-          renderSubtree(child);
-
-          // Bezier edge from this node's bottom-center to child's top-center
-          const x1 = node.x  + OV_W / 2;
-          const y1 = node.y  + nodeH;
-          const x2 = child.x + OV_W / 2;
-          const y2 = child.y;
-          const my = (y1 + y2) / 2;
-
-          const path = document.createElementNS(NS, 'path');
-          path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${my} ${x2} ${my} ${x2} ${y2}`);
-          path.setAttribute('stroke', node.color + '55');
-          path.setAttribute('stroke-width', '1.8');
-          path.setAttribute('fill', 'none');
-          svg.appendChild(path);
-        });
-      }
+      if (!isCollapsed) node.children.forEach(renderSubtree);
     };
 
-    roots.forEach(root => renderSubtree(root));
+    roots.forEach(renderSubtree);
+
+    // Draw initial edges
+    _redrawEdges();
 
     canvas.appendChild(svg);
-    wrap.appendChild(canvas);
+    viewport.appendChild(canvas);
+    wrap.appendChild(viewport);
+
+    // ── Pan (mousedown on background) ───────────────────────────────────────
+    wrap.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.mv2-ov-node') || e.target.closest('.mv2-ov-zoom-ctrl')) return;
+      _panActive  = true;
+      _panOriginX = e.clientX - _panX;
+      _panOriginY = e.clientY - _panY;
+      wrap.classList.add('mv2-ov-panning');
+      e.preventDefault();
+    });
+
+    // ── Wheel zoom ──────────────────────────────────────────────────────────
+    wrap.addEventListener('wheel', e => {
+      e.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const nz = Math.min(4, Math.max(0.1, _zoom * factor));
+      _panX = mx - (mx - _panX) * (nz / _zoom);
+      _panY = my - (my - _panY) * (nz / _zoom);
+      _zoom = nz;
+      _applyTransform();
+    }, { passive: false });
+
+    // ── Zoom control buttons ─────────────────────────────────────────────────
+    const zoomCtrl = document.createElement('div');
+    zoomCtrl.className = 'mv2-ov-zoom-ctrl';
+
+    const mkZBtn = (label, fn) => {
+      const b = document.createElement('button');
+      b.className = 'mv2-ov-zoom-btn';
+      b.textContent = label;
+      b.title = label === '+' ? 'Zoom in' : label === '−' ? 'Zoom out' : 'Reset view';
+      b.addEventListener('click', fn);
+      return b;
+    };
+
+    zoomCtrl.appendChild(mkZBtn('+', () => {
+      _zoom = Math.min(4, _zoom * 1.25);
+      _applyTransform();
+    }));
+    zoomCtrl.appendChild(mkZBtn('−', () => {
+      _zoom = Math.max(0.1, _zoom / 1.25);
+      _applyTransform();
+    }));
+    zoomCtrl.appendChild(mkZBtn('↺', () => {
+      _zoom = 1;
+      _panX = Math.max(20, (wrap.clientWidth  - canvasW)  / 2);
+      _panY = Math.max(20, (wrap.clientHeight - canvasH) / 2);
+      _applyTransform();
+    }));
+
+    wrap.appendChild(zoomCtrl);
     body.appendChild(wrap);
 
-    // Center horizontally on load
-    requestAnimationFrame(() => {
-      if (canvasW > wrap.clientWidth) {
-        wrap.scrollLeft = (canvasW - wrap.clientWidth) / 2;
-      }
-    });
+    // ── Apply current transform (preserve zoom/pan across re-renders) ────────
+    _applyTransform();
+
+    // ── Center on first load ─────────────────────────────────────────────────
+    if (!_didCenter) {
+      requestAnimationFrame(() => {
+        _didCenter = true;
+        _panX = Math.max(20, (wrap.clientWidth  - canvasW)  / 2);
+        _panY = Math.max(20, (wrap.clientHeight - canvasH) / 2);
+        _applyTransform();
+      });
+    }
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  // HIERARCHY — left tree + right paper grid (unchanged)
+  // HIERARCHY — left tree + right paper grid
   // ══════════════════════════════════════════════════════════════════════════
   const _hierarchy = (body, themes) => {
     body.classList.add('mv2-hierarchy');
@@ -437,6 +571,10 @@ window.MapView = (() => {
     if (!_container) return;
     _container.style.position = 'relative';
     _container.innerHTML = '<div class="mv2-loading"><span class="mv2-loading-dot"></span> Building research map…</div>';
+
+    // Reset transform state for fresh load
+    _zoom = 1; _panX = 0; _panY = 0; _didCenter = false;
+
     try {
       _data = await _apiFetch('/map-overview');
     } catch (_) {

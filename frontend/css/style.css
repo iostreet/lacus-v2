@@ -75,7 +75,14 @@ a:hover { text-decoration: underline; }
 .site-nav-auth {
   display: flex; align-items: center; gap: 6px; flex-shrink: 0;
 }
-.site-nav-email { display: none; } /* legacy */
+.site-nav-email {
+  font-size: 0.82rem; font-weight: 600;
+  color: #a78bfa; background: rgba(139,92,246,.12);
+  border: 1px solid rgba(139,92,246,.3);
+  border-radius: 6px; padding: 4px 10px;
+  white-space: nowrap; max-width: 160px;
+  overflow: hidden; text-overflow: ellipsis;
+}
 .site-nav-username-btn {
   font-size: 0.82rem; font-weight: 600;
   color: #a78bfa; background: rgba(139,92,246,.12);
@@ -2896,15 +2903,35 @@ tr.row-dragging { opacity: 0.45; background: rgba(168,85,247,0.08); }
 /* Outer flex body for the tree overview */
 .mv2-ov-tree { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
-/* Scrollable canvas wrapper */
+/* Scrollable canvas wrapper — now uses CSS transform for zoom/pan */
 .mv2-ov-wrap {
-  flex: 1; overflow: auto;
+  flex: 1; overflow: hidden; position: relative; cursor: grab;
   background: radial-gradient(ellipse at 50% 20%, rgba(168,85,247,.04) 0%, transparent 70%),
               var(--bg);
 }
+.mv2-ov-wrap.mv2-ov-panning { cursor: grabbing !important; }
+
+/* Transform wrapper (zoom + pan applied here) */
+.mv2-ov-viewport { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 
 /* Absolutely-positioned canvas that holds the nodes */
 .mv2-ov-canvas { position: relative; }
+
+/* Zoom control buttons (bottom-right of wrap) */
+.mv2-ov-zoom-ctrl {
+  position: absolute; bottom: 14px; right: 14px;
+  display: flex; flex-direction: column; gap: 5px; z-index: 20;
+}
+.mv2-ov-zoom-btn {
+  width: 32px; height: 32px;
+  border: 1px solid var(--border); background: var(--bg2);
+  color: var(--text); border-radius: 7px;
+  font-size: 1.05rem; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background .15s, border-color .15s;
+  user-select: none;
+}
+.mv2-ov-zoom-btn:hover { background: var(--bg3); border-color: rgba(168,85,247,.45); color: #a78bfa; }
 
 /* ── Node base ── */
 .mv2-ov-node {
