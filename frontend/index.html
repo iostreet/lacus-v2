@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lacus — Paper Analysis</title>
+  <title>Lacus — My Papers</title>
+  <meta name="description" content="Manage your personal research knowledge space. Register papers, explore keyword connections, and build your research flow map with Lacus." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta property="og:title" content="Lacus — My Papers" />
+  <meta property="og:description" content="Your personal research knowledge space on Lacus." />
+  <meta property="og:image" content="/static/og-image.png" />
+  <link rel="icon" href="/static/favicon.ico" />
   <link rel="stylesheet" href="/static/css/style.css?v=22" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -57,6 +63,7 @@
   <div class="site-nav-links">
     <a href="/"         class="site-nav-link">Home</a>
     <a href="/features" class="site-nav-link">Feature</a>
+    <a href="/privacy"  class="site-nav-link">Privacy</a>
     <a href="/board"    class="site-nav-link">Community</a>
     <a href="/app"      class="site-nav-link active">Papers</a>
   </div>
@@ -202,7 +209,7 @@
           </div>
           <div class="overview-card" id="share-thoughts-card">
             <h3>Share Thoughts</h3>
-            <div id="ov-doi-comments" style="display:flex;flex-direction:column;gap:8px;min-height:40px">
+            <div id="ov-doi-comments" style="display:flex;flex-direction:column;gap:8px;min-height:40px;max-height:420px;overflow-y:auto;padding-right:4px">
               <div style="color:var(--text-muted);font-size:.82rem">Loading discussions…</div>
             </div>
             <div id="ov-doi-input" style="margin-top:10px"></div>
@@ -407,6 +414,37 @@
 
 <div class="toast-container" id="toast-container"></div>
 
+<!-- ══════════════════ Welcome Tutorial Modal ══════════════════ -->
+<div id="wt-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.84);backdrop-filter:blur(10px);z-index:600;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#0d0d1a;border:1px solid rgba(168,85,247,0.3);border-radius:22px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.6)">
+
+    <!-- top progress bar -->
+    <div style="height:3px;background:rgba(255,255,255,0.06)">
+      <div id="wt-bar" style="height:100%;background:linear-gradient(90deg,#7c3aed,#a855f7);transition:width .35s ease;width:25%"></div>
+    </div>
+
+    <!-- step content -->
+    <div id="wt-body" style="padding:38px 40px 24px;min-height:300px"></div>
+
+    <!-- footer -->
+    <div style="padding:0 40px 30px;display:flex;align-items:center;justify-content:space-between">
+      <div id="wt-dots" style="display:flex;gap:7px"></div>
+      <div style="display:flex;gap:10px">
+        <button id="wt-prev-btn"
+          onclick="wtNav(-1)"
+          style="padding:9px 20px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#94a3b8;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;display:none">
+          ← Back
+        </button>
+        <button id="wt-next-btn"
+          onclick="wtNav(1)"
+          style="padding:9px 22px;background:#a855f7;border:none;border-radius:10px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;font-family:inherit">
+          Next →
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Admin overlay -->
 <div class="admin-overlay hidden" id="admin-overlay">
   <div class="admin-panel">
@@ -539,5 +577,192 @@
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=10"></script>
 <script src="/static/js/app.js?v=17"></script>
+
+<script>
+// ── Welcome tutorial ─────────────────────────────────────────────────────────
+(function () {
+  const ov = document.getElementById('wt-overlay');
+  const body = document.getElementById('wt-body');
+  const bar  = document.getElementById('wt-bar');
+  const dots = document.getElementById('wt-dots');
+  const prev = document.getElementById('wt-prev-btn');
+  const next = document.getElementById('wt-next-btn');
+
+  let step = 0;
+  const TOTAL = 4;
+
+  function steps(field, name) {
+    return [
+      // Step 0 — Welcome
+      {
+        icon: '👋',
+        title: `Welcome to Lacus, ${name}!`,
+        html: `
+          <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:18px">
+            Lacus is a <strong style="color:#e2d9f3">paper-based knowledge community</strong>
+            where your research takes shape as a living knowledge graph.
+          </p>
+          <div style="background:rgba(168,85,247,0.07);border:1px solid rgba(168,85,247,0.18);border-radius:12px;padding:16px 20px">
+            <div style="font-size:.72rem;color:#a855f7;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px">Your Knowledge Graph Structure</div>
+            <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;font-size:.83rem">
+              <span style="background:rgba(124,58,237,0.3);border:1px solid #7c3aed;border-radius:6px;padding:5px 12px;color:#c4b5fd;font-weight:700">${field || 'Your Field'}</span>
+              <span style="color:#475569;padding:0 6px;font-size:1rem">→</span>
+              <span style="background:rgba(109,40,217,0.25);border:1px solid #9333ea;border-radius:6px;padding:5px 12px;color:#c4b5fd">Theme</span>
+              <span style="color:#475569;padding:0 6px;font-size:1rem">→</span>
+              <span style="background:rgba(139,92,246,0.2);border:1px solid #c084fc;border-radius:6px;padding:5px 12px;color:#c4b5fd">Concept</span>
+              <span style="color:#475569;padding:0 6px;font-size:1rem">→</span>
+              <span style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 12px;color:#94a3b8">Papers</span>
+            </div>
+            <p style="font-size:.78rem;color:#475569;margin-top:10px;margin-bottom:0">
+              <strong style="color:#94a3b8">${field || 'Your Field'}</strong> is your top-level group — the Field you selected when you signed up.
+            </p>
+          </div>`,
+      },
+      // Step 1 — Add Paper
+      {
+        icon: '📄',
+        title: 'Add Your First Paper',
+        html: `
+          <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:16px">
+            Click <strong style="color:#e2d9f3">+ Add Paper</strong> in the top-right to upload a PDF.
+            Lacus analyzes it and automatically suggests Themes, Concepts, and Keywords.
+          </p>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            ${[
+              ['1', 'Upload PDF', 'Drag and drop or click the upload button'],
+              ['2', 'AI Analysis', 'Lacus extracts structure: themes, concepts, keywords'],
+              ['3', 'Review & Edit', 'Read the paper carefully — refine the suggested keywords to build an accurate knowledge graph'],
+              ['4', 'Save', 'Your paper joins the Field → Theme → Concept → Papers hierarchy'],
+            ].map(([n, t, d]) => `
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div style="width:22px;height:22px;border-radius:50%;background:rgba(168,85,247,0.2);border:1px solid rgba(168,85,247,0.4);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:#a855f7;margin-top:2px">${n}</div>
+                <div>
+                  <div style="font-size:.85rem;font-weight:600;color:#e2d9f3">${t}</div>
+                  <div style="font-size:.78rem;color:#64748b;margin-top:2px">${d}</div>
+                </div>
+              </div>`).join('')}
+          </div>`,
+      },
+      // Step 2 — Card View
+      {
+        icon: '🗂️',
+        title: 'Card View',
+        html: `
+          <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:18px">
+            Browse all your registered papers in a clean card layout.
+          </p>
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+            ${[
+              ['📌', 'Quick overview', 'Title, year, journal, and author at a glance'],
+              ['🏷️', 'Keyword summary', 'See Material / Method / Application keyword counts'],
+              ['📝', 'Personal notes', 'Your private memo and relevance rating per paper'],
+              ['🔍', 'Search & filter', 'Filter by keyword category or relevance score'],
+            ].map(([ic, t, d]) => `
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <span style="font-size:1.1rem;line-height:1.4">${ic}</span>
+                <div>
+                  <div style="font-size:.85rem;font-weight:600;color:#e2d9f3">${t}</div>
+                  <div style="font-size:.78rem;color:#64748b;margin-top:2px">${d}</div>
+                </div>
+              </div>`).join('')}
+          </div>`,
+      },
+      // Step 3 — Map View + Get Started
+      {
+        icon: '🗺️',
+        title: 'Map View',
+        html: `
+          <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:18px">
+            Switch to Map View to visualize your papers as an interactive knowledge graph.
+          </p>
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
+            ${[
+              ['🔗', 'Connected nodes', 'Papers linked by shared themes and concepts'],
+              ['📐', 'Research flow', 'See upstream → downstream research direction at a glance'],
+              ['🖱️', 'Interactive', 'Click nodes to expand, drag to pan, scroll to zoom'],
+            ].map(([ic, t, d]) => `
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <span style="font-size:1.1rem;line-height:1.4">${ic}</span>
+                <div>
+                  <div style="font-size:.85rem;font-weight:600;color:#e2d9f3">${t}</div>
+                  <div style="font-size:.78rem;color:#64748b;margin-top:2px">${d}</div>
+                </div>
+              </div>`).join('')}
+          </div>
+          <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:10px;padding:14px 18px;text-align:center">
+            <p style="font-size:.82rem;color:#c4b5fd;margin:0">
+              The more papers you add, the richer your knowledge graph becomes. 🚀
+            </p>
+          </div>`,
+      },
+    ];
+  }
+
+  function renderDots() {
+    dots.innerHTML = '';
+    for (let i = 0; i < TOTAL; i++) {
+      const d = document.createElement('div');
+      d.style.cssText = `width:${i===step?'20px':'7px'};height:7px;border-radius:4px;background:${i===step?'#a855f7':'rgba(255,255,255,0.15)'};transition:all .25s`;
+      dots.appendChild(d);
+    }
+  }
+
+  function render(field, name) {
+    const s = steps(field, name)[step];
+    bar.style.width = `${((step + 1) / TOTAL) * 100}%`;
+    prev.style.display = step === 0 ? 'none' : '';
+    next.textContent = step === TOTAL - 1 ? 'Get Started 🚀' : 'Next →';
+    next.style.background = step === TOTAL - 1 ? '#059669' : '#a855f7';
+
+    body.innerHTML = `
+      <div style="font-size:2.2rem;margin-bottom:14px;line-height:1">${s.icon}</div>
+      <h2 style="font-size:1.25rem;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:14px">${s.title}</h2>
+      ${s.html}`;
+    renderDots();
+  }
+
+  window.wtNav = function(dir) {
+    step += dir;
+    if (step >= TOTAL) {
+      closeWelcome();
+      // click the upload button to guide first action
+      document.getElementById('upload-header-btn')?.click();
+      return;
+    }
+    step = Math.max(0, step);
+    render(window._wtField, window._wtName);
+  };
+
+  function closeWelcome() {
+    ov.style.display = 'none';
+    if (window._authUser?.id) {
+      localStorage.setItem(`lacus_welcomed_${window._authUser.id}`, '1');
+    }
+  }
+
+  function maybeShow() {
+    const user = window._authUser;
+    if (!user) { setTimeout(maybeShow, 300); return; }
+    const key = `lacus_welcomed_${user.id}`;
+    if (localStorage.getItem(key)) return;
+
+    const meta  = user.user_metadata || {};
+    const field = meta.research_field || meta.researchField || '';
+    const name  = meta.username || meta.name || meta.full_name || user.email?.split('@')[0] || 'Researcher';
+
+    window._wtField = field;
+    window._wtName  = name;
+
+    step = 0;
+    render(field, name);
+    ov.style.display = 'flex';
+  }
+
+  // Close on backdrop click
+  ov.addEventListener('click', e => { if (e.target === ov) closeWelcome(); });
+
+  setTimeout(maybeShow, 600);
+})();
+</script>
 </body>
 </html>

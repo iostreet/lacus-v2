@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Optional
@@ -87,12 +88,20 @@ def _set_progress(paper_id: int, step: str, pct: int, error: str | None = None):
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="Lacus API", version="2.0.0")
 
+# ALLOWED_ORIGINS env var: comma-separated list of allowed origins.
+# Set in Railway: https://lacus-v2-develop.up.railway.app,https://yourdomain.com
+_raw_origins = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8000,http://127.0.0.1:8000",
+)
+_ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 if FRONTEND_DIR.exists():
@@ -132,6 +141,22 @@ def features_page():
     if f.exists():
         return FileResponse(str(f))
     return {"message": "Features page not found"}
+
+
+@app.get("/privacy")
+def privacy_page():
+    f = FRONTEND_DIR / "privacy.html"
+    if f.exists():
+        return FileResponse(str(f))
+    return {"message": "Privacy page not found"}
+
+
+@app.get("/reset-password")
+def reset_password_page():
+    f = FRONTEND_DIR / "reset-password.html"
+    if f.exists():
+        return FileResponse(str(f))
+    return {"message": "Reset password page not found"}
 
 
 @app.get("/api/status")
@@ -229,7 +254,7 @@ def get_doi_comments(doi: str):
     """Get comments for a DOI — public."""
     try:
         rows = (_sb_with('').table("doi_comments")
-                .select("id,doi,username,content,parent_comment_id,created_at")
+                .select("id,doi,user_id,username,content,parent_comment_id,created_at")
                 .eq("doi", doi).order("created_at").execute().data or [])
         return {"comments": rows}
     except Exception as e:
@@ -270,6 +295,35 @@ def get_current_user(authorization: str = Header(None)) -> str:
     raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
+# ── Rate limiting (in-memory, per user) ──────────────────────────────────────
+_rl_lock  = threading.Lock()
+_rl_store: dict[str, list[float]] = defaultdict(list)
+
+def _rl_check(key: str, max_calls: int, window: int) -> None:
+    now = time.time()
+    with _rl_lock:
+        _rl_store[key] = [t for t in _rl_store[key] if now - t < window]
+        if len(_rl_store[key]) >= max_calls:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests — please wait before trying again.",
+                headers={"Retry-After": str(window)},
+            )
+        _rl_store[key].append(now)
+
+def _rl_comment(uid: str = Depends(get_current_user)) -> None:
+    """10 per 60 s — DOI comment POST/PUT (anti-spam)."""
+    _rl_check(f"cmt:{uid}", 10, 60)
+
+def _rl_upload(uid: str = Depends(get_current_user)) -> None:
+    """5 per 60 s — paper upload & AI analysis (expensive)."""
+    _rl_check(f"upload:{uid}", 5, 60)
+
+def _rl_write(uid: str = Depends(get_current_user)) -> None:
+    """30 per 60 s — general write operations."""
+    _rl_check(f"write:{uid}", 30, 60)
+
+
 class DoiCommentCreate(BaseModel):
     doi:               str
     content:           str
@@ -277,7 +331,7 @@ class DoiCommentCreate(BaseModel):
 
 
 @app.post("/api/doi-comments")
-def post_doi_comment(body: DoiCommentCreate, user_id: str = Depends(get_current_user)):
+def post_doi_comment(body: DoiCommentCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_comment)):
     import httpx as _httpx
     try:
         resp = _httpx.get(
@@ -304,9 +358,49 @@ def post_doi_comment(body: DoiCommentCreate, user_id: str = Depends(get_current_
     return {"comment": row[0] if row else {}}
 
 
+class DoiCommentUpdate(BaseModel):
+    content: str
+
+
+_OPERATOR_EMAIL = "iostreet7@gmail.com"
+
+
+def _get_user_email(token: str) -> str:
+    try:
+        import httpx as _httpx
+        resp = _httpx.get(
+            f"{_SUPABASE_URL_CONST}/auth/v1/user",
+            headers={"apikey": _SUPABASE_ANON_CONST, "Authorization": f"Bearer {token}"},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("email", "")
+    except Exception:
+        pass
+    return ""
+
+
+@app.put("/api/doi-comments/{comment_id}")
+def edit_doi_comment(comment_id: str, body: DoiCommentUpdate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_comment)):
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    row = _sb().table("doi_comments").select("user_id").eq("id", comment_id).execute().data
+    if not row or row[0]["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not your comment")
+    _sb().table("doi_comments").update({"content": content}).eq("id", comment_id).execute()
+    return {"ok": True}
+
+
 @app.delete("/api/doi-comments/{comment_id}")
-def delete_doi_comment(comment_id: str, user_id: str = Depends(get_current_user)):
-    _sb().table("doi_comments").delete().eq("id", comment_id).eq("user_id", user_id).execute()
+def delete_doi_comment(comment_id: str, authorization: str = Header(None), user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
+    token = (authorization or "")[7:]
+    email = _get_user_email(token)
+    is_operator = (email == _OPERATOR_EMAIL)
+    q = _sb().table("doi_comments").delete().eq("id", comment_id)
+    if not is_operator:
+        q = q.eq("user_id", user_id)
+    q.execute()
     return {"ok": True}
 
 
@@ -710,7 +804,7 @@ def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
 
 
 @app.post("/api/papers/{paper_id}/confirm")
-def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(get_current_user)):
+def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_upload)):
     """Apply user edits from the review modal and mark paper as confirmed."""
     sb = _sb()
     paper = (sb.table("papers").select("id, user_id")
@@ -747,6 +841,7 @@ async def upload_paper(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
     authorization: str = Header(None),
+    _rl: None = Depends(_rl_upload),
 ):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are accepted.")
@@ -830,7 +925,7 @@ def update_paper(paper_id: int, data: PaperUpdate, user_id: str = Depends(get_cu
 
 
 @app.delete("/api/papers/{paper_id}")
-def delete_paper(paper_id: int, user_id: str = Depends(get_current_user)):
+def delete_paper(paper_id: int, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     res = _sb().table("papers").select("pdf_path").eq("id", paper_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(404, "Paper not found")
@@ -858,7 +953,7 @@ def reorder_keywords(paper_id: int, items: list[ReorderItem], user_id: str = Dep
 
 
 @app.post("/api/papers/{paper_id}/keywords")
-def create_keyword(paper_id: int, data: KeywordCreate, user_id: str = Depends(get_current_user)):
+def create_keyword(paper_id: int, data: KeywordCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     _assert_paper_owner(paper_id, user_id)
     res = _sb().table("keywords").insert({
         "paper_id":        paper_id,
@@ -903,7 +998,7 @@ def reorder_relations(paper_id: int, items: list[ReorderItem], user_id: str = De
 
 
 @app.post("/api/papers/{paper_id}/relations")
-def create_relation(paper_id: int, data: RelationCreate, user_id: str = Depends(get_current_user)):
+def create_relation(paper_id: int, data: RelationCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     _assert_paper_owner(paper_id, user_id)
     res = _sb().table("relations").insert({
         "paper_id":          paper_id,
@@ -963,7 +1058,7 @@ def reorder_metrics(paper_id: int, items: list[ReorderItem], user_id: str = Depe
 
 
 @app.post("/api/papers/{paper_id}/metrics")
-def create_metric(paper_id: int, data: MetricCreate, user_id: str = Depends(get_current_user)):
+def create_metric(paper_id: int, data: MetricCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     _assert_paper_owner(paper_id, user_id)
     res = _sb().table("metrics").insert({
         "paper_id":    paper_id,
@@ -1236,7 +1331,7 @@ def save_map_positions(items: list[MapPositionItem], user_id: str = Depends(get_
 
 
 @app.post("/api/map-custom-nodes")
-def create_custom_node(data: CustomNodeCreate, user_id: str = Depends(get_current_user)):
+def create_custom_node(data: CustomNodeCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     res = _sb().table("map_custom_nodes").insert({
         "user_id": user_id, "label": data.label, "category": data.category,
         "description": data.description, "color": data.color, "pos_x": data.pos_x, "pos_y": data.pos_y,

@@ -602,12 +602,19 @@ const loadOverview = async () => {
 // ─────────────────────────────────────────────────────────────────────────────
 const _e = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+const _OPERATOR_EMAIL = 'iostreet7@gmail.com';
+
 const loadOverviewDoiComments = async (doi) => {
   const container = document.getElementById('ov-doi-comments');
   const inputEl   = document.getElementById('ov-doi-input');
   if (!container) return;
 
-  // Comment input (always shown since user is authenticated in /app)
+  const me = window._authUser;
+  const myId = me?.id;
+  const myEmail = me?.email;
+  const isOperator = (myEmail === _OPERATOR_EMAIL);
+
+  // Comment input form
   if (inputEl) {
     inputEl.innerHTML = `
       <textarea id="ov-dcp-ta" rows="2" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text-primary);font-family:inherit;font-size:.82rem;padding:8px 10px;resize:none;outline:none" placeholder="Share your thoughts…"></textarea>
@@ -635,6 +642,76 @@ const loadOverviewDoiComments = async (doi) => {
     });
   }
 
+  const renderComment = (c, num, numStr, isReply) => {
+    const d = new Date(c.created_at);
+    const dateStr = d.toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'});
+    const canEdit   = myId && c.user_id === myId;
+    const canDelete = myId && (c.user_id === myId || isOperator);
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = isReply
+      ? 'background:rgba(255,255,255,0.02);border-radius:6px;padding:8px 10px;'
+      : 'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:10px 12px;';
+
+    const editBtnHtml   = canEdit   ? `<button class="btn btn-sm ov-edit-btn"   data-id="${c.id}" style="padding:2px 7px;font-size:.7rem">Edit</button>` : '';
+    const deleteBtnHtml = canDelete ? `<button class="btn btn-sm ov-delete-btn" data-id="${c.id}" style="padding:2px 7px;font-size:.7rem;color:#f87171">Delete</button>` : '';
+
+    wrap.innerHTML = `
+      <div style="font-size:.68rem;color:var(--accent);font-weight:700;margin-bottom:2px">#${numStr}</div>
+      <div style="font-size:${isReply?'.75rem':'.78rem'};font-weight:600;color:#c4b5fd;margin-bottom:3px">${_e(c.username||'Anonymous')}</div>
+      <div class="ov-cmt-body" style="font-size:${isReply?'.8rem':'.82rem'};color:var(--text-muted);line-height:1.5">${_e(c.content)}</div>
+      <div class="ov-edit-area" style="display:none;margin-top:6px"></div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">
+        <span style="font-size:.68rem;color:var(--text-muted)">${dateStr}</span>
+        ${isReply ? '' : `<button class="ov-reply-btn btn btn-sm" data-parent="${c.id}" style="padding:2px 8px;font-size:.72rem">Reply</button>`}
+        ${editBtnHtml}${deleteBtnHtml}
+      </div>
+      ${isReply ? '' : `<div class="ov-reply-form" style="display:none;margin-top:6px"></div>`}
+      ${isReply ? '' : `<div class="ov-reply-list" style="display:flex;flex-direction:column;gap:5px;margin-top:6px;padding-left:12px;border-left:2px solid rgba(168,85,247,0.2)"></div>`}`;
+
+    // Edit
+    wrap.querySelector('.ov-edit-btn')?.addEventListener('click', () => {
+      const bodyEl = wrap.querySelector('.ov-cmt-body');
+      const editArea = wrap.querySelector('.ov-edit-area');
+      if (editArea.style.display !== 'none') { editArea.style.display='none'; bodyEl.style.display=''; return; }
+      bodyEl.style.display = 'none';
+      editArea.style.display = 'block';
+      editArea.innerHTML = `
+        <textarea style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:.82rem;padding:7px 10px;resize:none;outline:none" rows="3">${_e(c.content)}</textarea>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <button class="btn btn-sm btn-primary ov-save-edit">Save</button>
+          <button class="btn btn-sm ov-cancel-edit">Cancel</button>
+        </div>`;
+      editArea.querySelector('.ov-cancel-edit').addEventListener('click', () => { editArea.style.display='none'; bodyEl.style.display=''; });
+      editArea.querySelector('.ov-save-edit').addEventListener('click', async () => {
+        const newContent = editArea.querySelector('textarea').value.trim();
+        if (!newContent) return;
+        try {
+          const token = await getAuthToken();
+          const r = await fetch(`/api/doi-comments/${c.id}`, {
+            method: 'PUT',
+            headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+            body: JSON.stringify({ content: newContent }),
+          });
+          if (r.ok) { c.content = newContent; bodyEl.textContent = newContent; editArea.style.display='none'; bodyEl.style.display=''; }
+          else toast('Edit failed', 'err');
+        } catch { toast('Edit error', 'err'); }
+      });
+    });
+
+    // Delete
+    wrap.querySelector('.ov-delete-btn')?.addEventListener('click', async () => {
+      if (!confirm('Delete this comment?')) return;
+      try {
+        const token = await getAuthToken();
+        await fetch(`/api/doi-comments/${c.id}`, { method: 'DELETE', headers: {'Authorization':'Bearer '+token} });
+        loadOverviewDoiComments(doi);
+      } catch { toast('Delete error', 'err'); }
+    });
+
+    return wrap;
+  };
+
   try {
     const res = await fetch('/api/public/doi-comments/'+encodeURIComponent(doi));
     const data = await res.json();
@@ -644,84 +721,54 @@ const loadOverviewDoiComments = async (doi) => {
     const topLevel = all.filter(c => !c.parent_comment_id);
     const byParent = {};
     all.filter(c => c.parent_comment_id).forEach(r => {
-      (byParent[r.parent_comment_id]=byParent[r.parent_comment_id]||[]).push(r);
+      (byParent[r.parent_comment_id] = byParent[r.parent_comment_id] || []).push(r);
     });
 
     container.innerHTML = '';
     topLevel.forEach((c, idx) => {
       const num = idx + 1;
       const replies = byParent[c.id] || [];
-      const d = new Date(c.created_at);
-      const dateStr = d.toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'});
+      const wrap = renderComment(c, num, String(num), false);
 
-      const el = document.createElement('div');
-      el.style.cssText='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:10px 12px;';
-      el.innerHTML=`
-        <div style="font-size:.68rem;color:var(--accent);font-weight:700;margin-bottom:2px">#${num}</div>
-        <div style="font-size:.78rem;font-weight:600;color:#c4b5fd;margin-bottom:3px">${_e(c.username||'Anonymous')}</div>
-        <div style="font-size:.82rem;color:var(--text-muted);line-height:1.5">${_e(c.content)}</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap">
-          <span style="font-size:.68rem;color:var(--text-muted)">${dateStr}</span>
-          <button class="ov-reply-btn btn btn-sm" data-parent="${c.id}" style="padding:2px 8px;font-size:.72rem">Reply</button>
-          ${replies.length?`<span style="font-size:.7rem;color:var(--text-muted);cursor:default">${replies.length} repl${replies.length>1?'ies':'y'} (double-click)</span>`:''}
-        </div>
-        <div id="ov-drf-${c.id}" style="display:none;margin-top:6px"></div>
-        <div id="ov-drp-${c.id}" style="display:none;flex-direction:column;gap:5px;margin-top:6px;padding-left:12px;border-left:2px solid rgba(168,85,247,0.2)"></div>`;
-
-      // render replies
-      const rDiv = el.querySelector(`#ov-drp-${c.id}`);
-      replies.forEach((r, ri) => {
-        const rd = new Date(r.created_at);
-        const rDate = rd.toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'});
-        const re = document.createElement('div');
-        re.style.cssText='background:rgba(255,255,255,0.02);border-radius:6px;padding:8px 10px;';
-        re.innerHTML=`
-          <div style="font-size:.68rem;color:var(--accent);font-weight:700">#${num}.${ri+1}</div>
-          <div style="font-size:.75rem;font-weight:600;color:#c4b5fd">${_e(r.username||'Anonymous')}</div>
-          <div style="font-size:.8rem;color:var(--text-muted);line-height:1.5">${_e(r.content)}</div>
-          <div style="font-size:.68rem;color:var(--text-muted);margin-top:3px">${rDate}</div>`;
-        rDiv.appendChild(re);
-      });
-
-      // dblclick to show/hide replies
-      if (replies.length) {
-        el.addEventListener('dblclick', () => {
-          const rd2=document.getElementById(`ov-drp-${c.id}`);
-          rd2.style.display=rd2.style.display==='none'?'flex':'none';
+      // render replies immediately
+      const rList = wrap.querySelector('.ov-reply-list');
+      if (rList) {
+        replies.forEach((r, ri) => {
+          rList.appendChild(renderComment(r, num, `${num}.${ri+1}`, true));
         });
       }
 
       // reply button
-      el.querySelector('.ov-reply-btn')?.addEventListener('click', () => {
-        const fEl = document.getElementById(`ov-drf-${c.id}`);
-        if (!fEl) return;
-        if (fEl.style.display!=='none') { fEl.style.display='none'; return; }
-        fEl.style.display='block';
-        fEl.innerHTML=`
-          <textarea class="ov-reply-ta" rows="2" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:.8rem;padding:7px 10px;resize:none;outline:none" placeholder="Write a reply…"></textarea>
+      const replyForm = wrap.querySelector('.ov-reply-form');
+      wrap.querySelector('.ov-reply-btn')?.addEventListener('click', () => {
+        if (!replyForm) return;
+        if (replyForm.style.display !== 'none') { replyForm.style.display='none'; return; }
+        replyForm.style.display = 'block';
+        replyForm.innerHTML = `
+          <textarea rows="2" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:.8rem;padding:7px 10px;resize:none;outline:none" placeholder="Write a reply…"></textarea>
           <div style="display:flex;gap:6px;margin-top:4px">
-            <button class="btn btn-sm btn-primary ov-post-reply" data-parent="${c.id}">Post Reply</button>
+            <button class="btn btn-sm btn-primary ov-post-reply">Post Reply</button>
             <button class="btn btn-sm ov-cancel-reply">Cancel</button>
           </div>`;
-        fEl.querySelector('.ov-cancel-reply').addEventListener('click', ()=>{fEl.style.display='none';});
-        fEl.querySelector('.ov-post-reply').addEventListener('click', async () => {
-          const ta=fEl.querySelector('.ov-reply-ta');
-          const content=ta?.value?.trim();
+        replyForm.querySelector('.ov-cancel-reply').addEventListener('click', () => { replyForm.style.display='none'; });
+        replyForm.querySelector('.ov-post-reply').addEventListener('click', async () => {
+          const ta = replyForm.querySelector('textarea');
+          const content = ta?.value?.trim();
           if (!content) return;
           try {
-            const token=await getAuthToken();
-            await fetch('/api/doi-comments',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({doi,content,parent_comment_id:c.id})});
-            fEl.style.display='none';
+            const token = await getAuthToken();
+            await fetch('/api/doi-comments', {method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({doi,content,parent_comment_id:c.id})});
+            replyForm.style.display = 'none';
             loadOverviewDoiComments(doi);
           } catch {}
         });
       });
 
-      container.appendChild(el);
+      container.appendChild(wrap);
     });
-  } catch(e) {
-    const c2=document.getElementById('ov-doi-comments');
-    if (c2) c2.innerHTML='<div style="color:var(--text-muted);font-size:.82rem">Could not load.</div>';
+  } catch {
+    const c2 = document.getElementById('ov-doi-comments');
+    if (c2) c2.innerHTML = '<div style="color:var(--text-muted);font-size:.82rem">Could not load.</div>';
   }
 };
 

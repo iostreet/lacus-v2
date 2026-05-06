@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lacus — A Living Map of Scientific Knowledge</title>
+  <meta name="description" content="Lacus is a paper-based knowledge community where researchers map scientific connections through shared fields, themes, and concepts. Explore the live knowledge map." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Lacus — A Living Map of Scientific Knowledge" />
+  <meta property="og:description" content="Explore a community-built knowledge graph of scientific papers. Discover how research connects across fields, themes, and concepts." />
+  <meta property="og:image" content="/static/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Lacus — A Living Map of Scientific Knowledge" />
+  <meta name="twitter:description" content="Explore a community-built knowledge graph of scientific papers." />
+  <meta name="twitter:image" content="/static/og-image.png" />
+  <link rel="icon" href="/static/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -86,8 +96,16 @@
       height: 100vh; padding-top: 64px;
       display: flex; flex-direction: column; overflow: hidden;
     }
-    .map-section-header { text-align: center; padding: 12px 24px 10px; flex-shrink: 0; }
-    .map-hint { font-size: 0.78rem; color: var(--gray3); margin-top: 4px; letter-spacing: 0.04em; }
+    .map-section-header { text-align: center; padding: 10px 24px 8px; flex-shrink: 0; }
+    .map-section-tagline { font-size: clamp(1rem, 2.2vw, 1.4rem); font-weight: 700; color: #e2d9f3; letter-spacing: -0.3px; }
+    .map-section-tagline em { font-style: normal; color: var(--accent); }
+    .map-section-sub { font-size: 0.8rem; color: var(--gray3); margin-top: 3px; }
+    .map-hint-overlay {
+      position: absolute; bottom: 14px; right: 14px; z-index: 10;
+      font-size: 0.7rem; color: rgba(148,163,184,0.7);
+      text-align: right; line-height: 1.7; pointer-events: none;
+      letter-spacing: 0.02em;
+    }
 
     .map-layout {
       display: flex; flex: 1; min-height: 0;
@@ -282,6 +300,7 @@
   <div class="site-nav-links">
     <a href="/"          class="site-nav-link active">Home</a>
     <a href="/features"  class="site-nav-link">Feature</a>
+    <a href="/privacy"   class="site-nav-link">Privacy</a>
     <a href="/board"     class="site-nav-link">Community</a>
     <a href="#" onclick="handlePapersLink()" class="site-nav-link">Papers</a>
   </div>
@@ -291,12 +310,17 @@
 <!-- ── Live Knowledge Map ── -->
 <section class="map-section" id="map-section">
   <div class="map-section-header">
-    <p class="section-label">Live Knowledge Map</p>
-    <p class="map-hint">Click a node to expand · Click Concept to see papers · Scroll to zoom · Drag to pan</p>
+    <p class="map-section-tagline">Lake of Knowledge — <em>A Paper-Based Knowledge Community</em></p>
+    <p class="map-section-sub">Explore research connections built by the community, one paper at a time.</p>
   </div>
   <div class="map-layout">
     <!-- SVG Map -->
     <div class="map-left" id="map-canvas-wrap">
+      <div class="map-hint-overlay">
+        Live Knowledge Map<br>
+        Click a node to expand · Click Concept to see papers<br>
+        Scroll to zoom · Drag to pan
+      </div>
       <div class="map-controls">
         <button class="map-ctrl-btn" id="mc-plus"  title="Zoom in">+</button>
         <button class="map-ctrl-btn" id="mc-minus" title="Zoom out">−</button>
@@ -338,7 +362,7 @@
       </svg>
       <span>Lacus</span>
     </div>
-    <div class="auth-tabs">
+    <div class="auth-tabs" id="auth-tabs">
       <button class="auth-tab active" data-tab="signin" onclick="switchAuthTab('signin')">Sign In</button>
       <button class="auth-tab" data-tab="signup" onclick="switchAuthTab('signup')">Sign Up</button>
     </div>
@@ -347,6 +371,7 @@
     <form class="auth-form" id="form-signin" onsubmit="handleSignIn(event)">
       <input class="auth-input" type="email" id="si-email" placeholder="Email address" required autocomplete="email" />
       <input class="auth-input" type="password" id="si-password" placeholder="Password" required autocomplete="current-password" />
+      <p class="auth-hint" style="text-align:right;margin-top:-4px"><a onclick="showForgotPassword()">Forgot password?</a></p>
       <button class="auth-submit" type="submit" id="si-btn">Sign In</button>
       <p class="auth-hint">No account? <a onclick="switchAuthTab('signup')">Create one free</a></p>
     </form>
@@ -375,6 +400,12 @@
       <button class="auth-submit" type="submit" id="su-btn">Create Account</button>
       <p class="auth-hint">Already have an account? <a onclick="switchAuthTab('signin')">Sign in</a></p>
     </form>
+    <form class="auth-form hidden" id="form-forgot" onsubmit="handleForgotPassword(event)">
+      <p style="font-size:.85rem;color:var(--gray2);line-height:1.55;margin-bottom:2px">Enter your email and we'll send you a link to reset your password.</p>
+      <input class="auth-input" type="email" id="fp-email" placeholder="Email address" required autocomplete="email" />
+      <button class="auth-submit" type="submit" id="fp-btn">Send Reset Link</button>
+      <p class="auth-hint"><a onclick="hideForgotPassword()">← Back to Sign In</a></p>
+    </form>
   </div>
 </div>
 
@@ -399,9 +430,41 @@
 
   window.switchAuthTab = function(tab) {
     clearMsgs();
+    document.getElementById('auth-tabs').style.display = '';
+    document.getElementById('form-forgot').classList.add('hidden');
     document.querySelectorAll('.auth-tab').forEach(b => b.classList.toggle('active', b.dataset.tab===tab));
     document.getElementById('form-signin').classList.toggle('hidden', tab!=='signin');
     document.getElementById('form-signup').classList.toggle('hidden', tab!=='signup');
+  };
+
+  window.showForgotPassword = function() {
+    clearMsgs();
+    document.getElementById('auth-tabs').style.display = 'none';
+    document.getElementById('form-signin').classList.add('hidden');
+    document.getElementById('form-signup').classList.add('hidden');
+    document.getElementById('form-forgot').classList.remove('hidden');
+    document.getElementById('fp-email').value = document.getElementById('si-email').value || '';
+  };
+
+  window.hideForgotPassword = function() {
+    clearMsgs();
+    document.getElementById('form-forgot').classList.add('hidden');
+    document.getElementById('auth-tabs').style.display = '';
+    switchAuthTab('signin');
+  };
+
+  window.handleForgotPassword = async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('fp-btn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    const email = document.getElementById('fp-email').value.trim();
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/reset-password',
+    });
+    if (error) { showError(error.message); btn.disabled = false; btn.textContent = 'Send Reset Link'; return; }
+    showSuccess('Reset link sent! Check your inbox.');
+    document.getElementById('fp-email').value = '';
+    btn.disabled = false; btn.textContent = 'Send Reset Link';
   };
 
   window.handleOpenApp = async function(tab) {
@@ -769,6 +832,7 @@
       onNode(e, node => node.type === 'concept' ? selectConcept(node) : toggleExpand(node));
     });
     wrap.addEventListener('click', e => {
+      if (_touchMoved) { _touchMoved = false; return; }
       onNode(e, node => node.type === 'concept' ? selectConcept(node) : toggleExpand(node));
     });
 
@@ -782,6 +846,50 @@
       applyTransform();
     });
     document.addEventListener('mouseup', () => { isPanning = false; });
+
+    // ── Touch: 1-finger pan · 2-finger pinch zoom ─────────────────────────────
+    let _touchMoved = false, tPanning = false;
+    let tpsx, tpsy, tpspx, tpspy, tPinchDist = 0;
+    const _td = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+    wrap.addEventListener('touchstart', e => {
+      _touchMoved = false;
+      if (e.target.closest('[data-id]') || e.target.closest('.map-ctrl-btn')) return;
+      if (e.touches.length === 1) {
+        tPanning = true;
+        tpsx = e.touches[0].clientX; tpsy = e.touches[0].clientY;
+        tpspx = panX; tpspy = panY;
+      } else if (e.touches.length === 2) {
+        tPanning = false; tPinchDist = _td(e.touches);
+      }
+    }, { passive: true });
+
+    wrap.addEventListener('touchmove', e => {
+      if (e.touches.length === 1 && tPanning) {
+        const dx = e.touches[0].clientX - tpsx, dy = e.touches[0].clientY - tpsy;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          _touchMoved = true; e.preventDefault();
+          panX = tpspx + dx; panY = tpspy + dy; applyTransform();
+        }
+      } else if (e.touches.length === 2) {
+        _touchMoved = true; e.preventDefault();
+        const dist = _td(e.touches);
+        if (tPinchDist > 0) {
+          const rect = wrap.getBoundingClientRect();
+          const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+          const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+          const nz = Math.min(4, Math.max(0.15, zoom * dist / tPinchDist));
+          panX = mx - (mx - panX) * (nz / zoom);
+          panY = my - (my - panY) * (nz / zoom);
+          zoom = nz; applyTransform();
+        }
+        tPinchDist = dist;
+      }
+    }, { passive: false });
+
+    wrap.addEventListener('touchend', () => {
+      tPanning = false; tPinchDist = 0;
+    }, { passive: true });
 
     wrap.addEventListener('wheel', e => {
       e.preventDefault();
@@ -808,7 +916,7 @@
 
   function loadData(data) {
     const COLORS = ['#7c3aed','#0891b2','#059669','#d97706','#dc2626','#db2777','#2563eb','#65a30d'];
-    fieldNodes = (data.fields || []).map((f, i) => ({
+    fieldNodes = (data.fields || []).filter(f => f.name !== 'Other Research').map((f, i) => ({
       id: f.id, type: 'field', label: f.name, count: f.paper_count,
       color: f.color || COLORS[i % COLORS.length],
       cx: 0, cy: 0, expanded: false, selected: false, positioned: false, data: f,

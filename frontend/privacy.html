@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lacus — Features</title>
-  <meta name="description" content="Explore Lacus features: research flow maps, auto-extracted keywords, DOI-based community discussions, and a copyright-safe knowledge graph builder." />
+  <title>Lacus — Privacy Policy</title>
+  <meta name="description" content="Lacus stores only structured metadata — never PDF content. Learn how we protect your research data and respect copyright." />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Lacus — Features" />
-  <meta property="og:description" content="Research flow maps, auto-extracted keywords, DOI-based discussions, and a copyright-safe knowledge graph builder for researchers." />
+  <meta property="og:title" content="Lacus — Privacy Policy" />
+  <meta property="og:description" content="Lacus stores only structured metadata — never PDF content. Learn how we protect your research data and respect copyright." />
   <meta property="og:image" content="/static/og-image.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Lacus — Features" />
-  <meta name="twitter:description" content="Research flow maps, auto-extracted keywords, DOI-based discussions, and a copyright-safe knowledge graph." />
+  <meta name="twitter:title" content="Lacus — Privacy Policy" />
+  <meta name="twitter:description" content="Lacus stores only structured metadata — never PDF content. Learn how we protect your research data and respect copyright." />
   <meta name="twitter:image" content="/static/og-image.png" />
   <link rel="icon" href="/static/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -38,39 +38,46 @@
     .site-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 200; background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); }
     .site-nav.scrolled { background: rgba(0,0,0,0.92); }
 
-    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 100px 24px 80px; }
+    .page-wrap { max-width: 860px; margin: 0 auto; padding: 100px 24px 80px; }
 
-    .page-hero { text-align: center; margin-bottom: 72px; }
     .section-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
-    .page-hero h1 { font-size: clamp(2rem, 4vw, 3rem); font-weight: 900; letter-spacing: -1px; margin-bottom: 16px; }
+
+    .page-hero { text-align: center; margin-bottom: 64px; }
+    .page-hero h1 { font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 900; letter-spacing: -1px; margin-bottom: 14px; }
     .page-hero p { font-size: 1rem; color: var(--gray2); max-width: 520px; margin: 0 auto; line-height: 1.65; }
 
-    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; margin-bottom: 72px; }
-    .feature-card {
-      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
-      border-radius: 16px; padding: 28px 24px;
-      transition: border-color 0.2s, background 0.2s;
-    }
-    .feature-card:hover { border-color: rgba(168,85,247,0.3); background: rgba(168,85,247,0.04); }
-    .feature-icon { font-size: 1.6rem; margin-bottom: 14px; }
-    .feature-title { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 8px; }
-    .feature-desc  { font-size: 0.86rem; color: var(--gray2); line-height: 1.6; }
-
-    .privacy-block {
+    .policy-section {
       background: rgba(255,255,255,0.02); border: 1px solid var(--border);
-      border-radius: 16px; padding: 40px 36px; text-align: center; max-width: 700px; margin: 0 auto 64px;
+      border-radius: 16px; padding: 32px 36px; margin-bottom: 24px;
     }
-    .privacy-block h2 { font-size: 1.6rem; font-weight: 800; margin-bottom: 16px; }
-    .privacy-block p { font-size: 0.92rem; color: var(--gray2); line-height: 1.7; margin-bottom: 20px; }
-    .privacy-items { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; text-align: left; }
-    .privacy-item { display: flex; align-items: flex-start; gap: 10px; font-size: 0.86rem; color: var(--gray2); }
-    .privacy-item-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 6px; }
+    .policy-section h2 { font-size: 1.15rem; font-weight: 700; color: #e2d9f3; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+    .policy-section h2 .icon { font-size: 1.2rem; }
+    .policy-section p { font-size: 0.88rem; color: var(--gray2); line-height: 1.75; margin-bottom: 10px; }
+    .policy-section p:last-child { margin-bottom: 0; }
+    .policy-list { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; }
+    .policy-item { display: flex; align-items: flex-start; gap: 10px; font-size: 0.86rem; color: var(--gray2); line-height: 1.6; }
+    .policy-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 7px; }
 
-    .cta-row { text-align: center; padding: 40px 0 20px; }
-    .btn-primary { padding: 14px 32px; background: var(--accent); color: #fff; font-size: 0.95rem; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; font-family: inherit; transition: background 0.2s, transform 0.15s; text-decoration: none; display: inline-block; }
-    .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
-    .btn-ghost { padding: 14px 32px; background: rgba(255,255,255,0.06); color: #fff; font-size: 0.95rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; cursor: pointer; font-family: inherit; transition: background 0.2s; text-decoration: none; display: inline-block; }
+    .contact-block {
+      background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.2);
+      border-radius: 16px; padding: 32px 36px; margin-top: 32px; text-align: center;
+    }
+    .contact-block h2 { font-size: 1.2rem; font-weight: 800; margin-bottom: 10px; }
+    .contact-block p { font-size: 0.9rem; color: var(--gray2); margin-bottom: 16px; line-height: 1.65; }
+    .contact-email {
+      display: inline-block; background: rgba(168,85,247,0.12); border: 1px solid rgba(168,85,247,0.3);
+      border-radius: 8px; padding: 10px 20px; font-size: 0.95rem; font-weight: 600; color: #c4b5fd;
+      text-decoration: none; letter-spacing: 0.02em;
+    }
+    .contact-email:hover { background: rgba(168,85,247,0.22); }
+
+    .btn-ghost { padding: 12px 28px; background: rgba(255,255,255,0.06); color: #fff; font-size: 0.9rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; cursor: pointer; font-family: inherit; transition: background 0.2s; text-decoration: none; display: inline-block; }
     .btn-ghost:hover { background: rgba(255,255,255,0.1); }
+    .btn-primary { padding: 12px 28px; background: var(--accent); color: #fff; font-size: 0.9rem; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; font-family: inherit; transition: background 0.2s; text-decoration: none; display: inline-block; }
+    .btn-primary:hover { background: var(--accent2); }
+    .cta-row { text-align: center; padding: 36px 0 0; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+    .updated-note { text-align: center; font-size: 0.78rem; color: var(--gray3); margin-bottom: 48px; }
 
     .footer { border-top: 1px solid var(--border); padding: 36px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; max-width: 1100px; margin: 0 auto; }
     .footer-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1rem; }
@@ -79,7 +86,7 @@
     .footer-links a:hover { color: var(--white); }
     .footer-copy { font-size: 0.78rem; color: var(--gray3); }
 
-    .auth-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(10px); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .auth-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(10px); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; }
     .auth-overlay.hidden { display: none !important; }
     .auth-modal { background: #0c0c16; border: 1px solid rgba(168,85,247,0.28); border-radius: 20px; padding: 40px 36px; width: 100%; max-width: 440px; position: relative; max-height: 92vh; overflow-y: auto; }
     .auth-close { position: absolute; top: 14px; right: 16px; background: none; border: none; color: var(--gray2); font-size: 1.1rem; cursor: pointer; }
@@ -119,8 +126,8 @@
   </a>
   <div class="site-nav-links">
     <a href="/"          class="site-nav-link">Home</a>
-    <a href="/features"  class="site-nav-link active">Feature</a>
-    <a href="/privacy"   class="site-nav-link">Privacy</a>
+    <a href="/features"  class="site-nav-link">Feature</a>
+    <a href="/privacy"   class="site-nav-link active">Privacy</a>
     <a href="/board"     class="site-nav-link">Community</a>
     <a href="#" onclick="handlePapersLink()" class="site-nav-link">Papers</a>
   </div>
@@ -130,66 +137,74 @@
 <div class="page-wrap">
 
   <div class="page-hero">
-    <p class="section-label">What Lacus Does</p>
-    <h1>DOI-based Structure + Dialogue</h1>
-    <p>Not a PDF repository. A living knowledge graph where every paper is a node in a growing network of ideas.</p>
-  </div>
-
-  <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon">🗺</div>
-      <div class="feature-title">Research Flow Map</div>
-      <div class="feature-desc">Visualize how your papers connect through shared materials, methods, and applications in a story-map layout. Navigate upstream and downstream research paths at a glance.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🔬</div>
-      <div class="feature-title">Auto-extracted Structure</div>
-      <div class="feature-desc">Keywords, metrics, themes, and concepts are extracted automatically from each paper you register. You review and refine — the structure is yours to own.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">💬</div>
-      <div class="feature-title">DOI-based Discussions</div>
-      <div class="feature-desc">Every paper has a persistent discussion thread tied to its DOI, shared across the community. The conversation stays with the paper — forever.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🔒</div>
-      <div class="feature-title">Copyright-safe by Design</div>
-      <div class="feature-desc">We store structure and metadata, never paper text. DOI links point to the publisher — we only hold the knowledge graph you build.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🌐</div>
-      <div class="feature-title">Community Knowledge Map</div>
-      <div class="feature-desc">The landing page shows a live map built from all registered papers — fields, themes, and concepts growing as the community contributes.</div>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">📌</div>
-      <div class="feature-title">Personal Research Space</div>
-      <div class="feature-desc">Your papers, notes, and keyword graphs are private by default. You control what gets shared with the broader community map.</div>
-    </div>
-  </div>
-
-  <div class="privacy-block">
     <p class="section-label">Privacy & Copyright</p>
-    <h2>Your papers stay yours</h2>
-    <p>Lacus never stores or distributes PDF content. All analysis happens on extracted metadata and user-assigned structure. DOI links point to the publisher — we only hold the knowledge graph you build.</p>
-    <div class="privacy-items">
-      <div class="privacy-item"><div class="privacy-item-dot"></div><span>No PDF storage — we never hold your full paper files.</span></div>
-      <div class="privacy-item"><div class="privacy-item-dot"></div><span>Metadata only — title, authors, DOI, journal, year, and user-assigned keywords.</span></div>
-      <div class="privacy-item"><div class="privacy-item-dot"></div><span>Your notes are private — the memo field is only visible to you.</span></div>
-      <div class="privacy-item"><div class="privacy-item-dot"></div><span>DOI discussions are public — comments are tied to the DOI and visible to all.</span></div>
-      <div class="privacy-item"><div class="privacy-item-dot"></div><span>Delete anytime — removing a paper removes all associated data from our servers.</span></div>
+    <h1>Your papers stay yours</h1>
+    <p>Lacus is designed to protect your research data and respect copyright from the ground up. Here is exactly what we store — and what we never touch.</p>
+  </div>
+
+  <p class="updated-note">Last updated: May 2025</p>
+
+  <div class="policy-section">
+    <h2><span class="icon">📄</span> What We Store</h2>
+    <p>Lacus only stores the structured metadata you choose to register. We do not accept, process, or retain PDF files or any full-text content of papers.</p>
+    <div class="policy-list">
+      <div class="policy-item"><div class="policy-dot"></div><span>Paper title, year, journal, and authors — entered or confirmed by you.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>DOI (Digital Object Identifier) — used to link to the publisher's page.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>Auto-extracted keywords, themes, and concepts from the abstract (metadata only).</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>Your personal notes and relevance ratings — stored privately under your account.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>DOI-based community comments — public and tied to the DOI, not the full paper.</span></div>
     </div>
-    <button class="btn-ghost" onclick="openAuthModal('signup')">Start for free</button>
+  </div>
+
+  <div class="policy-section">
+    <h2><span class="icon">🚫</span> What We Never Store</h2>
+    <div class="policy-list">
+      <div class="policy-item"><div class="policy-dot"></div><span>PDF files or any uploaded paper documents.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>Full-text content, body paragraphs, or verbatim quotes from papers.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>Figures, tables, or any visual content from publications.</span></div>
+    </div>
+  </div>
+
+  <div class="policy-section">
+    <h2><span class="icon">🔒</span> Privacy by Account</h2>
+    <p>Your personal research space is private by default. Only you can see your registered papers, notes, and knowledge graph.</p>
+    <div class="policy-list">
+      <div class="policy-item"><div class="policy-dot"></div><span>Your memo and relevance score fields are visible only to you.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>The community Knowledge Map shows anonymized aggregate keyword structure — not your individual papers or notes.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>DOI-based comments are public and attached to your username.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>You can delete your account and all associated data at any time.</span></div>
+    </div>
+  </div>
+
+  <div class="policy-section">
+    <h2><span class="icon">⚖️</span> Copyright Policy</h2>
+    <p>We respect the intellectual property of publishers and authors. Lacus is a knowledge graph tool, not a paper-sharing platform.</p>
+    <div class="policy-list">
+      <div class="policy-item"><div class="policy-dot"></div><span>DOI links always point to the original publisher's page — we never host or proxy paper content.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>We do not reproduce, excerpt, or index any copyrighted text from publications.</span></div>
+      <div class="policy-item"><div class="policy-dot"></div><span>If you believe any content on Lacus infringes your copyright, please contact us immediately.</span></div>
+    </div>
+  </div>
+
+  <div class="policy-section">
+    <h2><span class="icon">🍪</span> Cookies & Analytics</h2>
+    <p>Lacus uses authentication cookies issued by Supabase to keep you signed in. We do not use third-party advertising trackers or sell your data to any third party.</p>
+  </div>
+
+  <div class="contact-block">
+    <h2>Questions or Concerns?</h2>
+    <p>If you have any questions about this policy, a copyright concern, or a request to delete your data, reach out to the operator directly.</p>
+    <a class="contact-email" href="mailto:lacusnet@gmail.com">lacusnet@gmail.com</a>
   </div>
 
   <div class="cta-row">
-    <button class="btn-primary" onclick="openAuthModal('signup')" style="margin-right:12px">Create Your Knowledge Space</button>
+    <button class="btn-primary" onclick="openAuthModal('signup')">Create Your Knowledge Space</button>
     <a href="/" class="btn-ghost">Explore the Map</a>
   </div>
 
 </div>
 
-<div style="border-top:1px solid var(--border)">
+<div style="border-top:1px solid var(--border);margin-top:60px">
   <div class="footer">
     <div class="footer-brand">
       <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" width="20" height="20">
