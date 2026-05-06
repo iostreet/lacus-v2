@@ -241,12 +241,15 @@
     .detail-comment-signup a { color: var(--accent); cursor: pointer; text-decoration: none; }
     /* ── Comment threading ── */
     .detail-comment { display: flex; flex-direction: column; }
-    .dcp-hidden { display: none; }
-    .dcp-num { font-size: .68rem; color: var(--accent); font-weight: 700; margin-bottom: 2px; }
+    .dcp-header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    .dcp-num { font-size: .68rem; color: var(--accent); font-weight: 700; flex-shrink: 0; }
     .dcp-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
     .dcp-reply-btn { background: none; border: none; color: var(--accent); font-size: .72rem; cursor: pointer; padding: 0; font-family: inherit; }
     .dcp-reply-btn:hover { text-decoration: underline; }
-    .dcp-reply-count { font-size: .7rem; color: var(--gray3); }
+    .dcp-edit-btn { background: none; border: none; color: var(--gray2); font-size: .72rem; cursor: pointer; padding: 0; font-family: inherit; }
+    .dcp-edit-btn:hover { color: var(--white); }
+    .dcp-delete-btn { background: none; border: none; color: #f87171; font-size: .72rem; cursor: pointer; padding: 0; font-family: inherit; }
+    .dcp-delete-btn:hover { text-decoration: underline; }
     .dcp-reply-signin { font-size: .78rem; color: var(--gray3); padding: 6px 0; }
     .dcp-reply-signin a { color: var(--accent); cursor: pointer; }
     .dcp-reply-ta { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: #fff; font-family: inherit; font-size: .8rem; padding: 7px 10px; resize: none; outline: none; margin-top: 6px; }
@@ -254,7 +257,6 @@
     .dcp-reply-actions { display: flex; gap: 6px; margin-top: 5px; align-items: center; }
     .dcp-cancel-reply { background: none; border: none; color: var(--gray3); font-size: .75rem; cursor: pointer; font-family: inherit; }
     .dcp-reply-item { margin-left: 12px; border-left: 2px solid rgba(168,85,247,0.2); padding-left: 10px; }
-    .dcp-more-hint { font-size: .7rem; color: var(--gray3); padding: 8px 12px 2px; }
 
 
     /* ── Auth Modal ── */
@@ -523,13 +525,17 @@
 
   sb.auth.onAuthStateChange((event, session) => {
     updateNavAuth(session);
-    window._auth_token = session?.access_token || null;
+    window._auth_token  = session?.access_token  || null;
+    window._user_id     = session?.user?.id       || null;
+    window._user_email  = session?.user?.email    || null;
   });
 
   (async function init() {
     const { data: { session } } = await sb.auth.getSession();
     updateNavAuth(session);
-    window._auth_token = session?.access_token || null;
+    window._auth_token  = session?.access_token  || null;
+    window._user_id     = session?.user?.id       || null;
+    window._user_email  = session?.user?.email    || null;
     const params = new URLSearchParams(window.location.search);
     if ((params.get('signin') || params.get('signup')) && !session) openAuthModal(params.get('signup') ? 'signup' : 'signin');
     window.history.replaceState({}, '', window.location.pathname);
@@ -1038,56 +1044,75 @@
 
       listEl.innerHTML = '';
 
-      topLevel.forEach((c, idx) => {
-        const num = idx + 1;
-        const replies = byParent[c.id] || [];
+      const canManage = (commentUserId) =>
+        window._user_id && (window._user_id === commentUserId || window._user_email === 'iostreet7@gmail.com');
+
+      const buildCommentEl = (c, num, isReply, parentNum) => {
+        const label = isReply ? `#${parentNum}.${num}` : `#${num}`;
         const d = new Date(c.created_at);
         const dateStr = d.toLocaleDateString('en', {month:'short', day:'numeric', year:'numeric'});
+        const replies = isReply ? [] : (byParent[c.id] || []);
+        const canDo = canManage(c.user_id);
 
         const el = document.createElement('div');
-        el.className = 'detail-comment' + (idx > 0 ? ' dcp-hidden' : '');
-        el.dataset.idx = idx;
+        el.className = 'detail-comment' + (isReply ? ' dcp-reply-item' : '');
         el.innerHTML = `
-          <div class="dcp-num">#${num}</div>
-          <div class="detail-comment-user">${esc(c.username||'Anonymous')}</div>
-          <div class="detail-comment-body">${esc(c.content)}</div>
+          <div class="dcp-header">
+            <span class="dcp-num">${label}</span>
+            <span class="detail-comment-user">${esc(c.username||'Anonymous')}</span>
+          </div>
+          <div class="detail-comment-body" id="dcb-${c.id}">${esc(c.content)}</div>
+          <div class="dcp-edit-form" id="def-${c.id}" style="display:none">
+            <textarea class="dcp-reply-ta" rows="3">${esc(c.content)}</textarea>
+            <div class="dcp-reply-actions">
+              <button class="detail-comment-send dcp-save-edit" data-id="${c.id}">Save</button>
+              <button class="dcp-cancel-reply dcp-cancel-edit" data-id="${c.id}">Cancel</button>
+            </div>
+          </div>
           <div class="dcp-meta">
             <span class="detail-comment-date">${dateStr}</span>
-            <button class="dcp-reply-btn" data-parent="${c.id}" data-doi="${esc(doi)}">Reply</button>
-            ${replies.length ? `<span class="dcp-reply-count">${replies.length} repl${replies.length>1?'ies':'y'} — double-click</span>` : ''}
+            ${!isReply ? `<button class="dcp-reply-btn" data-parent="${c.id}">Reply</button>` : ''}
+            ${canDo ? `<button class="dcp-edit-btn" data-id="${c.id}">Edit</button><button class="dcp-delete-btn" data-id="${c.id}">Delete</button>` : ''}
           </div>
-          <div class="dcp-reply-form" id="drf-${c.id}" style="display:none"></div>
-          <div class="dcp-replies" id="drp-${c.id}" style="display:none;flex-direction:column;gap:6px"></div>`;
+          ${!isReply ? `<div class="dcp-reply-form" id="drf-${c.id}" style="display:none"></div>
+          <div class="dcp-replies" id="drp-${c.id}" style="display:${replies.length?'flex':'none'};flex-direction:column;gap:6px"></div>` : ''}`;
 
-        const repliesEl = el.querySelector(`#drp-${c.id}`);
-        replies.forEach((r, ri) => {
-          const rd = new Date(r.created_at);
-          const rDate = rd.toLocaleDateString('en', {month:'short', day:'numeric', year:'numeric'});
-          const re = document.createElement('div');
-          re.className = 'detail-comment dcp-reply-item';
-          re.innerHTML = `
-            <div class="dcp-num">#${num}.${ri+1}</div>
-            <div class="detail-comment-user">${esc(r.username||'Anonymous')}</div>
-            <div class="detail-comment-body">${esc(r.content)}</div>
-            <div class="dcp-meta"><span class="detail-comment-date">${rDate}</span></div>`;
-          repliesEl.appendChild(re);
+        // Edit
+        el.querySelector('.dcp-edit-btn')?.addEventListener('click', () => {
+          document.getElementById(`dcb-${c.id}`).style.display = 'none';
+          document.getElementById(`def-${c.id}`).style.display = 'block';
+        });
+        el.querySelector('.dcp-cancel-edit')?.addEventListener('click', () => {
+          document.getElementById(`dcb-${c.id}`).style.display = '';
+          document.getElementById(`def-${c.id}`).style.display = 'none';
+        });
+        el.querySelector('.dcp-save-edit')?.addEventListener('click', async () => {
+          const ta = document.getElementById(`def-${c.id}`)?.querySelector('textarea');
+          const content = ta?.value?.trim();
+          if (!content) return;
+          try {
+            await fetch(`/api/doi-comments/${c.id}`, {
+              method: 'PUT',
+              headers: {'Content-Type':'application/json','Authorization':'Bearer '+window._auth_token},
+              body: JSON.stringify({ content }),
+            });
+            loadDoiComments(doi);
+          } catch {}
         });
 
-        // dblclick: expand hidden comments (first comment) OR toggle replies
-        el.addEventListener('dblclick', () => {
-          if (idx === 0 && topLevel.length > 1) {
-            const expanded = listEl.dataset.expanded === '1';
-            listEl.dataset.expanded = expanded ? '0' : '1';
-            listEl.querySelectorAll('.dcp-hidden').forEach(e => { e.style.display = expanded ? '' : 'flex'; });
-          }
-          if (replies.length) {
-            const rDiv = document.getElementById(`drp-${c.id}`);
-            const hidden = rDiv.style.display === 'none';
-            rDiv.style.display = hidden ? 'flex' : 'none';
-          }
+        // Delete
+        el.querySelector('.dcp-delete-btn')?.addEventListener('click', async () => {
+          if (!confirm('Delete this comment?')) return;
+          try {
+            await fetch(`/api/doi-comments/${c.id}`, {
+              method: 'DELETE',
+              headers: {'Authorization':'Bearer '+window._auth_token},
+            });
+            loadDoiComments(doi);
+          } catch {}
         });
 
-        // reply button
+        // Reply button
         el.querySelector('.dcp-reply-btn')?.addEventListener('click', () => {
           const formEl = document.getElementById(`drf-${c.id}`);
           if (!formEl) return;
@@ -1100,7 +1125,7 @@
           formEl.innerHTML = `
             <textarea class="dcp-reply-ta" rows="2" placeholder="Write a reply…"></textarea>
             <div class="dcp-reply-actions">
-              <button class="detail-comment-send dcp-post-reply" data-parent="${c.id}" data-doi="${esc(doi)}">Post Reply</button>
+              <button class="detail-comment-send dcp-post-reply">Post Reply</button>
               <button class="dcp-cancel-reply">Cancel</button>
             </div>`;
           formEl.querySelector('.dcp-cancel-reply').addEventListener('click', () => { formEl.style.display = 'none'; });
@@ -1120,15 +1145,21 @@
           });
         });
 
-        listEl.appendChild(el);
+        // Append replies
+        if (!isReply) {
+          const repliesEl = el.querySelector(`#drp-${c.id}`);
+          replies.forEach((r, ri) => {
+            repliesEl.appendChild(buildCommentEl(r, ri + 1, true, num));
+          });
+        }
+
+        return el;
+      };
+
+      topLevel.forEach((c, idx) => {
+        listEl.appendChild(buildCommentEl(c, idx + 1, false, null));
       });
 
-      if (topLevel.length > 1) {
-        const hint = document.createElement('div');
-        hint.className = 'dcp-more-hint';
-        hint.textContent = `+${topLevel.length-1} more comment${topLevel.length>2?'s':''} — double-click first comment to expand`;
-        listEl.appendChild(hint);
-      }
     } catch(e) {
       const listEl2 = document.getElementById('dcp-list');
       if (listEl2) listEl2.innerHTML = '<div class="detail-comment-empty">Could not load comments.</div>';

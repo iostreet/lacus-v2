@@ -381,12 +381,15 @@ def _get_user_email(token: str) -> str:
 
 
 @app.put("/api/doi-comments/{comment_id}")
-def edit_doi_comment(comment_id: str, body: DoiCommentUpdate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_comment)):
+def edit_doi_comment(comment_id: str, body: DoiCommentUpdate, authorization: str = Header(None), user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_comment)):
     content = body.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="Content cannot be empty")
+    token = (authorization or "")[7:]
+    email = _get_user_email(token)
+    is_operator = (email == _OPERATOR_EMAIL)
     row = _sb().table("doi_comments").select("user_id").eq("id", comment_id).execute().data
-    if not row or row[0]["user_id"] != user_id:
+    if not row or (not is_operator and row[0]["user_id"] != user_id):
         raise HTTPException(status_code=403, detail="Not your comment")
     _sb().table("doi_comments").update({"content": content}).eq("id", comment_id).execute()
     return {"ok": True}
