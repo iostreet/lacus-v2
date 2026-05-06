@@ -601,44 +601,120 @@
   const NS = 'http://www.w3.org/2000/svg';
 
   const CFG = {
-    field:   { r: 50, fill: 'rgba(88,28,135,0.75)',  stroke: '#7c3aed', sw: 2,   ts: 9.5,  cs: 8.5  },
-    theme:   { r: 35, fill: 'rgba(109,40,217,0.65)', stroke: '#9333ea', sw: 1.5, ts: 8.5,  cs: 7.5  },
-    concept: { r: 23, fill: 'rgba(139,92,246,0.55)', stroke: '#c084fc', sw: 1.5, ts: 7.5,  cs: 6.5  },
+    field:   { r: 52, fill: 'rgba(88,28,135,0.82)',  stroke: '#7c3aed', sw: 2,   ts: 10,  cs: 8.5  },
+    theme:   { r: 36, fill: 'rgba(109,40,217,0.72)', stroke: '#9333ea', sw: 1.5, ts: 9,   cs: 7.5  },
+    concept: { r: 24, fill: 'rgba(139,92,246,0.62)', stroke: '#c084fc', sw: 1.5, ts: 7.5, cs: 6.5  },
   };
-  const PAD  = 14, EGAP = 48;
-  const CX = (() => {
-    const f=CFG.field.r, t=CFG.theme.r, c=CFG.concept.r;
-    const fx = PAD+f, tx = fx+f+EGAP+t, cx = tx+t+EGAP+c;
-    return { field: fx, theme: tx, concept: cx };
-  })();
-  const SIBGAP = { field: 22, theme: 15, concept: 10 };
+  // Radial distances for child placement
+  const CHILD_R = { field: 195, theme: 125 };
 
-  let fieldNodes = [], zoom = 1, panX = 20, panY = 20;
+  let fieldNodes = [], zoom = 1, panX = 0, panY = 0;
   let isPanning = false, psx = 0, psy = 0, pspx = 0, pspy = 0;
-  let svgEl, gMain, detailCB = null;
+  let svgEl, gMain, wrap, detailCB = null;
 
-  function subtreeH(n) {
-    const childType = n.type==='field' ? 'theme' : n.type==='theme' ? 'concept' : null;
-    if (!childType || !n.expanded || !n.children?.length) return CFG[n.type].r * 2;
-    const sg = SIBGAP[childType];
-    const ch = n.children.reduce((s,c) => s + subtreeH(c), 0) + (n.children.length - 1) * sg;
-    return Math.max(CFG[n.type].r * 2, ch);
+  // ── Layout: random scatter + radial children + collision avoidance ─────────
+
+  function placeFieldsRandom() {
+    const W = wrap.clientWidth  || 800;
+    const H = wrap.clientHeight || 500;
+    const n = fieldNodes.length;
+    if (!n) return;
+    // Grid-with-jitter so fields never start on top of each other
+    const cols = Math.ceil(Math.sqrt(n * (W / H)));
+    const rows = Math.ceil(n / cols);
+    const cw = (W * 0.8) / Math.max(cols, 1);
+    const ch = (H * 0.8) / Math.max(rows, 1);
+    let idx = 0;
+    outer: for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (idx >= n) break outer;
+        const fn = fieldNodes[idx++];
+        fn.cx = W * 0.1 + c * cw + cw / 2 + (Math.random() - 0.5) * cw * 0.55;
+        fn.cy = H * 0.1 + r * ch + ch / 2 + (Math.random() - 0.5) * ch * 0.55;
+        fn.positioned = true;
+      }
+    }
+    resolveCollisions(fieldNodes, 40);
   }
 
-  function layoutNode(n, cx, cy) {
-    n.cx = cx; n.cy = cy;
-    const ct = n.type==='field' ? 'theme' : n.type==='theme' ? 'concept' : null;
-    if (!ct || !n.expanded || !n.children?.length) return;
-    const ccx = CX[ct], sg = SIBGAP[ct];
-    const tot = n.children.reduce((s,c) => s + subtreeH(c), 0) + (n.children.length - 1) * sg;
-    let y = cy - tot / 2;
-    n.children.forEach(child => { const h=subtreeH(child); layoutNode(child, ccx, y+h/2); y+=h+sg; });
+  function placeChildren(parent) {
+    const children = (parent.children || []).filter(c => !c.positioned);
+    if (!children.length) return;
+    const all = parent.children;
+    const r = CHILD_R[parent.type] || 130;
+    const angleStep = (2 * Math.PI) / all.length;
+    all.forEach((child, i) => {
+      if (!child.positioned) {
+        const angle = i * angleStep - Math.PI / 2;
+        child.cx = parent.cx + r * Math.cos(angle);
+        child.cy = parent.cy + r * Math.sin(angle);
+        child.positioned = true;
+      }
+    });
   }
 
-  function computeLayout() {
-    let y = PAD;
-    fieldNodes.forEach(fn => { const h=subtreeH(fn); layoutNode(fn, CX.field, y+h/2); y+=h+SIBGAP.field; });
-    return y + PAD;
+  function getAllVisible() {
+    const out = [];
+    const walk = n => { out.push(n); if (n.expanded) (n.children || []).forEach(walk); };
+    fieldNodes.forEach(walk);
+    return out;
+  }
+
+  function resolveCollisions(nodes, iters) {
+    for (let k = 0; k < (iters || 25); k++) {
+      let moved = false;
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i], b = nodes[j];
+          const dx = b.cx - a.cx, dy = b.cy - a.cy;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+          const minD = CFG[a.type].r + CFG[b.type].r + 24;
+          if (dist < minD) {
+            const push = (minD - dist) / 2;
+            const nx = (dx / dist) * push, ny = (dy / dist) * push;
+            a.cx -= nx; a.cy -= ny;
+            b.cx += nx; b.cy += ny;
+            moved = true;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+  }
+
+  function toggleExpand(node) {
+    node.expanded = !node.expanded;
+    if (node.expanded) placeChildren(node);
+    resolveCollisions(getAllVisible(), 30);
+    redraw();
+  }
+
+  // ── Center view on all field nodes ────────────────────────────────────────
+
+  function centerOnFields() {
+    if (!fieldNodes.length || !wrap) return;
+    const W = wrap.clientWidth || 800, H = wrap.clientHeight || 500;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    fieldNodes.forEach(f => {
+      minX = Math.min(minX, f.cx - CFG.field.r);
+      maxX = Math.max(maxX, f.cx + CFG.field.r);
+      minY = Math.min(minY, f.cy - CFG.field.r);
+      maxY = Math.max(maxY, f.cy + CFG.field.r);
+    });
+    const cw = maxX - minX || 1, ch = maxY - minY || 1;
+    zoom = Math.max(0.25, Math.min(1.5, Math.min(W / (cw + 160), H / (ch + 120))));
+    panX = W / 2 - ((minX + maxX) / 2) * zoom;
+    panY = H / 2 - ((minY + maxY) / 2) * zoom;
+    applyTransform();
+  }
+
+  // ── SVG helpers ────────────────────────────────────────────────────────────
+
+  function el(tag, attrs = {}, extra = {}) {
+    const e = document.createElementNS(NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+    if (extra.text) e.textContent = extra.text;
+    return e;
   }
 
   function wrapLabel(label, maxCh, maxLines) {
@@ -646,69 +722,64 @@
     const lines = [];
     let cur = '';
     for (const w of words) {
-      const test = cur ? cur+' '+w : w;
+      const test = cur ? cur + ' ' + w : w;
       if (test.length <= maxCh) { cur = test; }
-      else { if (cur) lines.push(cur); cur = w.length > maxCh ? w.slice(0,maxCh-1)+'…' : w; if (lines.length >= maxLines-1) break; }
+      else {
+        if (cur) lines.push(cur);
+        cur = w.length > maxCh ? w.slice(0, maxCh - 1) + '…' : w;
+        if (lines.length >= maxLines - 1) break;
+      }
     }
-    if (cur && lines.length < maxLines) lines.push(cur.length > maxCh ? cur.slice(0,maxCh-1)+'…' : cur);
+    if (cur && lines.length < maxLines)
+      lines.push(cur.length > maxCh ? cur.slice(0, maxCh - 1) + '…' : cur);
     return lines;
   }
 
-  function el(tag, attrs={}, extra={}) {
-    const e = document.createElementNS(NS, tag);
-    Object.entries(attrs).forEach(([k,v]) => e.setAttribute(k, v));
-    if (extra.text) e.textContent = extra.text;
-    return e;
-  }
-
   function drawEdge(parent, child) {
-    const x1 = parent.cx + CFG[parent.type].r, y1 = parent.cy;
-    const x2 = child.cx  - CFG[child.type].r,  y2 = child.cy;
-    const mx = (x1+x2)/2;
-    return el('path', { d:`M ${x1} ${y1} C ${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`,
-      stroke: (parent.color||'#7c3aed')+'55', 'stroke-width':'1.5', fill:'none', 'pointer-events':'none' });
+    return el('line', {
+      x1: parent.cx, y1: parent.cy, x2: child.cx, y2: child.cy,
+      stroke: (parent.color || '#7c3aed') + '40',
+      'stroke-width': '1.5', 'pointer-events': 'none',
+    });
   }
 
   function drawNode(n) {
     const cfg = CFG[n.type];
     const stroke = n.selected ? '#f3e8ff' : (n.color || cfg.stroke);
-    const g = el('g', { 'data-id': n.id, 'data-type': n.type, style:'cursor:pointer' });
-    g.appendChild(el('circle', { cx:n.cx, cy:n.cy, r:cfg.r, fill:cfg.fill, stroke, 'stroke-width':n.selected ? 2.5 : cfg.sw }));
-
+    const g = el('g', { 'data-id': n.id, 'data-type': n.type, style: 'cursor:pointer' });
+    g.appendChild(el('circle', {
+      cx: n.cx, cy: n.cy, r: cfg.r,
+      fill: cfg.fill, stroke, 'stroke-width': n.selected ? 3 : cfg.sw,
+    }));
     const maxCh = Math.floor((cfg.r * 1.6) / 5.5);
     const lines = wrapLabel(n.label, maxCh, 2);
     const lh = cfg.ts + 2;
-    const countH = 3 + cfg.cs;
-    const totalTH = lines.length * lh + countH;
+    const totalTH = lines.length * lh + 3 + cfg.cs;
     let ty = n.cy - totalTH / 2 + cfg.ts * 0.5;
-
     lines.forEach(line => {
-      g.appendChild(el('text', { x:n.cx, y:ty, 'text-anchor':'middle', 'dominant-baseline':'middle',
-        fill:'#f3e8ff', 'font-size':cfg.ts, 'font-weight':'600', 'font-family':'Inter,system-ui,sans-serif', 'pointer-events':'none' }, { text: line }));
+      g.appendChild(el('text', {
+        x: n.cx, y: ty, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+        fill: '#f3e8ff', 'font-size': cfg.ts, 'font-weight': '600',
+        'font-family': 'Inter,system-ui,sans-serif', 'pointer-events': 'none',
+      }, { text: line }));
       ty += lh;
     });
-    g.appendChild(el('text', { x:n.cx, y:ty+3, 'text-anchor':'middle', 'dominant-baseline':'middle',
-      fill:'rgba(196,181,253,0.75)', 'font-size':cfg.cs, 'font-family':'Inter,system-ui,sans-serif', 'pointer-events':'none' },
-      { text: n.count != null ? String(n.count) : '' }));
+    g.appendChild(el('text', {
+      x: n.cx, y: ty + 3, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      fill: 'rgba(196,181,253,0.75)', 'font-size': cfg.cs,
+      'font-family': 'Inter,system-ui,sans-serif', 'pointer-events': 'none',
+    }, { text: n.count != null ? String(n.count) : '' }));
     return g;
   }
 
   function redraw() {
     if (!gMain) return;
     while (gMain.firstChild) gMain.removeChild(gMain.firstChild);
-    const totalH = computeLayout();
-    const svgW = CX.concept + CFG.concept.r + PAD;
-    svgEl.setAttribute('width', svgW);
-    svgEl.setAttribute('height', Math.max(totalH, 350));
-
-    // edges first
     const drawEdges = n => {
       if (!n.expanded || !n.children?.length) return;
       n.children.forEach(c => { gMain.appendChild(drawEdge(n, c)); drawEdges(c); });
     };
     fieldNodes.forEach(drawEdges);
-
-    // nodes
     const drawNodes = n => {
       gMain.appendChild(drawNode(n));
       if (n.expanded) n.children?.forEach(drawNodes);
@@ -720,79 +791,78 @@
     gMain?.setAttribute('transform', `translate(${panX},${panY}) scale(${zoom})`);
   }
 
+  // ── Lookup ─────────────────────────────────────────────────────────────────
+
   function findNode(id) {
     for (const f of fieldNodes) {
-      if (f.id===id) return f;
-      for (const t of f.children) {
-        if (t.id===id) return t;
-        for (const c of t.children) { if (c.id===id) return c; }
+      if (f.id === id) return f;
+      for (const t of (f.children || [])) {
+        if (t.id === id) return t;
+        for (const c of (t.children || [])) { if (c.id === id) return c; }
       }
     }
     return null;
   }
 
-  function unselectAll() { fieldNodes.forEach(f => { f.selected=false; f.children?.forEach(t => { t.selected=false; t.children?.forEach(c => c.selected=false); }); }); }
+  function unselectAll() {
+    const clear = n => { n.selected = false; (n.children || []).forEach(clear); };
+    fieldNodes.forEach(clear);
+  }
 
-  function init(wrapId, opts={}) {
+  // ── Init ───────────────────────────────────────────────────────────────────
+
+  function init(wrapId, opts = {}) {
     detailCB = opts.onSelect || null;
-    const wrap = document.getElementById(wrapId);
+    wrap = document.getElementById(wrapId);
     if (!wrap) return;
 
-    svgEl = el('svg', { style:'display:block;' });
-    gMain = el('g', { transform:`translate(${panX},${panY}) scale(${zoom})` });
+    svgEl = el('svg', { style: 'width:100%;height:100%;display:block;' });
+    gMain = el('g');
     svgEl.appendChild(gMain);
     wrap.appendChild(svgEl);
 
-    // right-click = expand/collapse
+    const onNode = (e, action) => {
+      const g = e.target.closest('[data-id]');
+      if (!g) return false;
+      const node = findNode(g.getAttribute('data-id'));
+      if (!node) return false;
+      action(node);
+      return true;
+    };
+
     wrap.addEventListener('contextmenu', e => {
       e.preventDefault();
-      const g = e.target.closest('[data-id]');
-      if (!g) return;
-      const node = findNode(g.getAttribute('data-id'));
-      if (!node) return;
-      if (node.type === 'concept') { selectConcept(node); return; }
-      node.expanded = !node.expanded;
-      redraw();
+      onNode(e, node => node.type === 'concept' ? selectConcept(node) : toggleExpand(node));
     });
-
-    // left-click on concept = select; on field/theme = expand
     wrap.addEventListener('click', e => {
-      const g = e.target.closest('[data-id]');
-      if (!g) return;
-      const node = findNode(g.getAttribute('data-id'));
-      if (!node) return;
-      if (node.type === 'concept') { selectConcept(node); return; }
-      node.expanded = !node.expanded;
-      redraw();
+      onNode(e, node => node.type === 'concept' ? selectConcept(node) : toggleExpand(node));
     });
 
-    // pan
     wrap.addEventListener('mousedown', e => {
       if (e.button !== 0 || e.target.closest('[data-id]') || e.target.closest('.map-ctrl-btn')) return;
-      isPanning=true; psx=e.clientX; psy=e.clientY; pspx=panX; pspy=panY;
+      isPanning = true; psx = e.clientX; psy = e.clientY; pspx = panX; pspy = panY;
     });
     document.addEventListener('mousemove', e => {
       if (!isPanning) return;
-      panX=pspx+e.clientX-psx; panY=pspy+e.clientY-psy;
+      panX = pspx + e.clientX - psx; panY = pspy + e.clientY - psy;
       applyTransform();
     });
-    document.addEventListener('mouseup', () => { isPanning=false; });
+    document.addEventListener('mouseup', () => { isPanning = false; });
 
-    // zoom
     wrap.addEventListener('wheel', e => {
       e.preventDefault();
-      const rect=wrap.getBoundingClientRect(), mx=e.clientX-rect.left, my=e.clientY-rect.top;
-      const f=e.deltaY<0?1.12:1/1.12, nz=Math.min(3,Math.max(0.25,zoom*f));
-      panX=mx-(mx-panX)*(nz/zoom); panY=my-(my-panY)*(nz/zoom);
-      zoom=nz; applyTransform();
-    }, {passive:false});
+      const rect = wrap.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const nz = Math.min(4, Math.max(0.15, zoom * f));
+      panX = mx - (mx - panX) * (nz / zoom);
+      panY = my - (my - panY) * (nz / zoom);
+      zoom = nz; applyTransform();
+    }, { passive: false });
 
-    // ctrl buttons
-    document.getElementById('mc-plus')?.addEventListener('click', () => { zoom=Math.min(3,zoom*1.2); applyTransform(); });
-    document.getElementById('mc-minus')?.addEventListener('click', () => { zoom=Math.max(0.25,zoom/1.2); applyTransform(); });
-    document.getElementById('mc-reset')?.addEventListener('click', () => {
-      zoom=1; panX=20; panY=20; applyTransform();
-    });
+    document.getElementById('mc-plus')?.addEventListener('click',  () => { zoom = Math.min(4, zoom * 1.2); applyTransform(); });
+    document.getElementById('mc-minus')?.addEventListener('click', () => { zoom = Math.max(0.15, zoom / 1.2); applyTransform(); });
+    document.getElementById('mc-reset')?.addEventListener('click', () => { centerOnFields(); });
   }
 
   function selectConcept(node) {
@@ -804,22 +874,27 @@
 
   function loadData(data) {
     const COLORS = ['#7c3aed','#0891b2','#059669','#d97706','#dc2626','#db2777','#2563eb','#65a30d'];
-    fieldNodes = (data.fields||[]).map((f,i) => ({
-      id: f.id, type:'field', label: f.name, count: f.paper_count,
-      color: f.color||COLORS[i%COLORS.length],
-      cx:0,cy:0, expanded:false, selected:false, data:f,
-      children: (f.themes||[]).map(t => ({
-        id: `${f.id}::${t.name}`, type:'theme', label:t.name, count:t.paper_count,
-        color: f.color||COLORS[i%COLORS.length],
-        cx:0,cy:0, expanded:false, selected:false, data:t,
-        children: (t.concepts||[]).map(c => ({
-          id: `${f.id}::${t.name}::${c.name}`, type:'concept', label:c.name, count:c.paper_count,
-          color: f.color||COLORS[i%COLORS.length],
-          cx:0,cy:0, expanded:false, selected:false, data:c, children:[],
+    fieldNodes = (data.fields || []).map((f, i) => ({
+      id: f.id, type: 'field', label: f.name, count: f.paper_count,
+      color: f.color || COLORS[i % COLORS.length],
+      cx: 0, cy: 0, expanded: false, selected: false, positioned: false, data: f,
+      children: (f.themes || []).map(t => ({
+        id: `${f.id}::${t.name}`, type: 'theme', label: t.name, count: t.paper_count,
+        color: f.color || COLORS[i % COLORS.length],
+        cx: 0, cy: 0, expanded: false, selected: false, positioned: false, data: t,
+        children: (t.concepts || []).map(c => ({
+          id: `${f.id}::${t.name}::${c.name}`, type: 'concept', label: c.name, count: c.paper_count,
+          color: f.color || COLORS[i % COLORS.length],
+          cx: 0, cy: 0, expanded: false, selected: false, positioned: false, data: c, children: [],
         })),
       })),
     }));
-    redraw();
+    // Wait one frame so the container has real dimensions
+    requestAnimationFrame(() => {
+      placeFieldsRandom();
+      centerOnFields();
+      redraw();
+    });
   }
 
   // ── Detail panel rendering ────────────────────────────────────────────────
