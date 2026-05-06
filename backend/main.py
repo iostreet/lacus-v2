@@ -240,6 +240,28 @@ def recent_doi_comments():
         return {"comments": [], "error": str(e)}
 
 
+# ── Auth dependency ──────────────────────────────────────────────────────────
+def get_current_user(authorization: str = Header(None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = authorization[7:]
+    try:
+        import httpx
+        resp = httpx.get(
+            f"{_SUPABASE_URL_CONST}/auth/v1/user",
+            headers={"apikey": _SUPABASE_ANON_CONST, "Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            user_id = resp.json().get("id")
+            if user_id:
+                _thread_local.auth_token = token
+                return str(user_id)
+    except Exception:
+        pass
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
 class DoiCommentCreate(BaseModel):
     doi:               str
     content:           str
@@ -278,28 +300,6 @@ def post_doi_comment(body: DoiCommentCreate, user_id: str = Depends(get_current_
 def delete_doi_comment(comment_id: str, user_id: str = Depends(get_current_user)):
     _sb().table("doi_comments").delete().eq("id", comment_id).eq("user_id", user_id).execute()
     return {"ok": True}
-
-
-# ── Auth dependency ──────────────────────────────────────────────────────────
-def get_current_user(authorization: str = Header(None)) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token = authorization[7:]
-    try:
-        import httpx
-        resp = httpx.get(
-            f"{_SUPABASE_URL_CONST}/auth/v1/user",
-            headers={"apikey": _SUPABASE_ANON_CONST, "Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            user_id = resp.json().get("id")
-            if user_id:
-                _thread_local.auth_token = token
-                return str(user_id)
-    except Exception:
-        pass
-    raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 # ── Pydantic schemas ─────────────────────────────────────────────────────────
