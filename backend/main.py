@@ -31,7 +31,7 @@ UPLOADS_DIR  = PROJECT_DIR / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 sys.path.insert(0, str(BASE_DIR))
 
-from supabase_client import SUPABASE_URL, SUPABASE_ANON_KEY
+from supabase_client import SUPABASE_URL, SUPABASE_ANON_KEY, supabase_admin as _sa
 from processors.grobid_client     import extract_paper_info, check_grobid
 from processors.keyword_extractor import extract_keywords
 from processors.metric_extractor  import extract_metrics
@@ -152,6 +152,132 @@ def public_stats():
         pass
     visitor_count = _increment_visitors()
     return {"visitors": visitor_count, "papers": paper_count, "members": member_count}
+
+
+_LANDING_COLORS = ['#7c3aed','#0891b2','#059669','#d97706',
+                   '#dc2626','#db2777','#2563eb','#65a30d']
+
+@app.get("/api/public/landing-map")
+def public_landing_map():
+    """Aggregate all users' papers by field → theme → concept — no auth required."""
+    try:
+        papers = (_sa.table("papers")
+                    .select("id,title,year,doi,journal,authors,field,theme,concept")
+                    .execute().data or [])
+    except Exception as e:
+        return {"fields": [], "error": str(e)}
+
+    def _cap(s: str) -> str:
+        s = (s or "").strip()
+        return s[0].upper() + s[1:] if s else s
+
+    field_map: dict = {}
+    for p in papers:
+        fname   = _cap(p.get("field")   or "") or "Other Research"
+        tname   = _cap(p.get("theme")   or "") or "General"
+        cname   = _cap(p.get("concept") or "") or "General"
+        doi     = (p.get("doi") or "").strip()
+        field_map.setdefault(fname, {}).setdefault(tname, {}).setdefault(cname, []).append({
+            "id":      p.get("id"),
+            "title":   _cap(p.get("title") or "") or "Untitled",
+            "year":    p.get("year"),
+            "doi":     doi,
+            "journal": (p.get("journal") or "").strip(),
+            "authors": p.get("authors") or [],
+        })
+
+    def _count(d):
+        return sum(len(v) for v in d.values()) if isinstance(list(d.values() or [{}])[0], list) else sum(_count(v) for v in d.values())
+
+    result = []
+    for fi, (fname, themes) in enumerate(sorted(field_map.items(), key=lambda x: -sum(
+        sum(len(ps) for ps in t.values()) for t in x[1].values()
+    ))):
+        theme_list = []
+        for tname, concepts in sorted(themes.items(), key=lambda x: -sum(len(ps) for ps in x[1].values())):
+            concept_list = [
+                {"name": cn, "paper_count": len(ps), "papers": ps[:30]}
+                for cn, ps in sorted(concepts.items(), key=lambda x: -len(x[1]))
+            ]
+            theme_list.append({
+                "name":          tname,
+                "concept_count": len(concept_list),
+                "paper_count":   sum(c["paper_count"] for c in concept_list),
+                "concepts":      concept_list,
+            })
+        result.append({
+            "id":          fname.lower().replace(" ", "-"),
+            "name":        fname,
+            "paper_count": sum(t["paper_count"] for t in theme_list),
+            "theme_count": len(theme_list),
+            "themes":      theme_list,
+            "color":       _LANDING_COLORS[fi % len(_LANDING_COLORS)],
+        })
+    return {"fields": result}
+
+
+@app.get("/api/public/doi-comments/{doi:path}")
+def get_doi_comments(doi: str):
+    """Get comments for a DOI — public."""
+    try:
+        rows = (_sb_with('').table("doi_comments")
+                .select("id,doi,username,content,parent_comment_id,created_at")
+                .eq("doi", doi).order("created_at").execute().data or [])
+        return {"comments": rows}
+    except Exception as e:
+        return {"comments": [], "error": str(e)}
+
+
+@app.get("/api/public/recent-doi-comments")
+def recent_doi_comments():
+    """Latest 8 DOI comments for landing page."""
+    try:
+        rows = (_sb_with('').table("doi_comments")
+                .select("id,doi,username,content,created_at")
+                .order("created_at", desc=True).limit(8).execute().data or [])
+        return {"comments": rows}
+    except Exception as e:
+        return {"comments": [], "error": str(e)}
+
+
+class DoiCommentCreate(BaseModel):
+    doi:               str
+    content:           str
+    parent_comment_id: Optional[str] = None
+
+
+@app.post("/api/doi-comments")
+def post_doi_comment(body: DoiCommentCreate, user_id: str = Depends(get_current_user)):
+    import httpx as _httpx
+    try:
+        resp = _httpx.get(
+            f"{_SUPABASE_URL_CONST}/auth/v1/user",
+            headers={"apikey": _SUPABASE_ANON_CONST,
+                     "Authorization": f"Bearer {getattr(_thread_local, 'auth_token', '')}"},
+            timeout=8,
+        )
+        u = resp.json() if resp.status_code == 200 else {}
+        meta = u.get("user_metadata") or {}
+        username = (meta.get("username") or meta.get("name") or meta.get("full_name")
+                   or (u.get("email", "").split("@")[0]) or "Anonymous")
+    except Exception:
+        username = "Anonymous"
+
+    sb = _sb()
+    row = sb.table("doi_comments").insert({
+        "doi":               body.doi.strip(),
+        "user_id":           user_id,
+        "username":          username,
+        "content":           body.content.strip(),
+        "parent_comment_id": body.parent_comment_id or None,
+    }).execute().data
+    return {"comment": row[0] if row else {}}
+
+
+@app.delete("/api/doi-comments/{comment_id}")
+def delete_doi_comment(comment_id: str, user_id: str = Depends(get_current_user)):
+    _sb().table("doi_comments").delete().eq("id", comment_id).eq("user_id", user_id).execute()
+    return {"ok": True}
 
 
 # ── Auth dependency ──────────────────────────────────────────────────────────

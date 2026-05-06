@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lacus — Research Intelligence System</title>
+  <title>Lacus — A Living Map of Scientific Knowledge</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/style.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
       --accent:  #a855f7;
       --accent2: #7c3aed;
@@ -18,1371 +17,453 @@
       --gray1:   #f1f5f9;
       --gray2:   #94a3b8;
       --gray3:   #475569;
-      --bg-card: rgba(255,255,255,0.03);
+      --bg:      #000;
+      --bg2:     #0a0a12;
+      --bg3:     #0f0f1a;
+      --border:  rgba(255,255,255,0.08);
     }
-
     html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--white); overflow-x: hidden; }
 
-    body {
-      font-family: 'Inter', system-ui, sans-serif;
-      background: #000;
-      color: var(--white);
-      overflow-x: hidden;
-    }
-
-    /* ── Navbar (landing: fixed + semi-transparent, overrides style.css sticky) ── */
-    .site-nav {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 200;
-      background: rgba(0,0,0,0.5);
-    }
+    /* ── Navbar ── */
+    .site-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 200; background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); }
     .site-nav.scrolled { background: rgba(0,0,0,0.92); }
 
-    /* ── Hero ────────────────────────────────────────────────────── */
-    #home {
-      position: relative;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-
-    #hero-canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-    }
-
-    .hero-content {
-      position: relative;
-      z-index: 10;
+    /* ── Hero ── */
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 120px 24px 80px;
       text-align: center;
-      padding: 0 24px;
-      max-width: 900px;
+      background: radial-gradient(ellipse 80% 60% at 50% 20%, rgba(109,40,217,0.18) 0%, transparent 70%);
     }
-
     .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 18px;
-      border-radius: 999px;
-      background: rgba(168,85,247,0.1);
-      border: 1px solid rgba(168,85,247,0.25);
-      font-size: 0.82rem;
-      font-weight: 500;
-      color: #d8b4fe;
-      margin-bottom: 28px;
-      backdrop-filter: blur(8px);
-      opacity: 0;
-      animation: fadeUp 0.8s ease forwards 0.5s;
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 5px 16px; border-radius: 999px;
+      background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.25);
+      font-size: 0.8rem; font-weight: 600; color: #c4b5fd; letter-spacing: 0.06em;
+      text-transform: uppercase; margin-bottom: 24px;
     }
-    .hero-badge svg { width: 14px; height: 14px; color: #a855f7; flex-shrink: 0; }
-
-    .hero-title {
-      font-size: clamp(3rem, 9vw, 7.5rem);
-      font-weight: 900;
-      line-height: 1;
-      letter-spacing: -3px;
-      background: linear-gradient(to bottom, #ffffff 40%, #6b7280);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 24px;
-      opacity: 0;
-      animation: fadeUp 0.8s ease forwards 0.7s;
+    .hero h1 {
+      font-size: clamp(2rem, 5.5vw, 4rem);
+      font-weight: 900; line-height: 1.1; letter-spacing: -1.5px;
+      margin-bottom: 20px;
     }
-
+    .hero h1 em { font-style: normal; color: var(--accent); }
     .hero-sub {
-      font-size: 1.15rem;
-      color: var(--gray2);
-      line-height: 1.7;
-      max-width: 580px;
-      margin: 0 auto 40px;
-      opacity: 0;
-      animation: fadeUp 0.8s ease forwards 0.9s;
+      max-width: 560px; font-size: clamp(0.95rem, 2vw, 1.15rem);
+      color: var(--gray2); line-height: 1.65; margin-bottom: 40px;
     }
-
-    .hero-buttons {
-      display: flex;
-      gap: 14px;
-      justify-content: center;
-      opacity: 0;
-      animation: fadeUp 0.8s ease forwards 1.1s;
-    }
-
+    .hero-btns { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
     .btn-primary {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 14px 30px;
-      background: var(--white);
-      color: #000;
-      font-size: 0.95rem;
-      font-weight: 700;
-      border-radius: 10px;
-      text-decoration: none;
-      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-      box-shadow: 0 0 0 0 rgba(168,85,247,0);
+      padding: 14px 32px; background: var(--accent); color: #fff;
+      font-size: 0.95rem; font-weight: 700; border: none; border-radius: 12px; cursor: pointer;
+      font-family: inherit; transition: background 0.2s, transform 0.15s; text-decoration: none; display: inline-block;
     }
-    .btn-primary:hover {
-      background: var(--gray1);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(168,85,247,0.3);
+    .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
+    .btn-ghost {
+      padding: 14px 32px; background: rgba(255,255,255,0.06); color: #fff;
+      font-size: 0.95rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px; cursor: pointer; font-family: inherit;
+      transition: background 0.2s, transform 0.15s; text-decoration: none; display: inline-block;
     }
-    .btn-primary svg { width: 18px; height: 18px; }
-
-    .btn-secondary {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 14px 30px;
-      background: rgba(255,255,255,0.06);
-      color: var(--gray1);
-      font-size: 0.95rem;
-      font-weight: 600;
-      border-radius: 10px;
-      text-decoration: none;
-      border: 1px solid rgba(255,255,255,0.12);
-      transition: background 0.2s, transform 0.15s;
-    }
-    .btn-secondary:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); }
-
-    /* ── Stats strip (below hero) ────────────────────────────────── */
+    .btn-ghost:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
     .hero-stats {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0;
-      padding: 20px 32px;
-      background: rgba(255,255,255,0.03);
-      border-top: 1px solid rgba(255,255,255,0.06);
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+      display: flex; gap: 40px; margin-top: 56px; flex-wrap: wrap; justify-content: center;
     }
-    .hero-stat {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      padding: 0 32px;
-    }
-    .hero-stat-icon {
-      width: 36px; height: 36px;
-      border-radius: 10px;
-      background: rgba(168,85,247,0.1);
-      border: 1px solid rgba(168,85,247,0.2);
-      display: flex; align-items: center; justify-content: center;
-      margin-bottom: 2px;
-    }
-    .hero-stat-icon svg { width: 18px; height: 18px; color: #a855f7; }
-    .hero-stat-num {
-      font-size: 1.5rem; font-weight: 800;
-      letter-spacing: -0.5px; color: var(--white);
-      min-width: 48px; text-align: center;
-    }
-    .hero-stat-label {
-      font-size: 0.72rem; font-weight: 600;
-      letter-spacing: 0.06em; text-transform: uppercase;
-      color: var(--gray2);
-    }
-    .hero-stat-divider {
-      width: 1px; height: 48px;
-      background: rgba(255,255,255,0.08);
-      flex-shrink: 0;
-    }
-    @media (max-width: 600px) {
-      .hero-stats { flex-direction: column; gap: 16px; padding: 20px; }
-      .hero-stat-divider { width: 48px; height: 1px; }
-      .hero-stat { padding: 0; }
-    }
+    .hero-stat { text-align: center; }
+    .hero-stat-n { font-size: 1.8rem; font-weight: 800; color: #fff; line-height: 1; }
+    .hero-stat-l { font-size: 0.78rem; color: var(--gray3); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
 
-    .hero-scroll {
-      position: absolute;
-      bottom: 32px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      color: var(--gray3);
-      font-size: 0.72rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      opacity: 0;
-      animation: fadeUp 0.8s ease forwards 1.4s;
-    }
-    .scroll-line {
-      width: 1px;
-      height: 40px;
-      background: linear-gradient(to bottom, transparent, var(--gray3));
-      animation: scrollPulse 2s ease-in-out infinite;
-    }
+    /* ── Section shared ── */
+    .section { padding: 80px 24px; }
+    .section-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+    .section-title { font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; }
+    .section-desc  { font-size: 0.95rem; color: var(--gray2); max-width: 560px; line-height: 1.6; margin-bottom: 40px; }
 
-    /* ── Features ────────────────────────────────────────────────── */
-    #features {
-      background: #000;
-      padding: 120px 48px;
-      position: relative;
-      overflow: hidden;
-    }
+    /* ── Live Map section ── */
+    .map-section { background: var(--bg2); padding: 72px 0 0; }
+    .map-section-header { text-align: center; padding: 0 24px 40px; }
+    .map-hint { font-size: 0.8rem; color: var(--gray3); margin-top: 8px; letter-spacing: 0.04em; }
 
-    #features::before {
-      content: '';
-      position: absolute;
-      top: -200px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%);
-      pointer-events: none;
+    .map-layout {
+      display: flex; height: 580px;
+      border-top: 1px solid var(--border);
     }
-
-    .section-label {
-      text-align: center;
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin-bottom: 16px;
+    .map-left {
+      flex: 1; min-width: 0;
+      overflow: hidden; position: relative;
+      border-right: 1px solid var(--border);
+      background: #05050d;
+      cursor: grab;
     }
-
-    .section-title {
-      text-align: center;
-      font-size: clamp(2rem, 4vw, 3.2rem);
-      font-weight: 800;
-      letter-spacing: -1.5px;
-      background: linear-gradient(to bottom, #ffffff 50%, #6b7280);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 16px;
+    .map-left:active { cursor: grabbing; }
+    .map-right {
+      width: 400px; flex-shrink: 0;
+      overflow-y: auto; background: var(--bg3);
+      display: flex; flex-direction: column;
     }
-
-    .section-desc {
-      text-align: center;
-      font-size: 1.05rem;
-      color: var(--gray2);
-      max-width: 560px;
-      margin: 0 auto 72px;
-      line-height: 1.7;
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 24px;
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-
-    .feature-card {
-      background: var(--bg-card);
-      border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 16px;
-      padding: 32px 28px;
-      transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
-      position: relative;
-      overflow: hidden;
-    }
-    .feature-card::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(168,85,247,0.05) 0%, transparent 60%);
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
-    .feature-card:hover {
-      border-color: rgba(168,85,247,0.35);
-      transform: translateY(-4px);
-      box-shadow: 0 20px 60px rgba(168,85,247,0.08);
-    }
-    .feature-card:hover::before { opacity: 1; }
-
-    .feature-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      background: rgba(168,85,247,0.12);
-      border: 1px solid rgba(168,85,247,0.2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 20px;
-    }
-    .feature-icon svg { width: 22px; height: 22px; color: #a855f7; }
-
-    .feature-name {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--white);
-      margin-bottom: 10px;
-    }
-    .feature-text {
-      font-size: 0.88rem;
-      color: var(--gray2);
-      line-height: 1.7;
-    }
-
-    /* ── How it works ────────────────────────────────────────────── */
-    #how {
-      background: #050508;
-      padding: 120px 48px;
-      position: relative;
-    }
-
-    .steps-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 0;
-      max-width: 1000px;
-      margin: 0 auto;
-      position: relative;
-    }
-
-    .steps-grid::before {
-      content: '';
-      position: absolute;
-      top: 32px;
-      left: 10%;
-      right: 10%;
-      height: 1px;
-      background: linear-gradient(to right, transparent, rgba(168,85,247,0.4), transparent);
-    }
-
-    .step {
-      text-align: center;
-      padding: 0 24px;
-    }
-
-    .step-num {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      background: rgba(168,85,247,0.1);
-      border: 1px solid rgba(168,85,247,0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.4rem;
-      font-weight: 800;
-      color: var(--accent);
-      margin: 0 auto 20px;
-      position: relative;
-      z-index: 1;
-    }
-
-    .step-name {
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--white);
-      margin-bottom: 10px;
-    }
-
-    .step-text {
-      font-size: 0.84rem;
-      color: var(--gray2);
-      line-height: 1.65;
-    }
-
-    /* ── Contact strip ───────────────────────────────────────────── */
-    #cta {
-      padding: 100px 48px;
-      background: #000;
-      text-align: center;
-      position: relative;
-      overflow: hidden;
-    }
-
-    #cta::before {
-      content: '';
-      position: absolute;
-      bottom: -200px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 700px;
-      height: 700px;
-      background: radial-gradient(circle, rgba(124,58,237,0.14) 0%, transparent 70%);
-    }
-
-    .contact-box {
-      position: relative;
-      max-width: 680px;
-      margin: 0 auto;
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(168,85,247,0.2);
-      border-radius: 24px;
-      padding: 56px 52px;
-    }
-
-    .contact-label {
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin-bottom: 20px;
-    }
-
-    .contact-title {
-      font-size: clamp(1.6rem, 3vw, 2.4rem);
-      font-weight: 800;
-      letter-spacing: -1px;
-      background: linear-gradient(to bottom, #ffffff, #9ca3af);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 24px;
-      line-height: 1.25;
-    }
-
-    .contact-body {
-      font-size: 0.97rem;
-      color: var(--gray2);
-      line-height: 1.85;
-      margin-bottom: 36px;
-    }
-
-    .contact-email-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 28px;
-      background: rgba(168,85,247,0.1);
-      border: 1px solid rgba(168,85,247,0.35);
-      border-radius: 12px;
-      color: #d8b4fe;
-      font-size: 1rem;
-      font-weight: 600;
-      text-decoration: none;
-      transition: background 0.2s, border-color 0.2s, transform 0.15s;
-    }
-    .contact-email-link:hover {
-      background: rgba(168,85,247,0.18);
-      border-color: rgba(168,85,247,0.6);
-      transform: translateY(-2px);
-      text-decoration: none;
-    }
-    .contact-email-link svg { flex-shrink: 0; }
-
-    /* ── Footer ──────────────────────────────────────────────────── */
-    footer {
-      border-top: 1px solid rgba(255,255,255,0.06);
-      padding: 28px 48px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 0.8rem;
-      color: var(--gray3);
-    }
-
-    /* ── Animations ──────────────────────────────────────────────── */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes scrollPulse {
-      0%, 100% { opacity: 0.3; }
-      50%       { opacity: 1; }
-    }
-
-    .reveal {
-      opacity: 0;
-      transform: translateY(28px);
-      transition: opacity 0.7s ease, transform 0.7s ease;
-    }
-    .reveal.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    /* ── Privacy Architecture ────────────────────────────────── */
-    #privacy {
-      background: #030306;
-      padding: 120px 48px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    #privacy::after {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 800px;
-      height: 400px;
-      background: radial-gradient(ellipse, rgba(34,197,94,0.06) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .privacy-grid {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      gap: 0;
-      max-width: 1060px;
-      margin: 0 auto;
-      align-items: stretch;
-    }
-
-    .privacy-side {
-      border-radius: 20px;
-      padding: 40px 36px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .privacy-side.local {
-      background: rgba(99,102,241,0.05);
-      border: 1px solid rgba(99,102,241,0.18);
-    }
-
-    .privacy-side.server {
-      background: rgba(34,197,94,0.04);
-      border: 1px solid rgba(34,197,94,0.18);
-    }
-
-    .privacy-side-label {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      padding: 5px 12px;
-      border-radius: 999px;
-      align-self: flex-start;
-      margin-bottom: 4px;
-    }
-
-    .privacy-side.local  .privacy-side-label { background: rgba(99,102,241,0.12); color: #818cf8; border: 1px solid rgba(99,102,241,0.25); }
-    .privacy-side.server .privacy-side-label { background: rgba(34,197,94,0.1);   color: #4ade80; border: 1px solid rgba(34,197,94,0.25);  }
-
-    .privacy-side-title {
-      font-size: 1.35rem;
-      font-weight: 800;
-      color: var(--white);
-      letter-spacing: -0.5px;
-    }
-
-    .privacy-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    }
-
-    .privacy-item-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-
-    .privacy-side.local  .privacy-item-icon { background: rgba(99,102,241,0.12); }
-    .privacy-side.server .privacy-item-icon { background: rgba(34,197,94,0.1);   }
-    .privacy-side.local  .privacy-item-icon svg { color: #818cf8; }
-    .privacy-side.server .privacy-item-icon svg { color: #4ade80; }
-    .privacy-item-icon svg { width: 17px; height: 17px; }
-
-    .privacy-item-text strong {
-      display: block;
-      font-size: 0.9rem;
-      font-weight: 700;
-      color: var(--white);
-      margin-bottom: 3px;
-    }
-
-    .privacy-item-text span {
-      font-size: 0.82rem;
-      color: var(--gray2);
-      line-height: 1.55;
-    }
-
-    .privacy-divider {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 0 32px;
-      position: relative;
-    }
-
-    .privacy-divider::before {
-      content: '';
-      position: absolute;
-      top: 20%;
-      bottom: 20%;
-      width: 1px;
-      left: 50%;
-      background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.1), rgba(255,255,255,0.1), transparent);
-    }
-
-    .privacy-arrow {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      z-index: 1;
-    }
-
-    .privacy-arrow svg { width: 16px; height: 16px; color: var(--gray3); }
-
-    .privacy-tag-no {
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      z-index: 1;
-      background: rgba(239,68,68,0.1);
-      border: 1px solid rgba(239,68,68,0.25);
-      color: #f87171;
-      font-size: 0.68rem;
-      font-weight: 700;
-      padding: 3px 9px;
-      border-radius: 999px;
-      white-space: nowrap;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .privacy-callout {
-      max-width: 1060px;
-      margin: 32px auto 0;
-      background: rgba(34,197,94,0.05);
-      border: 1px solid rgba(34,197,94,0.2);
-      border-radius: 14px;
-      padding: 22px 28px;
-      display: flex;
-      align-items: flex-start;
-      gap: 16px;
-    }
-
-    .privacy-callout-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: rgba(34,197,94,0.1);
-      border: 1px solid rgba(34,197,94,0.2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-    .privacy-callout-icon svg { width: 20px; height: 20px; color: #4ade80; }
-
-    .privacy-callout-text strong {
-      display: block;
-      font-size: 0.92rem;
-      font-weight: 700;
-      color: #86efac;
-      margin-bottom: 4px;
-    }
-    .privacy-callout-text p {
-      font-size: 0.85rem;
-      color: var(--gray2);
-      line-height: 1.6;
-    }
-
     @media (max-width: 860px) {
-      .privacy-grid { grid-template-columns: 1fr; }
-      .privacy-divider { flex-direction: row; padding: 16px 0; }
-      .privacy-divider::before { top: 50%; bottom: auto; width: 100%; height: 1px; left: 0; }
-      .privacy-tag-no { top: auto; transform: none; }
+      .map-layout { flex-direction: column; height: auto; }
+      .map-left { height: 380px; }
+      .map-right { width: 100%; height: auto; max-height: 400px; }
     }
 
-    @media (max-width: 768px) {
-      nav { padding: 16px 20px; }
-      #features, #how, #privacy, #cta { padding: 80px 20px; }
-      .steps-grid::before { display: none; }
-      .hero-buttons { flex-direction: column; align-items: center; }
+    /* Map legend */
+    .map-legend {
+      position: absolute; bottom: 12px; left: 14px;
+      display: flex; align-items: center; gap: 14px;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 7px 12px; font-size: 0.7rem; color: var(--gray2);
+      pointer-events: none; z-index: 10;
     }
+    .map-legend-item { display: flex; align-items: center; gap: 5px; }
+    .map-legend-dot { border-radius: 50%; flex-shrink: 0; }
 
-    /* ── Auth Modal ──────────────────────────────────────────── */
-    .auth-overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.75);
-      backdrop-filter: blur(10px);
-      z-index: 200;
+    /* Map controls */
+    .map-controls {
+      position: absolute; top: 12px; right: 12px;
+      display: flex; flex-direction: column; gap: 4px; z-index: 10;
+    }
+    .map-ctrl-btn {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: rgba(0,0,0,0.7); border: 1px solid var(--border);
+      color: var(--gray2); font-size: 0.9rem; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
-      padding: 20px;
+      transition: color 0.15s, border-color 0.15s; font-family: inherit;
     }
-    .auth-overlay.hidden { display: none !important; }
+    .map-ctrl-btn:hover { color: #fff; border-color: rgba(168,85,247,0.5); }
 
-    .auth-modal {
-      background: #0c0c16;
-      border: 1px solid rgba(168,85,247,0.28);
-      border-radius: 20px;
-      padding: 40px 36px;
-      width: 100%; max-width: 440px;
-      position: relative;
-      max-height: 92vh; overflow-y: auto;
+    /* Detail panel */
+    .detail-empty {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px 20px; text-align: center; gap: 14px;
     }
-    .auth-close {
-      position: absolute; top: 14px; right: 16px;
-      background: none; border: none;
-      color: var(--gray2); font-size: 1.1rem; cursor: pointer;
+    .detail-empty-icon { font-size: 2rem; opacity: 0.4; }
+    .detail-empty-title { font-size: 0.92rem; font-weight: 600; color: var(--gray2); }
+    .detail-empty-hint  { font-size: 0.78rem; color: var(--gray3); line-height: 1.55; }
+
+    .detail-concept-header {
+      padding: 18px 18px 12px;
+      border-bottom: 1px solid var(--border);
     }
+    .detail-concept-name { font-size: 1rem; font-weight: 700; color: #fff; }
+    .detail-concept-meta { font-size: 0.78rem; color: var(--gray2); margin-top: 3px; }
+
+    .detail-paper-list { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .detail-paper-card {
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px; cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .detail-paper-card:hover { border-color: rgba(168,85,247,0.4); background: rgba(168,85,247,0.05); }
+    .detail-paper-title { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; line-height: 1.4; margin-bottom: 4px; }
+    .detail-paper-sub   { font-size: 0.72rem; color: var(--gray3); display: flex; gap: 8px; }
+
+    .detail-paper-view {
+      display: flex; flex-direction: column; height: 100%;
+    }
+    .detail-back {
+      padding: 12px 16px; font-size: 0.8rem; color: var(--gray2);
+      cursor: pointer; display: flex; align-items: center; gap: 6px;
+      border-bottom: 1px solid var(--border);
+      transition: color 0.15s;
+    }
+    .detail-back:hover { color: #fff; }
+    .detail-paper-info { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .detail-paper-info-title { font-size: 0.95rem; font-weight: 700; color: #fff; line-height: 1.4; margin-bottom: 12px; }
+    .detail-meta-row { display: flex; gap: 6px; margin-bottom: 5px; align-items: baseline; }
+    .detail-meta-key { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray3); width: 58px; flex-shrink: 0; }
+    .detail-meta-val { font-size: 0.8rem; color: var(--gray2); }
+    .detail-meta-val a { color: var(--accent); text-decoration: none; }
+    .detail-meta-val a:hover { text-decoration: underline; }
+
+    .detail-comments { flex: 1; display: flex; flex-direction: column; }
+    .detail-comments-hd {
+      padding: 14px 18px 10px;
+      font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--gray3);
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-comment-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .detail-comment {
+      background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px 12px;
+      font-size: 0.82rem;
+    }
+    .detail-comment-user { font-weight: 600; color: #c4b5fd; margin-bottom: 3px; font-size: 0.78rem; }
+    .detail-comment-body { color: var(--gray2); line-height: 1.5; }
+    .detail-comment-date { font-size: 0.68rem; color: var(--gray3); margin-top: 4px; }
+    .detail-comment-empty { padding: 20px; text-align: center; font-size: 0.8rem; color: var(--gray3); }
+
+    .detail-comment-input { padding: 10px; border-top: 1px solid var(--border); }
+    .detail-comment-input textarea {
+      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      border-radius: 8px; color: #fff; font-family: inherit; font-size: 0.82rem;
+      padding: 9px 12px; resize: none; outline: none;
+      transition: border-color 0.2s;
+    }
+    .detail-comment-input textarea:focus { border-color: rgba(168,85,247,0.4); }
+    .detail-comment-input textarea::placeholder { color: var(--gray3); }
+    .detail-comment-input-row { display: flex; gap: 8px; margin-top: 7px; align-items: center; }
+    .detail-comment-send {
+      padding: 7px 16px; background: var(--accent); color: #fff; border: none;
+      border-radius: 8px; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: background 0.15s; flex-shrink: 0;
+    }
+    .detail-comment-send:hover { background: var(--accent2); }
+    .detail-comment-send:disabled { opacity: 0.4; cursor: not-allowed; }
+    .detail-comment-signup {
+      font-size: 0.78rem; color: var(--gray3); flex: 1;
+    }
+    .detail-comment-signup a { color: var(--accent); cursor: pointer; text-decoration: none; }
+
+    /* ── Discussions section ── */
+    .discussions-section { padding: 80px 0; border-top: 1px solid var(--border); }
+    .discussions-inner { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+    .discussions-grid { display: flex; flex-direction: column; gap: 12px; margin-top: 28px; }
+    .discussion-card {
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 20px; cursor: pointer;
+      transition: border-color 0.2s;
+      display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start;
+    }
+    .discussion-card:hover { border-color: rgba(168,85,247,0.3); }
+    .discussion-doi   { font-size: 0.7rem; color: var(--accent); margin-bottom: 4px; }
+    .discussion-body  { font-size: 0.86rem; color: var(--gray2); line-height: 1.5; }
+    .discussion-user  { font-size: 0.75rem; color: var(--gray3); }
+    .discussion-meta  { text-align: right; }
+    .discussion-date  { font-size: 0.7rem; color: var(--gray3); }
+
+    /* ── Features strip ── */
+    .features-strip { max-width: 1100px; margin: 0 auto; padding: 80px 24px; }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 20px; margin-top: 36px; }
+    .feature-card {
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 14px; padding: 24px 22px;
+    }
+    .feature-icon { font-size: 1.4rem; margin-bottom: 12px; }
+    .feature-title { font-size: 0.92rem; font-weight: 700; color: #fff; margin-bottom: 7px; }
+    .feature-desc  { font-size: 0.82rem; color: var(--gray2); line-height: 1.55; }
+
+    /* ── Footer ── */
+    .footer {
+      border-top: 1px solid var(--border); padding: 40px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 16px; max-width: 1100px; margin: 0 auto;
+    }
+    .footer-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1rem; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { font-size: 0.82rem; color: var(--gray3); text-decoration: none; transition: color 0.15s; }
+    .footer-links a:hover { color: var(--white); }
+    .footer-copy { font-size: 0.78rem; color: var(--gray3); }
+
+    /* ── Auth Modal ── */
+    .auth-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(10px); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .auth-overlay.hidden { display: none !important; }
+    .auth-modal { background: #0c0c16; border: 1px solid rgba(168,85,247,0.28); border-radius: 20px; padding: 40px 36px; width: 100%; max-width: 440px; position: relative; max-height: 92vh; overflow-y: auto; }
+    .auth-close { position: absolute; top: 14px; right: 16px; background: none; border: none; color: var(--gray2); font-size: 1.1rem; cursor: pointer; }
     .auth-close:hover { color: var(--white); }
     .auth-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
     .auth-logo span { font-size: 1.25rem; font-weight: 800; color: var(--white); }
-
-    .auth-tabs {
-      display: flex; gap: 4px;
-      background: rgba(255,255,255,0.04);
-      border-radius: 10px; padding: 4px; margin-bottom: 20px;
-    }
-    .auth-tab {
-      flex: 1; padding: 8px; border: none; border-radius: 8px;
-      background: none; color: var(--gray2);
-      font-size: 0.88rem; font-weight: 600; cursor: pointer;
-      transition: all 0.2s; font-family: inherit;
-    }
+    .auth-tabs { display: flex; gap: 4px; background: rgba(255,255,255,0.04); border-radius: 10px; padding: 4px; margin-bottom: 20px; }
+    .auth-tab { flex: 1; padding: 8px; border: none; border-radius: 8px; background: none; color: var(--gray2); font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; }
     .auth-tab.active { background: rgba(168,85,247,0.2); color: var(--white); }
-
     .auth-form { display: flex; flex-direction: column; gap: 11px; }
     .auth-form.hidden { display: none; }
-
-    .auth-input {
-      padding: 11px 15px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 10px; color: var(--white);
-      font-size: 0.9rem; outline: none;
-      transition: border-color 0.2s; font-family: inherit; width: 100%;
-    }
+    .auth-input { padding: 11px 15px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: var(--white); font-size: 0.9rem; outline: none; transition: border-color 0.2s; font-family: inherit; width: 100%; }
     .auth-input:focus { border-color: rgba(168,85,247,0.5); }
     .auth-input::placeholder { color: var(--gray3); }
     .auth-select { appearance: none; cursor: pointer; }
     .auth-select option { background: #111; }
-
-    .auth-submit {
-      margin-top: 4px; padding: 13px;
-      background: var(--accent); color: var(--white);
-      border: none; border-radius: 10px;
-      font-size: 0.95rem; font-weight: 700;
-      cursor: pointer; transition: background 0.2s, transform 0.15s;
-      font-family: inherit;
-    }
+    .auth-submit { margin-top: 4px; padding: 13px; background: var(--accent); color: var(--white); border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: background 0.2s, transform 0.15s; font-family: inherit; }
     .auth-submit:hover { background: var(--accent2); transform: translateY(-1px); }
     .auth-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
-    .auth-msg {
-      border-radius: 8px; padding: 10px 14px;
-      font-size: 0.85rem; line-height: 1.5;
-    }
-    .auth-msg.error  { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); color: #f87171; }
-    .auth-msg.success{ background: rgba(34,197,94,0.1);  border: 1px solid rgba(34,197,94,0.25);  color: #4ade80; }
+    .auth-msg { border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; line-height: 1.5; }
+    .auth-msg.error   { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); color: #f87171; }
+    .auth-msg.success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); color: #4ade80; }
     .auth-msg.hidden { display: none; }
     .auth-hint { text-align: center; font-size: 0.82rem; color: var(--gray2); margin-top: 4px; }
     .auth-hint a { color: var(--accent); text-decoration: none; cursor: pointer; }
-
-    button.btn-primary, button.btn-secondary { cursor: pointer; font-family: inherit; border: none; }
-    .nav-sign-out {
-      padding: 8px 14px; background: none; border: 1px solid rgba(255,255,255,0.15);
-      color: var(--gray2); border-radius: 8px; font-size: 0.85rem;
-      font-weight: 500; cursor: pointer; font-family: inherit;
-      transition: color 0.2s, background 0.2s;
-    }
-    .nav-sign-out:hover { color: var(--white); background: rgba(255,255,255,0.06); }
   </style>
-  <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
 <body>
 
-<!-- ══════════════════════ NAVBAR ══════════════════════ -->
-<nav class="site-nav" id="navbar">
+<!-- ── Nav ── -->
+<nav class="site-nav" id="site-nav">
   <a href="/" class="site-nav-brand">
     <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" width="26" height="26">
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+      <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
     </svg>
     <span class="site-nav-brand-name">Lacus</span>
   </a>
   <div class="site-nav-links">
-    <a href="#home"     class="site-nav-link active" id="nl-home">Home</a>
-    <a href="#features" class="site-nav-link" id="nl-features">Features</a>
-    <a href="#privacy"  class="site-nav-link" id="nl-privacy">Privacy</a>
-    <a href="/board"    class="site-nav-link" id="nl-community">Community</a>
-    <button class="site-nav-link" id="nl-papers" onclick="handlePapersLink()">Papers</button>
+    <a href="/#features"    class="site-nav-link">Features</a>
+    <a href="/#privacy"     class="site-nav-link">Privacy</a>
+    <a href="/board"        class="site-nav-link">Community</a>
+    <a href="#" onclick="handlePapersLink()" class="site-nav-link">Papers</a>
   </div>
   <div class="site-nav-auth" id="nav-auth"></div>
 </nav>
 
-<!-- ══════════════════════ HERO ══════════════════════ -->
-<section id="home">
-  <canvas id="hero-canvas"></canvas>
-
-  <div class="hero-content">
-    <div class="hero-badge">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-      </svg>
-      AI-Powered Research Analysis
-    </div>
-
-    <h1 class="hero-title">Lacus</h1>
-
-    <p class="hero-sub">
-      Import academic PDFs from your local drive and instantly extract materials,
-      methods, properties, and research relationships — then explore your entire
-      literature as an interactive knowledge map.
-    </p>
-
-    <div class="hero-buttons">
-      <button class="btn-primary" onclick="handleOpenApp('signup')">
-        Get Started Free
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M5 12h14M12 5l7 7-7 7"/>
-        </svg>
-      </button>
-      <a href="#features" class="btn-secondary">
-        Learn More
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-          <path d="M12 5v14M5 12l7 7 7-7"/>
-        </svg>
-      </a>
-    </div>
-
+<!-- ── Hero ── -->
+<section class="hero" id="home">
+  <div class="hero-badge">DOI-based · Knowledge Structure · Open Discussion</div>
+  <h1>A living map of<br><em>scientific knowledge</em></h1>
+  <p class="hero-sub">
+    Explore how research papers connect through materials, structures,
+    methods, properties, and applications — not as PDFs, but as structured knowledge.
+  </p>
+  <div class="hero-btns">
+    <a href="#map-section" class="btn-primary">Explore the Map</a>
+    <button class="btn-ghost" onclick="openAuthModal('signup')">Create Your Knowledge Space</button>
   </div>
-
-  <div class="hero-scroll">
-    <div class="scroll-line"></div>
-    Scroll
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="hero-stat-n" id="stat-papers">—</div><div class="hero-stat-l">Papers Structured</div></div>
+    <div class="hero-stat"><div class="hero-stat-n" id="stat-members">—</div><div class="hero-stat-l">Researchers</div></div>
+    <div class="hero-stat"><div class="hero-stat-n" id="stat-visitors">—</div><div class="hero-stat-l">Visits</div></div>
   </div>
 </section>
 
-<!-- ══════════════════════ STATS STRIP ══════════════════════ -->
-<div class="hero-stats" id="hero-stats">
-  <div class="hero-stat">
-    <div class="hero-stat-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-        <circle cx="9" cy="7" r="4"/>
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
-      </svg>
-    </div>
-    <span class="hero-stat-num" id="stat-visitors">—</span>
-    <span class="hero-stat-label">Visitors</span>
+<!-- ── Live Knowledge Map ── -->
+<section class="map-section" id="map-section">
+  <div class="map-section-header">
+    <p class="section-label">Live Knowledge Map</p>
+    <h2 class="section-title">Built from papers registered by the community</h2>
+    <p class="map-hint">Right-click a node to expand · Click a Concept to see papers · Scroll to zoom · Drag to pan</p>
   </div>
-  <div class="hero-stat-divider"></div>
-  <div class="hero-stat">
-    <div class="hero-stat-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <line x1="16" y1="13" x2="8" y2="13"/>
-        <line x1="16" y1="17" x2="8" y2="17"/>
-        <polyline points="10 9 9 9 8 9"/>
-      </svg>
+  <div class="map-layout">
+    <!-- SVG Map -->
+    <div class="map-left" id="map-canvas-wrap">
+      <div class="map-controls">
+        <button class="map-ctrl-btn" id="mc-plus"  title="Zoom in">+</button>
+        <button class="map-ctrl-btn" id="mc-minus" title="Zoom out">−</button>
+        <button class="map-ctrl-btn" id="mc-reset" title="Reset view">↺</button>
+      </div>
+      <div class="map-legend">
+        <div class="map-legend-item">
+          <div class="map-legend-dot" style="width:14px;height:14px;background:rgba(124,58,237,0.6);border:2px solid #7c3aed"></div>
+          <span>Field</span>
+        </div>
+        <div class="map-legend-item">
+          <div class="map-legend-dot" style="width:10px;height:10px;background:rgba(147,51,234,0.6);border:2px solid #9333ea"></div>
+          <span>Theme</span>
+        </div>
+        <div class="map-legend-item">
+          <div class="map-legend-dot" style="width:7px;height:7px;background:rgba(192,132,252,0.6);border:1.5px solid #c084fc"></div>
+          <span>Concept</span>
+        </div>
+      </div>
     </div>
-    <span class="hero-stat-num" id="stat-papers">—</span>
-    <span class="hero-stat-label">Papers Analyzed</span>
+    <!-- Detail Panel -->
+    <div class="map-right" id="map-detail">
+      <div class="detail-empty" id="detail-empty">
+        <div class="detail-empty-icon">◈</div>
+        <div class="detail-empty-title">Explore the Knowledge Map</div>
+        <div class="detail-empty-hint">Right-click a <strong>Field</strong> or <strong>Theme</strong> to expand.<br>Click a <strong>Concept</strong> to see the papers inside.</div>
+      </div>
+    </div>
   </div>
-  <div class="hero-stat-divider"></div>
-  <div class="hero-stat">
-    <div class="hero-stat-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-        <circle cx="12" cy="7" r="4"/>
-      </svg>
+</section>
+
+<!-- ── Recent Discussions ── -->
+<section class="discussions-section" id="discussions">
+  <div class="discussions-inner">
+    <p class="section-label">Community</p>
+    <h2 class="section-title">Recent Discussions</h2>
+    <p class="section-desc">Conversations anchored to paper DOIs — the discussion stays with the paper, forever.</p>
+    <div class="discussions-grid" id="recent-discussions">
+      <div style="color:var(--gray3);font-size:.85rem;padding:20px 0">Loading discussions…</div>
     </div>
-    <span class="hero-stat-num" id="stat-members">—</span>
-    <span class="hero-stat-label">Members</span>
+  </div>
+</section>
+
+<!-- ── Features ── -->
+<section class="section" id="features" style="background:var(--bg2)">
+  <div class="features-strip">
+    <p class="section-label">What Lacus Does</p>
+    <h2 class="section-title">DOI-based Structure + Dialogue</h2>
+    <p class="section-desc">Not a PDF repository. A living knowledge graph where every paper is a node in a growing network of ideas.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🗺</div>
+        <div class="feature-title">Research Flow Map</div>
+        <div class="feature-desc">Visualize how your papers connect through shared materials, methods, and applications in a story-map layout.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔬</div>
+        <div class="feature-title">Auto-extracted Structure</div>
+        <div class="feature-desc">Keywords, metrics, themes, and concepts are extracted automatically — you review and refine.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💬</div>
+        <div class="feature-title">DOI-based Discussions</div>
+        <div class="feature-desc">Every paper has a persistent discussion thread tied to its DOI, shared across the community.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <div class="feature-title">Copyright-safe by Design</div>
+        <div class="feature-desc">We store structure and metadata, never paper text. DOI-based references mean no copyright risk.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Privacy ── -->
+<section class="section" id="privacy">
+  <div style="max-width:700px;margin:0 auto;text-align:center">
+    <p class="section-label">Privacy & Copyright</p>
+    <h2 class="section-title">Your papers stay yours</h2>
+    <p class="section-desc" style="margin:0 auto 24px">
+      Lacus never stores or distributes PDF content. All analysis happens on extracted metadata and user-assigned structure.
+      DOI links point to the publisher — we only hold the knowledge graph you build.
+    </p>
+    <button class="btn-ghost" onclick="openAuthModal('signup')">Start for free</button>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<div style="border-top:1px solid var(--border)">
+  <div class="footer">
+    <div class="footer-brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" width="20" height="20">
+        <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+      </svg>
+      Lacus
+    </div>
+    <div class="footer-links">
+      <a href="/#features">Features</a>
+      <a href="/#privacy">Privacy</a>
+      <a href="/board">Community</a>
+    </div>
+    <div class="footer-copy">© 2025 Lacus</div>
   </div>
 </div>
 
-<!-- ══════════════════════ FEATURES ══════════════════════ -->
-<section id="features">
-  <p class="section-label reveal">What Lacus Does</p>
-  <h2 class="section-title reveal">From PDF to Knowledge Graph</h2>
-  <p class="section-desc reveal">
-    Lacus reads your papers and builds a structured, queryable understanding
-    of the research landscape — so you can see patterns across dozens of papers
-    in minutes, not weeks.
-  </p>
-
-  <div class="features-grid">
-
-    <div class="feature-card reveal">
-      <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-        </svg>
-      </div>
-      <div class="feature-name">Automated Extraction</div>
-      <div class="feature-text">
-        Drop any research PDF and Lacus automatically parses title, authors,
-        DOI, abstract, and year via GROBID — then runs deep AI extraction for
-        materials, methods, properties, metrics, and findings.
-      </div>
-    </div>
-
-    <div class="feature-card reveal">
-      <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/>
-          <line x1="7.5" y1="11" x2="16.5" y2="6.5"/><line x1="7.5" y1="13" x2="16.5" y2="17.5"/>
-        </svg>
-      </div>
-      <div class="feature-name">Relation Graph</div>
-      <div class="feature-text">
-        Extracted keywords become nodes in a rich graph — Materials link to
-        Methods, Methods to Properties, Properties to Applications. See how
-        concepts flow through each paper as a Story Map.
-      </div>
-    </div>
-
-    <div class="feature-card reveal">
-      <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
-        </svg>
-      </div>
-      <div class="feature-name">Multi-Paper Map View</div>
-      <div class="feature-text">
-        Zoom out beyond individual papers. The Map View places all your papers
-        on a shared canvas. Double-click to expand keyword sub-trees,
-        draw connections between papers, and create custom concept nodes.
-      </div>
-    </div>
-
-    <div class="feature-card reveal">
-      <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
-          <line x1="6" y1="20" x2="6" y2="14"/>
-        </svg>
-      </div>
-      <div class="feature-name">Performance Metrics</div>
-      <div class="feature-text">
-        Numerical values — piezoelectric coefficients, Curie temperatures,
-        efficiencies — are captured with units and measurement conditions,
-        making quantitative comparison across papers instant.
-      </div>
-    </div>
-
-    <div class="feature-card reveal">
-      <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-        </svg>
-      </div>
-      <div class="feature-name">Fully Editable</div>
-      <div class="feature-text">
-        AI extraction is a starting point, not a black box. Edit keywords,
-        relations, and metrics inline. Add notes in the memo field. Override
-        any AI decision with a click and save back to the database.
-      </div>
-    </div>
-
-    <div class="feature-card reveal">
-      <div class="feature-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-      </div>
-      <div class="feature-name">Smart Filtering</div>
-      <div class="feature-text">
-        The Map View filter bar auto-surfaces keywords shared by two or more
-        papers. Toggle any keyword to instantly fade unrelated papers,
-        or type your own filter terms to find thematic clusters.
-      </div>
-    </div>
-
-  </div>
-</section>
-
-<!-- ══════════════════════ HOW IT WORKS ══════════════════════ -->
-<section id="how">
-  <p class="section-label reveal">Workflow</p>
-  <h2 class="section-title reveal">Ready in Four Steps</h2>
-  <p class="section-desc reveal" style="margin-bottom:64px">
-    From raw PDF to structured knowledge in under a minute.
-  </p>
-
-  <div class="steps-grid">
-    <div class="step reveal">
-      <div class="step-num">1</div>
-      <div class="step-name">Import PDF</div>
-      <div class="step-text">Click "Add Paper" or drag-and-drop a PDF from your local drive. The file stays on your machine.</div>
-    </div>
-    <div class="step reveal">
-      <div class="step-num">2</div>
-      <div class="step-name">AI Extraction</div>
-      <div class="step-text">Lacus parses the paper and extracts keywords, relations, metrics, and a summary automatically.</div>
-    </div>
-    <div class="step reveal">
-      <div class="step-num">3</div>
-      <div class="step-name">Review & Edit</div>
-      <div class="step-text">Open the detail panel to review and refine the extracted data — add notes, fix categories, adjust confidence.</div>
-    </div>
-    <div class="step reveal">
-      <div class="step-num">4</div>
-      <div class="step-name">Explore the Map</div>
-      <div class="step-text">Switch to Map View to see all papers on a shared canvas, filter by keywords, and draw connections.</div>
-    </div>
-  </div>
-</section>
-
-<!-- ══════════════════════ PRIVACY ARCHITECTURE ══════════════════════ -->
-<section id="privacy">
-  <p class="section-label reveal">Copyright-Safe Design</p>
-  <h2 class="section-title reveal">Your PDFs Never Leave Your Machine</h2>
-  <p class="section-desc reveal">
-    Lacus is architected from the ground up to respect copyright.
-    The original paper files stay on your local computer — only the structured
-    knowledge extracted from them is ever stored or transmitted.
-  </p>
-
-  <div class="privacy-grid reveal">
-
-    <!-- LOCAL SIDE -->
-    <div class="privacy-side local">
-      <div>
-        <div class="privacy-side-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
-            <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
-          </svg>
-          Your Local Computer
-        </div>
-        <div class="privacy-side-title" style="margin-top:12px">PDF Files Stay Here</div>
-      </div>
-
-      <div class="privacy-item">
-        <div class="privacy-item-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-          </svg>
-        </div>
-        <div class="privacy-item-text">
-          <strong>Original PDF Files</strong>
-          <span>The full text of every paper remains on your disk. Lacus reads it locally to perform extraction, then discards the raw content.</span>
-        </div>
-      </div>
-
-      <div class="privacy-item">
-        <div class="privacy-item-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <path d="M3 9h18M9 21V9"/>
-          </svg>
-        </div>
-        <div class="privacy-item-text">
-          <strong>Full Paper Content</strong>
-          <span>Body text, figures, tables, and references are processed in memory during extraction — never written to any database or sent over a network.</span>
-        </div>
-      </div>
-
-      <div class="privacy-item">
-        <div class="privacy-item-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          </svg>
-        </div>
-        <div class="privacy-item-text">
-          <strong>Copyrighted Material</strong>
-          <span>Publisher-owned content never moves. You comply fully with journal and publisher terms of service because no protected content leaves your machine.</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- DIVIDER -->
-    <div class="privacy-divider">
-      <div class="privacy-arrow">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M5 12h14M12 5l7 7-7 7"/>
-        </svg>
-      </div>
-      <div class="privacy-tag-no">PDF ✕ Never</div>
-      <div class="privacy-arrow">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 18l6-6-6-6"/>
-        </svg>
-      </div>
-    </div>
-
-    <!-- SERVER SIDE -->
-    <div class="privacy-side server">
-      <div>
-        <div class="privacy-side-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
-            <rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/>
-            <line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
-          </svg>
-          Local Database
-        </div>
-        <div class="privacy-side-title" style="margin-top:12px">Structured Knowledge Only</div>
-      </div>
-
-      <div class="privacy-item">
-        <div class="privacy-item-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
-          </svg>
-        </div>
-        <div class="privacy-item-text">
-          <strong>Paper Metadata</strong>
-          <span>Title, authors, year, journal, and DOI — all publicly available bibliographic information that carries no copyright restriction.</span>
-        </div>
-      </div>
-
-      <div class="privacy-item">
-        <div class="privacy-item-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/>
-            <line x1="7.5" y1="11" x2="16.5" y2="6.5"/><line x1="7.5" y1="13" x2="16.5" y2="17.5"/>
-          </svg>
-        </div>
-        <div class="privacy-item-text">
-          <strong>Extracted Analysis Results</strong>
-          <span>Keywords, relations, metrics, and summaries are AI-generated facts about the paper — your original research work, not the publisher's text.</span>
-        </div>
-      </div>
-
-      <div class="privacy-item">
-        <div class="privacy-item-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-          </svg>
-        </div>
-        <div class="privacy-item-text">
-          <strong>Your Annotations &amp; Notes</strong>
-          <span>Star ratings, memos, manual edits, map positions, and custom concept nodes — all created by you, owned by you.</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Callout -->
-  <div class="privacy-callout reveal">
-    <div class="privacy-callout-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-        <polyline points="22 4 12 14.01 9 11.01"/>
-      </svg>
-    </div>
-    <div class="privacy-callout-text">
-      <strong>Copyright Compliant by Design</strong>
-      <p>
-        Because Lacus stores only metadata and AI-extracted structured data — never the PDF itself or verbatim excerpts of protected text —
-        it is designed to operate within the bounds of academic fair use and standard publisher terms of service.
-        You retain full control: all data lives in a local SQLite file on your own machine.
-      </p>
-    </div>
-  </div>
-</section>
-
-<!-- ══════════════════════ CONTACT ══════════════════════ -->
-<section id="cta">
-  <div class="contact-box reveal">
-    <p class="contact-label">Let's build it together</p>
-    <h2 class="contact-title">Looking for people who want to<br>expand academic dialogue online</h2>
-    <p class="contact-body">
-      Lacus is an early-stage project built without a programming background.<br>
-      It started from a simple observation: meaningful academic conversation<br>
-      is still surprisingly rare in online spaces.<br><br>
-      Our goal is to create a place where researchers can connect more deeply<br>
-      through published work — turning papers into living conversations.<br><br>
-      If this resonates with you, or if you'd like to help shape what Lacus becomes,<br>
-      we'd love to hear from you.
-    </p>
-    <a class="contact-email-link" href="mailto:lacusnet@gmail.com">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-        <rect x="2" y="4" width="20" height="16" rx="2"/>
-        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-      </svg>
-      lacusnet@gmail.com
-    </a>
-  </div>
-</section>
-
-<!-- ══════════════════════ FOOTER ══════════════════════ -->
-<footer>
-  <div style="display:flex;align-items:center;gap:8px;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" width="18" height="18">
-      <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
-    </svg>
-    <span>Lacus — Research Intelligence System</span>
-  </div>
-  <span>Built for researchers, runs locally.</span>
-</footer>
-
-<!-- ══════════════════════ PARTICLE CANVAS ══════════════════════ -->
-<script>
-(function () {
-  const canvas = document.getElementById('hero-canvas');
-  const ctx    = canvas.getContext('2d');
-  let   animId, particles = [];
-  const mouse = { x: null, y: null, radius: 200 };
-
-  class Particle {
-    constructor(x, y, dx, dy, size) {
-      this.x  = x;   this.y  = y;
-      this.dx = dx;  this.dy = dy;
-      this.size  = size;
-      this.color = 'rgba(191,128,255,0.85)';
-    }
-    draw() {
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-      ctx.fillStyle = this.color;
-      ctx.fill();
-    }
-    update() {
-      if (this.x > canvas.width  || this.x < 0) this.dx = -this.dx;
-      if (this.y > canvas.height || this.y < 0) this.dy = -this.dy;
-      if (mouse.x !== null && mouse.y !== null) {
-        const dx = mouse.x - this.x, dy = mouse.y - this.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < mouse.radius + this.size) {
-          const force = (mouse.radius - dist) / mouse.radius;
-          this.x -= (dx/dist) * force * 5;
-          this.y -= (dy/dist) * force * 5;
-        }
-      }
-      this.x += this.dx;
-      this.y += this.dy;
-      this.draw();
-    }
-  }
-
-  function init() {
-    particles = [];
-    const n = (canvas.width * canvas.height) / 9000;
-    for (let i = 0; i < n; i++) {
-      const s  = Math.random() * 2 + 1;
-      const x  = Math.random() * (canvas.width  - s*4) + s*2;
-      const y  = Math.random() * (canvas.height - s*4) + s*2;
-      const dx = (Math.random() * 0.4) - 0.2;
-      const dy = (Math.random() * 0.4) - 0.2;
-      particles.push(new Particle(x, y, dx, dy, s));
-    }
-  }
-
-  function connect() {
-    const threshold = (canvas.width / 7) * (canvas.height / 7);
-    for (let a = 0; a < particles.length; a++) {
-      for (let b = a + 1; b < particles.length; b++) {
-        const dist = (particles[a].x - particles[b].x) ** 2
-                   + (particles[a].y - particles[b].y) ** 2;
-        if (dist >= threshold) continue;
-        const opacity = 1 - dist / 20000;
-        const nearMouse = mouse.x !== null && (() => {
-          const mx = particles[a].x - mouse.x, my = particles[a].y - mouse.y;
-          return Math.sqrt(mx*mx + my*my) < mouse.radius;
-        })();
-        ctx.strokeStyle = nearMouse
-          ? `rgba(255,255,255,${opacity})`
-          : `rgba(200,150,255,${opacity})`;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(particles[a].x, particles[a].y);
-        ctx.lineTo(particles[b].x, particles[b].y);
-        ctx.stroke();
-      }
-    }
-  }
-
-  function animate() {
-    animId = requestAnimationFrame(animate);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    particles.forEach(p => p.update());
-    connect();
-  }
-
-  function resize() {
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-    init();
-  }
-
-  window.addEventListener('resize', resize);
-  window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-  window.addEventListener('mouseout',  () => { mouse.x = null; mouse.y = null; });
-  resize();
-  animate();
-})();
-</script>
-
-<!-- ══════════════════════ SCROLL REVEAL ══════════════════════ -->
-<script>
-(function () {
-  const observer = new IntersectionObserver(
-    entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }),
-    { threshold: 0.15 }
-  );
-  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-
-  // Navbar scroll style
-  const nav = document.getElementById('navbar');
-  window.addEventListener('scroll', () => {
-    nav.classList.toggle('scrolled', window.scrollY > 60);
-  });
-
-  // Active nav link on scroll
-  const sections = document.querySelectorAll('section[id]');
-  const links    = document.querySelectorAll('.site-nav-link[href^="#"]');
-  window.addEventListener('scroll', () => {
-    let current = '';
-    sections.forEach(s => { if (window.scrollY >= s.offsetTop - 80) current = s.id; });
-    links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current));
-  }, { passive: true });
-})();
-</script>
-
-<!-- ══════════════════════ AUTH MODAL ══════════════════════ -->
+<!-- ── Auth Modal ── -->
 <div class="auth-overlay hidden" id="auth-overlay">
   <div class="auth-modal">
-    <button class="auth-close" id="auth-close" aria-label="Close">✕</button>
-
+    <button class="auth-close" id="auth-close">✕</button>
     <div class="auth-logo">
       <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" width="26" height="26">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+        <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
       </svg>
       <span>Lacus</span>
     </div>
-
     <div class="auth-tabs">
       <button class="auth-tab active" data-tab="signin" onclick="switchAuthTab('signin')">Sign In</button>
       <button class="auth-tab" data-tab="signup" onclick="switchAuthTab('signup')">Sign Up</button>
     </div>
-
     <div class="auth-msg error hidden" id="auth-error"></div>
     <div class="auth-msg success hidden" id="auth-success"></div>
-
-    <!-- Sign In Form -->
     <form class="auth-form" id="form-signin" onsubmit="handleSignIn(event)">
       <input class="auth-input" type="email" id="si-email" placeholder="Email address" required autocomplete="email" />
       <input class="auth-input" type="password" id="si-password" placeholder="Password" required autocomplete="current-password" />
       <button class="auth-submit" type="submit" id="si-btn">Sign In</button>
       <p class="auth-hint">No account? <a onclick="switchAuthTab('signup')">Create one free</a></p>
     </form>
-
-    <!-- Sign Up Form -->
     <form class="auth-form hidden" id="form-signup" onsubmit="handleSignUp(event)">
       <input class="auth-input" type="email" id="su-email" placeholder="Email address" required autocomplete="email" />
       <input class="auth-input" type="password" id="su-password" placeholder="Password (min 8 chars)" required minlength="8" autocomplete="new-password" />
@@ -1391,14 +472,10 @@
       <input class="auth-input" type="text" id="su-country" placeholder="Country" />
       <select class="auth-input auth-select" id="su-research-field">
         <option value="" disabled selected>Research Field</option>
-        <option value="Materials Science">Materials Science</option>
-        <option value="Physics">Physics</option>
-        <option value="Chemistry">Chemistry</option>
-        <option value="Electrical/Semiconductor">Electrical / Semiconductor</option>
-        <option value="Energy Engineering">Energy Engineering</option>
-        <option value="Biomedical Engineering">Biomedical Engineering</option>
-        <option value="Computer Science">Computer Science</option>
-        <option value="Environmental Engineering">Environmental Engineering</option>
+        <option>Materials Science</option><option>Physics</option><option>Chemistry</option>
+        <option>Electrical/Semiconductor</option><option>Energy Engineering</option>
+        <option>Biomedical Engineering</option><option>Computer Science</option>
+        <option>Environmental Engineering</option>
       </select>
       <select class="auth-input auth-select" id="su-role">
         <option value="" disabled selected>Role</option>
@@ -1415,193 +492,582 @@
   </div>
 </div>
 
-<!-- ══════════════════════ AUTH SCRIPT ══════════════════════ -->
+<!-- ══════════════════ SCRIPTS ══════════════════ -->
 <script>
+// ── Supabase + Auth ──────────────────────────────────────────────────────────
 (function () {
   const SUPABASE_URL  = 'https://pzodkufrnnjkbghyfwth.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6b2RrdWZybm5qa2JnaHlmd3RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzg2ODAsImV4cCI6MjA5MjgxNDY4MH0.Z_WF2-VVFKTiGF2V4DEcabZYgdxeW_feO4eqcfu1rqU';
-
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  window._sb_landing = sb;
+  window._auth_token = null;
 
-  // ── helpers ──────────────────────────────────────────────────────────
-  function showError(msg) {
-    const el = document.getElementById('auth-error');
-    const ok = document.getElementById('auth-success');
-    el.textContent = msg; el.classList.remove('hidden');
-    ok.classList.add('hidden');
-  }
-  function showSuccess(msg) {
-    const el = document.getElementById('auth-success');
-    const err = document.getElementById('auth-error');
-    el.textContent = msg; el.classList.remove('hidden');
-    err.classList.add('hidden');
-  }
-  function clearMsgs() {
-    document.getElementById('auth-error').classList.add('hidden');
-    document.getElementById('auth-success').classList.add('hidden');
-  }
+  function showError(msg)   { const e=document.getElementById('auth-error');   const s=document.getElementById('auth-success'); e.textContent=msg; e.classList.remove('hidden'); s.classList.add('hidden'); }
+  function showSuccess(msg) { const s=document.getElementById('auth-success'); const e=document.getElementById('auth-error');   s.textContent=msg; s.classList.remove('hidden'); e.classList.add('hidden'); }
+  function clearMsgs()      { document.getElementById('auth-error').classList.add('hidden'); document.getElementById('auth-success').classList.add('hidden'); }
 
-  // ── modal open / close ───────────────────────────────────────────────
-  window.openAuthModal = function(tab) {
-    switchAuthTab(tab || 'signin');
-    clearMsgs();
-    document.getElementById('auth-overlay').classList.remove('hidden');
-  };
-  window.closeAuthModal = function() {
-    document.getElementById('auth-overlay').classList.add('hidden');
-  };
+  window.openAuthModal = function(tab) { switchAuthTab(tab||'signin'); clearMsgs(); document.getElementById('auth-overlay').classList.remove('hidden'); };
+  window.closeAuthModal = function() { document.getElementById('auth-overlay').classList.add('hidden'); };
   document.getElementById('auth-close').addEventListener('click', closeAuthModal);
-  document.getElementById('auth-overlay').addEventListener('click', function(e) {
-    if (e.target === this) closeAuthModal();
-  });
+  document.getElementById('auth-overlay').addEventListener('click', function(e) { if (e.target===this) closeAuthModal(); });
 
-  // ── tab switching ────────────────────────────────────────────────────
   window.switchAuthTab = function(tab) {
     clearMsgs();
-    document.querySelectorAll('.auth-tab').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tab === tab);
-    });
-    document.getElementById('form-signin').classList.toggle('hidden', tab !== 'signin');
-    document.getElementById('form-signup').classList.toggle('hidden', tab !== 'signup');
+    document.querySelectorAll('.auth-tab').forEach(b => b.classList.toggle('active', b.dataset.tab===tab));
+    document.getElementById('form-signin').classList.toggle('hidden', tab!=='signin');
+    document.getElementById('form-signup').classList.toggle('hidden', tab!=='signup');
   };
 
-  // ── handleOpenApp (called by buttons) ────────────────────────────────
   window.handleOpenApp = async function(tab) {
     const { data: { session } } = await sb.auth.getSession();
-    if (session) { window.location.href = '/app'; return; }
-    openAuthModal(tab || 'signin');
+    if (session) { window.location.href='/app'; return; }
+    openAuthModal(tab||'signin');
   };
 
-  // ── sign in ──────────────────────────────────────────────────────────
   window.handleSignIn = async function(e) {
     e.preventDefault();
-    const btn = document.getElementById('si-btn');
-    btn.disabled = true; btn.textContent = 'Signing in…';
-    clearMsgs();
-    const email    = document.getElementById('si-email').value.trim();
-    const password = document.getElementById('si-password').value;
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) {
-      showError(error.message);
-      btn.disabled = false; btn.textContent = 'Sign In';
-      return;
-    }
-    window.location.href = '/app';
+    const btn=document.getElementById('si-btn');
+    btn.disabled=true; btn.textContent='Signing in…'; clearMsgs();
+    const { error } = await sb.auth.signInWithPassword({ email: document.getElementById('si-email').value.trim(), password: document.getElementById('si-password').value });
+    if (error) { showError(error.message); btn.disabled=false; btn.textContent='Sign In'; return; }
+    window.location.href='/app';
   };
 
-  // ── sign up ──────────────────────────────────────────────────────────
   window.handleSignUp = async function(e) {
     e.preventDefault();
-    const btn = document.getElementById('su-btn');
-    btn.disabled = true; btn.textContent = 'Creating account…';
-    clearMsgs();
-    const email          = document.getElementById('su-email').value.trim();
-    const password       = document.getElementById('su-password').value;
-    const name           = document.getElementById('su-name').value.trim();
-    const institution    = document.getElementById('su-institution').value.trim();
-    const country        = document.getElementById('su-country').value.trim();
-    const research_field = document.getElementById('su-research-field').value.trim();
-    const user_role      = document.getElementById('su-role').value;
-
+    const btn=document.getElementById('su-btn');
+    btn.disabled=true; btn.textContent='Creating account…'; clearMsgs();
     const { error } = await sb.auth.signUp({
-      email, password,
-      options: {
-        data: { name, institution, country, research_field, user_role }
-      }
+      email: document.getElementById('su-email').value.trim(),
+      password: document.getElementById('su-password').value,
+      options: { data: {
+        name: document.getElementById('su-name').value.trim(),
+        institution: document.getElementById('su-institution').value.trim(),
+        country: document.getElementById('su-country').value.trim(),
+        research_field: document.getElementById('su-research-field').value,
+        user_role: document.getElementById('su-role').value,
+      }}
     });
-
-    if (error) {
-      showError(error.message);
-      btn.disabled = false; btn.textContent = 'Create Account';
-      return;
-    }
+    if (error) { showError(error.message); btn.disabled=false; btn.textContent='Create Account'; return; }
     showSuccess('Account created! Check your email to confirm, then sign in.');
-    btn.disabled = false; btn.textContent = 'Create Account';
+    btn.disabled=false; btn.textContent='Create Account';
   };
 
-  // ── auth state change ────────────────────────────────────────────────
-  sb.auth.onAuthStateChange((event, session) => {
-    updateNavAuth(session);
-  });
-
-  // ── Papers nav link ──────────────────────────────────────────────────
-  window.handlePapersLink = async function() {
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) { window.location.href = '/app'; }
-    else { openAuthModal('signin'); }
-  };
-
-  // ── nav auth area ────────────────────────────────────────────────────
   window.updateNavAuth = function(session) {
     const area = document.getElementById('nav-auth');
     if (session && session.user) {
       const u = session.user;
       const name = u.user_metadata?.username || u.user_metadata?.name || u.user_metadata?.full_name
                 || (u.email ? u.email.split('@')[0] : 'Account');
-      area.innerHTML =
-        `<span class="site-nav-email">${name}</span>` +
-        `<button class="site-nav-link" onclick="signOut()">Sign Out</button>`;
+      area.innerHTML = `<span class="site-nav-email">${name}</span><button class="site-nav-link" onclick="signOut()">Sign Out</button>`;
     } else {
       area.innerHTML = `<button class="site-nav-link" onclick="openAuthModal('signin')">Sign In</button>`;
     }
   };
 
-  window.signOut = async function() {
-    await sb.auth.signOut();
-    window.location.reload();
+  window.signOut = async function() { await sb.auth.signOut(); window.location.reload(); };
+
+  window.handlePapersLink = async function() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) { window.location.href='/app'; } else { openAuthModal('signin'); }
   };
 
-  // ── init: check existing session + ?signin= param ────────────────────
+  sb.auth.onAuthStateChange((event, session) => {
+    updateNavAuth(session);
+    window._auth_token = session?.access_token || null;
+  });
+
   (async function init() {
     const { data: { session } } = await sb.auth.getSession();
     updateNavAuth(session);
-
+    window._auth_token = session?.access_token || null;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('signin') || params.get('signup')) {
-      if (!session) openAuthModal(params.get('signup') ? 'signup' : 'signin');
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-
+    if ((params.get('signin') || params.get('signup')) && !session) openAuthModal(params.get('signup') ? 'signup' : 'signin');
+    window.history.replaceState({}, '', window.location.pathname);
   })();
-})();
 
-// ── Hero stats (runs independently on page load) ──────────────────────────
-(function () {
-  function animateCount(el, target) {
-    const duration = 1200;
-    const start = performance.now();
-    function tick(now) {
-      const t = Math.min((now - start) / duration, 1);
-      const ease = 1 - Math.pow(1 - t, 3);
-      el.textContent = Math.round(target * ease).toLocaleString();
-      if (t < 1) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-  }
-
-  async function loadHeroStats() {
-    try {
-      const res = await fetch('/api/public/stats');
-      if (!res.ok) { console.warn('[stats] fetch not ok:', res.status); return; }
-      const data = await res.json();
-      console.log('[stats] data:', data);
-      const ids = ['stat-visitors', 'stat-papers', 'stat-members'];
-      const vals = [data.visitors, data.papers, data.members];
-      ids.forEach((id, i) => {
-        const el = document.getElementById(id);
-        console.log('[stats] el:', id, el, 'val:', vals[i]);
-        if (el) { el.textContent = (vals[i] || 0).toLocaleString(); animateCount(el, vals[i] || 0); }
-      });
-    } catch (e) { console.error('[stats] error:', e); }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadHeroStats);
-  } else {
-    loadHeroStats();
-  }
+  window.addEventListener('scroll', () => {
+    document.getElementById('site-nav').classList.toggle('scrolled', window.scrollY > 40);
+  });
 })();
 </script>
 
+<script>
+// ── Landing Map (SVG circle hierarchy) ───────────────────────────────────────
+(function () {
+  'use strict';
+  const NS = 'http://www.w3.org/2000/svg';
+
+  const CFG = {
+    field:   { r: 50, fill: 'rgba(88,28,135,0.75)',  stroke: '#7c3aed', sw: 2,   ts: 9.5,  cs: 8.5  },
+    theme:   { r: 35, fill: 'rgba(109,40,217,0.65)', stroke: '#9333ea', sw: 1.5, ts: 8.5,  cs: 7.5  },
+    concept: { r: 23, fill: 'rgba(139,92,246,0.55)', stroke: '#c084fc', sw: 1.5, ts: 7.5,  cs: 6.5  },
+  };
+  const PAD  = 14, EGAP = 48;
+  const CX = (() => {
+    const f=CFG.field.r, t=CFG.theme.r, c=CFG.concept.r;
+    const fx = PAD+f, tx = fx+f+EGAP+t, cx = tx+t+EGAP+c;
+    return { field: fx, theme: tx, concept: cx };
+  })();
+  const SIBGAP = { field: 22, theme: 15, concept: 10 };
+
+  let fieldNodes = [], zoom = 1, panX = 20, panY = 20;
+  let isPanning = false, psx = 0, psy = 0, pspx = 0, pspy = 0;
+  let svgEl, gMain, detailCB = null;
+
+  function subtreeH(n) {
+    const childType = n.type==='field' ? 'theme' : n.type==='theme' ? 'concept' : null;
+    if (!childType || !n.expanded || !n.children?.length) return CFG[n.type].r * 2;
+    const sg = SIBGAP[childType];
+    const ch = n.children.reduce((s,c) => s + subtreeH(c), 0) + (n.children.length - 1) * sg;
+    return Math.max(CFG[n.type].r * 2, ch);
+  }
+
+  function layoutNode(n, cx, cy) {
+    n.cx = cx; n.cy = cy;
+    const ct = n.type==='field' ? 'theme' : n.type==='theme' ? 'concept' : null;
+    if (!ct || !n.expanded || !n.children?.length) return;
+    const ccx = CX[ct], sg = SIBGAP[ct];
+    const tot = n.children.reduce((s,c) => s + subtreeH(c), 0) + (n.children.length - 1) * sg;
+    let y = cy - tot / 2;
+    n.children.forEach(child => { const h=subtreeH(child); layoutNode(child, ccx, y+h/2); y+=h+sg; });
+  }
+
+  function computeLayout() {
+    let y = PAD;
+    fieldNodes.forEach(fn => { const h=subtreeH(fn); layoutNode(fn, CX.field, y+h/2); y+=h+SIBGAP.field; });
+    return y + PAD;
+  }
+
+  function wrapLabel(label, maxCh, maxLines) {
+    const words = label.split(' ');
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur+' '+w : w;
+      if (test.length <= maxCh) { cur = test; }
+      else { if (cur) lines.push(cur); cur = w.length > maxCh ? w.slice(0,maxCh-1)+'…' : w; if (lines.length >= maxLines-1) break; }
+    }
+    if (cur && lines.length < maxLines) lines.push(cur.length > maxCh ? cur.slice(0,maxCh-1)+'…' : cur);
+    return lines;
+  }
+
+  function el(tag, attrs={}, extra={}) {
+    const e = document.createElementNS(NS, tag);
+    Object.entries(attrs).forEach(([k,v]) => e.setAttribute(k, v));
+    if (extra.text) e.textContent = extra.text;
+    return e;
+  }
+
+  function drawEdge(parent, child) {
+    const x1 = parent.cx + CFG[parent.type].r, y1 = parent.cy;
+    const x2 = child.cx  - CFG[child.type].r,  y2 = child.cy;
+    const mx = (x1+x2)/2;
+    return el('path', { d:`M ${x1} ${y1} C ${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`,
+      stroke: (parent.color||'#7c3aed')+'55', 'stroke-width':'1.5', fill:'none', 'pointer-events':'none' });
+  }
+
+  function drawNode(n) {
+    const cfg = CFG[n.type];
+    const stroke = n.selected ? '#f3e8ff' : (n.color || cfg.stroke);
+    const g = el('g', { 'data-id': n.id, 'data-type': n.type, style:'cursor:pointer' });
+    g.appendChild(el('circle', { cx:n.cx, cy:n.cy, r:cfg.r, fill:cfg.fill, stroke, 'stroke-width':n.selected ? 2.5 : cfg.sw }));
+
+    const maxCh = Math.floor((cfg.r * 1.6) / 5.5);
+    const lines = wrapLabel(n.label, maxCh, 2);
+    const lh = cfg.ts + 2;
+    const countH = 3 + cfg.cs;
+    const totalTH = lines.length * lh + countH;
+    let ty = n.cy - totalTH / 2 + cfg.ts * 0.5;
+
+    lines.forEach(line => {
+      g.appendChild(el('text', { x:n.cx, y:ty, 'text-anchor':'middle', 'dominant-baseline':'middle',
+        fill:'#f3e8ff', 'font-size':cfg.ts, 'font-weight':'600', 'font-family':'Inter,system-ui,sans-serif', 'pointer-events':'none' }, { text: line }));
+      ty += lh;
+    });
+    g.appendChild(el('text', { x:n.cx, y:ty+3, 'text-anchor':'middle', 'dominant-baseline':'middle',
+      fill:'rgba(196,181,253,0.75)', 'font-size':cfg.cs, 'font-family':'Inter,system-ui,sans-serif', 'pointer-events':'none' },
+      { text: n.count != null ? String(n.count) : '' }));
+    return g;
+  }
+
+  function redraw() {
+    if (!gMain) return;
+    while (gMain.firstChild) gMain.removeChild(gMain.firstChild);
+    const totalH = computeLayout();
+    const svgW = CX.concept + CFG.concept.r + PAD;
+    svgEl.setAttribute('width', svgW);
+    svgEl.setAttribute('height', Math.max(totalH, 350));
+
+    // edges first
+    const drawEdges = n => {
+      if (!n.expanded || !n.children?.length) return;
+      n.children.forEach(c => { gMain.appendChild(drawEdge(n, c)); drawEdges(c); });
+    };
+    fieldNodes.forEach(drawEdges);
+
+    // nodes
+    const drawNodes = n => {
+      gMain.appendChild(drawNode(n));
+      if (n.expanded) n.children?.forEach(drawNodes);
+    };
+    fieldNodes.forEach(drawNodes);
+  }
+
+  function applyTransform() {
+    gMain?.setAttribute('transform', `translate(${panX},${panY}) scale(${zoom})`);
+  }
+
+  function findNode(id) {
+    for (const f of fieldNodes) {
+      if (f.id===id) return f;
+      for (const t of f.children) {
+        if (t.id===id) return t;
+        for (const c of t.children) { if (c.id===id) return c; }
+      }
+    }
+    return null;
+  }
+
+  function unselectAll() { fieldNodes.forEach(f => { f.selected=false; f.children?.forEach(t => { t.selected=false; t.children?.forEach(c => c.selected=false); }); }); }
+
+  function init(wrapId, opts={}) {
+    detailCB = opts.onSelect || null;
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+
+    svgEl = el('svg', { style:'display:block;' });
+    gMain = el('g', { transform:`translate(${panX},${panY}) scale(${zoom})` });
+    svgEl.appendChild(gMain);
+    wrap.appendChild(svgEl);
+
+    // right-click = expand/collapse
+    wrap.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      const g = e.target.closest('[data-id]');
+      if (!g) return;
+      const node = findNode(g.getAttribute('data-id'));
+      if (!node) return;
+      if (node.type === 'concept') { selectConcept(node); return; }
+      node.expanded = !node.expanded;
+      redraw();
+    });
+
+    // left-click on concept = select; on field/theme = expand
+    wrap.addEventListener('click', e => {
+      const g = e.target.closest('[data-id]');
+      if (!g) return;
+      const node = findNode(g.getAttribute('data-id'));
+      if (!node) return;
+      if (node.type === 'concept') { selectConcept(node); return; }
+      node.expanded = !node.expanded;
+      redraw();
+    });
+
+    // pan
+    wrap.addEventListener('mousedown', e => {
+      if (e.button !== 0 || e.target.closest('[data-id]') || e.target.closest('.map-ctrl-btn')) return;
+      isPanning=true; psx=e.clientX; psy=e.clientY; pspx=panX; pspy=panY;
+    });
+    document.addEventListener('mousemove', e => {
+      if (!isPanning) return;
+      panX=pspx+e.clientX-psx; panY=pspy+e.clientY-psy;
+      applyTransform();
+    });
+    document.addEventListener('mouseup', () => { isPanning=false; });
+
+    // zoom
+    wrap.addEventListener('wheel', e => {
+      e.preventDefault();
+      const rect=wrap.getBoundingClientRect(), mx=e.clientX-rect.left, my=e.clientY-rect.top;
+      const f=e.deltaY<0?1.12:1/1.12, nz=Math.min(3,Math.max(0.25,zoom*f));
+      panX=mx-(mx-panX)*(nz/zoom); panY=my-(my-panY)*(nz/zoom);
+      zoom=nz; applyTransform();
+    }, {passive:false});
+
+    // ctrl buttons
+    document.getElementById('mc-plus')?.addEventListener('click', () => { zoom=Math.min(3,zoom*1.2); applyTransform(); });
+    document.getElementById('mc-minus')?.addEventListener('click', () => { zoom=Math.max(0.25,zoom/1.2); applyTransform(); });
+    document.getElementById('mc-reset')?.addEventListener('click', () => {
+      zoom=1; panX=20; panY=20; applyTransform();
+    });
+  }
+
+  function selectConcept(node) {
+    unselectAll();
+    node.selected = true;
+    redraw();
+    if (detailCB) detailCB(node);
+  }
+
+  function loadData(data) {
+    const COLORS = ['#7c3aed','#0891b2','#059669','#d97706','#dc2626','#db2777','#2563eb','#65a30d'];
+    fieldNodes = (data.fields||[]).map((f,i) => ({
+      id: f.id, type:'field', label: f.name, count: f.paper_count,
+      color: f.color||COLORS[i%COLORS.length],
+      cx:0,cy:0, expanded:false, selected:false, data:f,
+      children: (f.themes||[]).map(t => ({
+        id: `${f.id}::${t.name}`, type:'theme', label:t.name, count:t.paper_count,
+        color: f.color||COLORS[i%COLORS.length],
+        cx:0,cy:0, expanded:false, selected:false, data:t,
+        children: (t.concepts||[]).map(c => ({
+          id: `${f.id}::${t.name}::${c.name}`, type:'concept', label:c.name, count:c.paper_count,
+          color: f.color||COLORS[i%COLORS.length],
+          cx:0,cy:0, expanded:false, selected:false, data:c, children:[],
+        })),
+      })),
+    }));
+    redraw();
+  }
+
+  // ── Detail panel rendering ────────────────────────────────────────────────
+  let currentConceptNode = null;
+
+  function renderConceptPanel(node) {
+    currentConceptNode = node;
+    const detail = document.getElementById('map-detail');
+    const concept = node.data;
+    detail.innerHTML = '';
+
+    const hd = document.createElement('div');
+    hd.className = 'detail-concept-header';
+    hd.innerHTML = `<div class="detail-concept-name">${esc(concept.name)}</div>
+      <div class="detail-concept-meta">${concept.paper_count} paper${concept.paper_count!==1?'s':''} · Click a paper for details</div>`;
+    detail.appendChild(hd);
+
+    const list = document.createElement('div');
+    list.className = 'detail-paper-list';
+    (concept.papers || []).forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'detail-paper-card';
+      card.innerHTML = `<div class="detail-paper-title">${esc(p.title||'Untitled')}</div>
+        <div class="detail-paper-sub">
+          ${p.year ? `<span>${esc(String(p.year))}</span>` : ''}
+          ${p.journal ? `<span>${esc(p.journal)}</span>` : ''}
+          ${p.doi ? `<span style="color:var(--accent)">DOI</span>` : ''}
+        </div>`;
+      card.addEventListener('click', () => renderPaperPanel(p, node));
+      list.appendChild(card);
+    });
+    if (!concept.papers?.length) {
+      list.innerHTML = '<div style="padding:20px;color:var(--gray3);font-size:.82rem">No papers in this concept.</div>';
+    }
+    detail.appendChild(list);
+  }
+
+  function renderPaperPanel(paper, conceptNode) {
+    const detail = document.getElementById('map-detail');
+    detail.innerHTML = '';
+
+    const view = document.createElement('div');
+    view.className = 'detail-paper-view';
+
+    const back = document.createElement('div');
+    back.className = 'detail-back';
+    back.innerHTML = `← ${esc(conceptNode?.data?.name || 'Back')}`;
+    back.addEventListener('click', () => renderConceptPanel(conceptNode));
+    view.appendChild(back);
+
+    const info = document.createElement('div');
+    info.className = 'detail-paper-info';
+    const doiLink = paper.doi
+      ? `<a href="https://doi.org/${esc(paper.doi)}" target="_blank" rel="noopener">${esc(paper.doi)}</a>`
+      : '<span style="color:var(--gray3)">—</span>';
+    const authors = Array.isArray(paper.authors)
+      ? paper.authors.slice(0,4).join(', ') + (paper.authors.length>4?'…':'')
+      : (paper.authors || '');
+    info.innerHTML = `
+      <div class="detail-paper-info-title">${esc(paper.title||'Untitled')}</div>
+      ${authors ? `<div class="detail-meta-row"><span class="detail-meta-key">Authors</span><span class="detail-meta-val">${esc(authors)}</span></div>` : ''}
+      ${paper.journal ? `<div class="detail-meta-row"><span class="detail-meta-key">Journal</span><span class="detail-meta-val">${esc(paper.journal)}</span></div>` : ''}
+      ${paper.year ? `<div class="detail-meta-row"><span class="detail-meta-key">Year</span><span class="detail-meta-val">${esc(String(paper.year))}</span></div>` : ''}
+      <div class="detail-meta-row"><span class="detail-meta-key">DOI</span><span class="detail-meta-val">${doiLink}</span></div>
+    `;
+    view.appendChild(info);
+
+    // Comments section
+    const commentsSec = document.createElement('div');
+    commentsSec.className = 'detail-comments';
+    commentsSec.innerHTML = `<div class="detail-comments-hd">Discussion</div>
+      <div class="detail-comment-list" id="dcp-list"><div class="detail-comment-empty">Loading…</div></div>`;
+
+    const inputArea = document.createElement('div');
+    inputArea.className = 'detail-comment-input';
+    inputArea.id = 'dcp-input-area';
+    commentsSec.appendChild(inputArea);
+    view.appendChild(commentsSec);
+    detail.appendChild(view);
+
+    if (paper.doi) loadDoiComments(paper.doi);
+    renderCommentInput(inputArea, paper.doi);
+  }
+
+  async function loadDoiComments(doi) {
+    const list = document.getElementById('dcp-list');
+    if (!list) return;
+    try {
+      const res = await fetch('/api/public/doi-comments/' + encodeURIComponent(doi));
+      const data = await res.json();
+      const comments = data.comments || [];
+      if (!comments.length) {
+        list.innerHTML = '<div class="detail-comment-empty">No comments yet. Be the first!</div>';
+        return;
+      }
+      list.innerHTML = '';
+      comments.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'detail-comment';
+        const d = new Date(c.created_at);
+        const dateStr = d.toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'});
+        div.innerHTML = `<div class="detail-comment-user">${esc(c.username||'Anonymous')}</div>
+          <div class="detail-comment-body">${esc(c.content)}</div>
+          <div class="detail-comment-date">${dateStr}</div>`;
+        list.appendChild(div);
+      });
+    } catch(e) {
+      if (list) list.innerHTML = '<div class="detail-comment-empty">Could not load comments.</div>';
+    }
+  }
+
+  function renderCommentInput(container, doi) {
+    if (window._auth_token) {
+      container.innerHTML = `
+        <textarea id="dcp-ta" rows="2" placeholder="Add to the discussion…"></textarea>
+        <div class="detail-comment-input-row">
+          <button class="detail-comment-send" id="dcp-send">Post</button>
+          <span id="dcp-msg" style="font-size:.75rem;color:var(--gray3)"></span>
+        </div>`;
+      document.getElementById('dcp-send')?.addEventListener('click', async () => {
+        if (!doi) return;
+        const ta = document.getElementById('dcp-ta');
+        const content = ta?.value?.trim();
+        if (!content) return;
+        const btn = document.getElementById('dcp-send');
+        btn.disabled = true;
+        try {
+          const res = await fetch('/api/doi-comments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+window._auth_token },
+            body: JSON.stringify({ doi, content }),
+          });
+          if (res.ok) {
+            ta.value = '';
+            document.getElementById('dcp-msg').textContent = 'Comment posted!';
+            loadDoiComments(doi);
+          } else {
+            document.getElementById('dcp-msg').textContent = 'Failed to post.';
+          }
+        } catch { document.getElementById('dcp-msg').textContent = 'Error.'; }
+        btn.disabled = false;
+      });
+    } else {
+      container.innerHTML = doi
+        ? `<div class="detail-comment-signup">
+            <a onclick="openAuthModal('signup')">Sign up</a> or
+            <a onclick="openAuthModal('signin')">sign in</a> to join the discussion.
+          </div>`
+        : '';
+    }
+  }
+
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  async function boot() {
+    init('map-canvas-wrap', {
+      onSelect: node => renderConceptPanel(node),
+    });
+    try {
+      const res = await fetch('/api/public/landing-map');
+      const data = await res.json();
+      if (data.fields?.length) {
+        loadData(data);
+      } else {
+        document.getElementById('map-canvas-wrap').innerHTML +=
+          '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--gray3);font-size:.88rem">No papers registered yet.</div>';
+      }
+    } catch(e) {
+      console.error('Map load error', e);
+    }
+  }
+
+  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+
+<script>
+// ── Stats + Recent discussions ────────────────────────────────────────────────
+(function () {
+  function animateCount(el, target) {
+    const start = performance.now(), duration = 1200;
+    const tick = now => {
+      const t = Math.min((now-start)/duration, 1);
+      el.textContent = Math.round(target * (1-Math.pow(1-t,3))).toLocaleString();
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  async function loadStats() {
+    try {
+      const res = await fetch('/api/public/stats');
+      if (!res.ok) return;
+      const d = await res.json();
+      [['stat-visitors',d.visitors],['stat-papers',d.papers],['stat-members',d.members]].forEach(([id,v]) => {
+        const el = document.getElementById(id);
+        if (el) { el.textContent=(v||0).toLocaleString(); animateCount(el, v||0); }
+      });
+    } catch {}
+  }
+
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function timeAgo(iso) {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff/60)+'m ago';
+    if (diff < 86400) return Math.floor(diff/3600)+'h ago';
+    return Math.floor(diff/86400)+'d ago';
+  }
+
+  async function loadDiscussions() {
+    const grid = document.getElementById('recent-discussions');
+    if (!grid) return;
+    try {
+      const res = await fetch('/api/public/recent-doi-comments');
+      const data = await res.json();
+      const comments = data.comments || [];
+      if (!comments.length) {
+        grid.innerHTML = '<div style="color:var(--gray3);font-size:.85rem;padding:20px 0">No discussions yet — be the first!</div>';
+        return;
+      }
+      grid.innerHTML = '';
+      comments.forEach(c => {
+        const card = document.createElement('div');
+        card.className = 'discussion-card';
+        card.innerHTML = `
+          <div>
+            ${c.doi ? `<div class="discussion-doi">doi:${esc(c.doi)}</div>` : ''}
+            <div class="discussion-body">${esc((c.content||'').slice(0,160))}${c.content?.length>160?'…':''}</div>
+            <div class="discussion-user">${esc(c.username||'Anonymous')}</div>
+          </div>
+          <div class="discussion-meta">
+            <div class="discussion-date">${timeAgo(c.created_at)}</div>
+          </div>`;
+        grid.appendChild(card);
+      });
+    } catch(e) {
+      grid.innerHTML = '<div style="color:var(--gray3);font-size:.85rem">Could not load discussions.</div>';
+    }
+  }
+
+  if (document.readyState==='loading') {
+    document.addEventListener('DOMContentLoaded', () => { loadStats(); loadDiscussions(); });
+  } else {
+    loadStats(); loadDiscussions();
+  }
+})();
+</script>
 </body>
 </html>
