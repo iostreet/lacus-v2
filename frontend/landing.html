@@ -1535,8 +1535,11 @@
   window.updateNavAuth = function(session) {
     const area = document.getElementById('nav-auth');
     if (session && session.user) {
+      const u = session.user;
+      const name = u.user_metadata?.username || u.user_metadata?.name || u.user_metadata?.full_name
+                || (u.email ? u.email.split('@')[0] : 'Account');
       area.innerHTML =
-        `<span class="site-nav-email">${session.user.email || ''}</span>` +
+        `<span class="site-nav-email">${name}</span>` +
         `<button class="site-nav-link" onclick="signOut()">Sign Out</button>`;
     } else {
       area.innerHTML = `<button class="site-nav-link" onclick="openAuthModal('signin')">Sign In</button>`;

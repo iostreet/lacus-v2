@@ -2977,11 +2977,25 @@ tr.row-dragging { opacity: 0.45; background: rgba(168,85,247,0.08); }
   font-size: .62rem; color: var(--text-muted); font-style: italic;
 }
 
-/* ── Theme node ── */
+/* ── Theme node (1.5×) ── */
 .mv2-ov-node-theme { cursor: pointer; }
+.mv2-ov-node-theme .mv2-ov-node-hd    { padding: 10px 14px 8px; }
+.mv2-ov-node-theme .mv2-ov-node-icon  { font-size: 1.28rem; }
+.mv2-ov-node-theme .mv2-ov-node-label { font-size: 1.17rem; }
+.mv2-ov-node-theme .mv2-ov-node-badge { font-size: .96rem; padding: 2px 9px; }
+.mv2-ov-node-theme .mv2-ov-node-bd    { padding: 3px 14px 9px; }
+.mv2-ov-node-theme .mv2-ov-node-type-lbl { font-size: .93rem; }
+.mv2-ov-node-theme .mv2-ov-coll-hint     { font-size: .93rem; }
 
-/* ── Concept node ── */
+/* ── Concept node (1.2×) ── */
 .mv2-ov-node-concept { cursor: pointer; }
+.mv2-ov-node-concept .mv2-ov-node-hd    { padding: 8px 12px 7px; }
+.mv2-ov-node-concept .mv2-ov-node-icon  { font-size: 1.02rem; }
+.mv2-ov-node-concept .mv2-ov-node-label { font-size: .94rem; }
+.mv2-ov-node-concept .mv2-ov-node-badge { font-size: .77rem; padding: 1px 7px; }
+.mv2-ov-node-concept .mv2-ov-node-bd    { padding: 2px 12px 7px; }
+.mv2-ov-node-concept .mv2-ov-node-type-lbl { font-size: .74rem; }
+.mv2-ov-node-concept .mv2-ov-coll-hint     { font-size: .74rem; }
 
 /* ── Paper node ── */
 .mv2-ov-node-paper { cursor: pointer; }

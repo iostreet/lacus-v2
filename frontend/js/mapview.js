@@ -1,20 +1,22 @@
 /**
- * Lacus Map View v6 — Research flow tree (story-map style)
- * Overview: zoom/pan canvas, draggable nodes, collapse/expand
+ * Lacus Map View v7 — Left-to-right research flow tree
+ * Theme → Concept → Paper, papers hidden by default (dblclick concept to expand)
  */
 
 window.MapView = (() => {
   'use strict';
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let _mode        = 'overview';
-  let _data        = null;
-  let _container   = null;
-  let _onNodeClick = null;
-  let _selTheme    = null;
-  let _selConcept  = null;
-  let _activeKws   = new Set();
-  const _collapsed = new Set();
+  let _mode             = 'overview';
+  let _data             = null;
+  let _container        = null;
+  let _onNodeClick      = null;
+  let _selTheme         = null;
+  let _selConcept       = null;
+  let _activeKws        = new Set();
+  const _collapsed      = new Set();
+  let _papersHiddenInit = false;
+  let _savedPositions   = {};
 
   // ── Canvas transform state ─────────────────────────────────────────────────
   const NS = 'http://www.w3.org/2000/svg';
@@ -25,25 +27,27 @@ window.MapView = (() => {
   let _panActive  = false;
   let _panOriginX = 0;
   let _panOriginY = 0;
-  let _dragNode   = null; // { node, el, sx, sy, ox, oy, moved }
+  let _dragNode   = null;
   let _lastDragMoved = false;
   let _wrapEl     = null;
   let _viewEl     = null;
   let _svgEl      = null;
   let _rootsCache = [];
 
-  // ── Layout constants ──────────────────────────────────────────────────────
-  const OV_W   = 190;
-  const OV_HG  = 14;
-  const OV_VG  = 62;
-  const OV_TH  = 50;
-  const OV_CH  = 50;
-  const OV_PH  = 114;
-  const OV_PAD = 28;
+  // ── Layout constants (left-to-right) ──────────────────────────────────────
+  const OV_W_TH = 285;  const OV_H_TH = 75;   // theme  — 1.5×
+  const OV_W_CO = 228;  const OV_H_CO = 60;   // concept — 1.2×
+  const OV_W_PA = 190;  const OV_H_PA = 114;  // paper   — 1×
+  const OV_LG   = 44;                          // horizontal gap between levels
+  const OV_VG   = 18;                          // vertical gap between siblings
+  const OV_PAD  = 28;                          // canvas padding
 
   // ── Utils ─────────────────────────────────────────────────────────────────
   const _e   = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const _cut = (s, n) => s && s.length > n ? s.slice(0, n - 1) + '…' : (s || '');
+
+  const _nW = t => t === 'theme' ? OV_W_TH : t === 'concept' ? OV_W_CO : OV_W_PA;
+  const _nH = t => t === 'theme' ? OV_H_TH : t === 'concept' ? OV_H_CO : OV_H_PA;
 
   const _apiFetch = async path => {
     const res = await fetch('/api' + path, {
@@ -58,16 +62,17 @@ window.MapView = (() => {
     if (_viewEl) _viewEl.style.transform = `translate(${_panX}px,${_panY}px) scale(${_zoom})`;
   };
 
-  // ── Edge drawing ──────────────────────────────────────────────────────────
+  // ── Edge drawing (right-middle → left-middle) ─────────────────────────────
   const _drawEdgesFrom = node => {
-    const nodeH = node.type === 'theme' ? OV_TH : node.type === 'concept' ? OV_CH : OV_PH;
     if (_collapsed.has(node.id)) return;
+    const nW = _nW(node.type), nH = _nH(node.type);
     node.children.forEach(child => {
-      const x1 = node.x  + OV_W / 2, y1 = node.y  + nodeH;
-      const x2 = child.x + OV_W / 2, y2 = child.y;
-      const my = (y1 + y2) / 2;
+      const cH = _nH(child.type);
+      const x1 = node.x + nW,   y1 = node.y + nH / 2;
+      const x2 = child.x,       y2 = child.y + cH / 2;
+      const mx = (x1 + x2) / 2;
       const path = document.createElementNS(NS, 'path');
-      path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${my} ${x2} ${my} ${x2} ${y2}`);
+      path.setAttribute('d', `M ${x1} ${y1} C ${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`);
       path.setAttribute('stroke', node.color + '55');
       path.setAttribute('stroke-width', '1.8');
       path.setAttribute('fill', 'none');
@@ -82,7 +87,22 @@ window.MapView = (() => {
     _rootsCache.forEach(_drawEdgesFrom);
   };
 
-  // ── Document-level mouse handlers (set up once) ───────────────────────────
+  // ── Position persistence ───────────────────────────────────────────────────
+  const _savePositions = () => {
+    const pos = {};
+    const collect = n => {
+      pos[n.id] = { x: n.x, y: n.y };
+      n.children.forEach(collect);
+    };
+    _rootsCache.forEach(collect);
+    try { localStorage.setItem('lacus_ov_pos', JSON.stringify(pos)); } catch (_) {}
+  };
+
+  const _loadPositions = () => {
+    try { return JSON.parse(localStorage.getItem('lacus_ov_pos') || '{}'); } catch (_) { return {}; }
+  };
+
+  // ── Document-level mouse handlers ─────────────────────────────────────────
   document.addEventListener('mousemove', e => {
     if (_panActive) {
       _panX = e.clientX - _panOriginX;
@@ -109,6 +129,7 @@ window.MapView = (() => {
     }
     if (_dragNode) {
       _lastDragMoved = _dragNode.moved;
+      if (_dragNode.moved) _savePositions();
       _dragNode = null;
       document.body.style.cursor = '';
     }
@@ -208,29 +229,30 @@ window.MapView = (() => {
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  // OVERVIEW — research flow tree (Theme → Concept → Paper)
+  // OVERVIEW — left-to-right research flow tree (Theme → Concept → Paper)
   // ══════════════════════════════════════════════════════════════════════════
 
-  const _subtreeW = node => {
-    if (_collapsed.has(node.id) || !node.children.length) return OV_W;
-    const childrenW = node.children.reduce((s, c) => s + _subtreeW(c), 0)
-                    + (node.children.length - 1) * OV_HG;
-    return Math.max(OV_W, childrenW);
+  const _subtreeH = node => {
+    if (_collapsed.has(node.id) || !node.children.length) return _nH(node.type);
+    const childrenH = node.children.reduce((s, c) => s + _subtreeH(c), 0)
+                    + (node.children.length - 1) * OV_VG;
+    return Math.max(_nH(node.type), childrenH);
   };
 
-  const _layoutNode = (node, centerX, y) => {
-    const nodeH = node.type === 'theme' ? OV_TH : node.type === 'concept' ? OV_CH : OV_PH;
-    node.x = centerX - OV_W / 2;
-    node.y = y;
+  const _layoutNodeLR = (node, x, centerY) => {
+    const nH = _nH(node.type);
+    const saved = _savedPositions[node.id];
+    node.x = saved ? saved.x : x;
+    node.y = saved ? saved.y : centerY - nH / 2;
     if (_collapsed.has(node.id) || !node.children.length) return;
-    const childY = y + nodeH + OV_VG;
-    const totalChildW = node.children.reduce((s, c) => s + _subtreeW(c), 0)
-                      + (node.children.length - 1) * OV_HG;
-    let cx = centerX - totalChildW / 2;
+    const childX = x + _nW(node.type) + OV_LG;
+    const totalChildH = node.children.reduce((s, c) => s + _subtreeH(c), 0)
+                      + (node.children.length - 1) * OV_VG;
+    let cy = centerY - totalChildH / 2;
     node.children.forEach(child => {
-      const sw = _subtreeW(child);
-      _layoutNode(child, cx + sw / 2, childY);
-      cx += sw + OV_HG;
+      const sh = _subtreeH(child);
+      _layoutNodeLR(child, childX, cy + sh / 2);
+      cy += sh + OV_VG;
     });
   };
 
@@ -265,20 +287,37 @@ window.MapView = (() => {
       })),
     }));
 
-    // ── Layout ──────────────────────────────────────────────────────────────
-    const totalW = roots.reduce((s, r) => s + _subtreeW(r), 0)
-                 + (roots.length - 1) * OV_HG;
-    const canvasW = Math.max(totalW + OV_PAD * 2, 600);
-    const canvasH = OV_PAD + OV_TH + OV_VG + OV_CH + OV_VG + OV_PH + OV_PAD;
+    // ── Hide papers on first load (concepts start collapsed) ─────────────────
+    if (!_papersHiddenInit) {
+      _papersHiddenInit = true;
+      roots.forEach(root =>
+        root.children.forEach(c => _collapsed.add(c.id))
+      );
+    }
 
-    let startX = OV_PAD + (canvasW - OV_PAD * 2 - totalW) / 2;
+    // ── Layout ──────────────────────────────────────────────────────────────
+    const totalRootsH = roots.reduce((s, r) => s + _subtreeH(r), 0)
+                      + Math.max(0, roots.length - 1) * OV_VG;
+
+    let sy = OV_PAD;
     roots.forEach(root => {
-      const sw = _subtreeW(root);
-      _layoutNode(root, startX + sw / 2, OV_PAD);
-      startX += sw + OV_HG;
+      const sh = _subtreeH(root);
+      _layoutNodeLR(root, OV_PAD, sy + sh / 2);
+      sy += sh + OV_VG;
     });
 
-    // ── Store for live edge redraw ──────────────────────────────────────────
+    // Compute bounding box after layout (accounts for saved drag positions)
+    let bboxMaxX = 0, bboxMaxY = 0;
+    const scanBBox = n => {
+      bboxMaxX = Math.max(bboxMaxX, n.x + _nW(n.type));
+      bboxMaxY = Math.max(bboxMaxY, n.y + _nH(n.type));
+      if (!_collapsed.has(n.id)) n.children.forEach(scanBBox);
+    };
+    roots.forEach(scanBBox);
+
+    const canvasW = Math.max(bboxMaxX + OV_PAD, OV_PAD + OV_W_TH + OV_LG + OV_W_CO + OV_LG + OV_W_PA + OV_PAD);
+    const canvasH = Math.max(bboxMaxY + OV_PAD, totalRootsH + OV_PAD * 2, 400);
+
     _rootsCache = roots;
 
     // ── Viewport + canvas ───────────────────────────────────────────────────
@@ -295,7 +334,6 @@ window.MapView = (() => {
     canvas.style.width  = canvasW + 'px';
     canvas.style.height = canvasH + 'px';
 
-    // SVG edge layer
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('width',  canvasW);
     svg.setAttribute('height', canvasH);
@@ -304,7 +342,7 @@ window.MapView = (() => {
 
     // ── Render nodes recursively ─────────────────────────────────────────────
     const renderSubtree = node => {
-      const nodeH = node.type === 'theme' ? OV_TH : node.type === 'concept' ? OV_CH : OV_PH;
+      const nW = _nW(node.type);
       const isCollapsed = _collapsed.has(node.id);
       const hasChildren = node.children.length > 0;
 
@@ -312,7 +350,7 @@ window.MapView = (() => {
       el.className = `mv2-ov-node mv2-ov-node-${node.type}${node.dimmed ? ' mv2-ov-dimmed' : ''}`;
       el.style.left  = node.x + 'px';
       el.style.top   = node.y + 'px';
-      el.style.width = OV_W + 'px';
+      el.style.width = nW + 'px';
 
       if (node.type === 'paper') {
         const p   = node.paper;
@@ -368,7 +406,6 @@ window.MapView = (() => {
         }
       }
 
-      // Node drag (mousedown)
       el.addEventListener('mousedown', e => {
         if (e.button !== 0) return;
         e.stopPropagation();
@@ -384,7 +421,6 @@ window.MapView = (() => {
 
     roots.forEach(renderSubtree);
 
-    // Draw initial edges
     _redrawEdges();
 
     canvas.appendChild(svg);
@@ -439,7 +475,7 @@ window.MapView = (() => {
     }));
     zoomCtrl.appendChild(mkZBtn('↺', () => {
       _zoom = 1;
-      _panX = Math.max(20, (wrap.clientWidth  - canvasW)  / 2);
+      _panX = Math.max(20, (wrap.clientWidth  - canvasW) / 2);
       _panY = Math.max(20, (wrap.clientHeight - canvasH) / 2);
       _applyTransform();
     }));
@@ -447,14 +483,12 @@ window.MapView = (() => {
     wrap.appendChild(zoomCtrl);
     body.appendChild(wrap);
 
-    // ── Apply current transform (preserve zoom/pan across re-renders) ────────
     _applyTransform();
 
-    // ── Center on first load ─────────────────────────────────────────────────
     if (!_didCenter) {
       requestAnimationFrame(() => {
         _didCenter = true;
-        _panX = Math.max(20, (wrap.clientWidth  - canvasW)  / 2);
+        _panX = Math.max(20, (wrap.clientWidth  - canvasW) / 2);
         _panY = Math.max(20, (wrap.clientHeight - canvasH) / 2);
         _applyTransform();
       });
@@ -572,8 +606,10 @@ window.MapView = (() => {
     _container.style.position = 'relative';
     _container.innerHTML = '<div class="mv2-loading"><span class="mv2-loading-dot"></span> Building research map…</div>';
 
-    // Reset transform state for fresh load
     _zoom = 1; _panX = 0; _panY = 0; _didCenter = false;
+    _papersHiddenInit = false;
+    _collapsed.clear();
+    _savedPositions = _loadPositions();
 
     try {
       _data = await _apiFetch('/map-overview');
