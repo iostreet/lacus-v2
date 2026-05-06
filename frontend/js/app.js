@@ -1951,6 +1951,9 @@ const showReviewModal = async (paperId) => {
   const overlay = document.getElementById('rv-overlay');
   document.getElementById('rv-paper-title').textContent = data.title || '';
 
+  // Pre-fill Field selector
+  _rvInitFieldSelect(data.field, data.field_confidence, data.field_scores);
+
   // Pre-fill Theme & Concept with auto-assigned values, then load recommendations
   document.getElementById('rv-tc-theme-input').value   = data.theme   || '';
   document.getElementById('rv-tc-concept-input').value = data.concept || '';
@@ -2011,7 +2014,7 @@ const showReviewModal = async (paperId) => {
           kwPayload.push({ id, category: st.category, include: st.include });
         }
       }
-      const field   = data.field || null; // kept internally, not shown in UI
+      const field   = document.getElementById('rv-field-select')?.value.trim() || null;
       const theme   = (document.getElementById('rv-tc-theme-input')?.value.trim())   || null;
       const concept = (document.getElementById('rv-tc-concept-input')?.value.trim()) || null;
       await apiFetch(`/papers/${paperId}/confirm`, {
@@ -2027,6 +2030,100 @@ const showReviewModal = async (paperId) => {
       newSave.textContent = 'Save to DB →';
     }
   });
+};
+
+const _RV_FIELDS = [
+  'Materials Science',
+  'Physics',
+  'Chemistry',
+  'Biology',
+  'Biomedical Engineering',
+  'Computer Science',
+  'Environmental Science',
+  'Earth Science',
+  'Electrical Engineering',
+  'Chemical Engineering',
+  'Mechanical Engineering',
+  'Mathematics',
+  'Astronomy',
+  'Neuroscience',
+  'Psychology',
+  'Economics',
+  'Other',
+];
+
+const _rvInitFieldSelect = (currentField, fieldConf, fieldScores) => {
+  const sel   = document.getElementById('rv-field-select');
+  const conf  = document.getElementById('rv-field-conf');
+  const alts  = document.getElementById('rv-field-alts');
+  if (!sel) return;
+
+  // Populate options (keep fixed canonical list)
+  sel.innerHTML = '<option value="">— Select field —</option>';
+  _RV_FIELDS.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.textContent = f;
+    if (f === currentField) opt.selected = true;
+    sel.appendChild(opt);
+  });
+
+  // If auto-detected field is not in canonical list, add it as extra option
+  if (currentField && !_RV_FIELDS.includes(currentField)) {
+    const opt = document.createElement('option');
+    opt.value = currentField;
+    opt.textContent = currentField;
+    opt.selected = true;
+    sel.insertBefore(opt, sel.children[1]);
+  }
+
+  // Confidence badge
+  if (conf) {
+    if (currentField && fieldConf != null) {
+      conf.textContent = `AI: ${Math.round(fieldConf * 100)}% confidence`;
+      conf.style.display = '';
+    } else {
+      conf.style.display = 'none';
+    }
+  }
+
+  // Alternative chips: other canonical fields not currently selected
+  if (alts) {
+    alts.innerHTML = '';
+    const others = _RV_FIELDS.filter(f => f !== currentField && f !== 'Other').slice(0, 5);
+    if (others.length) {
+      const label = document.createElement('span');
+      label.className = 'rv-tc-alts-label';
+      label.textContent = 'Other fields:';
+      alts.appendChild(label);
+      others.forEach(f => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'rv-tc-alt-chip';
+        chip.textContent = f;
+        chip.addEventListener('click', () => {
+          sel.value = f;
+          if (conf) conf.style.display = 'none';
+          // Refresh chips
+          const newOthers = _RV_FIELDS.filter(x => x !== f && x !== 'Other').slice(0, 5);
+          alts.innerHTML = '';
+          const lbl = document.createElement('span');
+          lbl.className = 'rv-tc-alts-label';
+          lbl.textContent = 'Other fields:';
+          alts.appendChild(lbl);
+          newOthers.forEach(x => {
+            const c2 = document.createElement('button');
+            c2.type = 'button';
+            c2.className = 'rv-tc-alt-chip';
+            c2.textContent = x;
+            c2.addEventListener('click', () => { sel.value = x; if (conf) conf.style.display = 'none'; });
+            alts.appendChild(c2);
+          });
+        });
+        alts.appendChild(chip);
+      });
+    }
+  }
 };
 
 const _rvLoadRecommendations = async (paperId) => {
