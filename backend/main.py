@@ -196,6 +196,7 @@ def public_landing_map():
     try:
         papers = (_sa.table("papers")
                     .select("id,title,year,doi,journal,authors,field,theme,concept")
+                    .eq("status", "confirmed")
                     .execute().data or [])
     except Exception as e:
         return {"fields": [], "error": str(e)}
