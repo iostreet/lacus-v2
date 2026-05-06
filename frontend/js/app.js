@@ -2077,8 +2077,13 @@ const _rvInitFieldSelect = (currentField, fieldConf, fieldScores) => {
   const alts  = document.getElementById('rv-field-alts');
   if (!input) return;
 
-  // Pre-fill with AI-detected field
-  input.value = currentField || '';
+  // Pre-fill with AI-detected field; fall back to top of field_scores
+  let topField = currentField;
+  if (!topField && fieldScores) {
+    const topKey = Object.entries(fieldScores).sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (topKey) topField = _FIELD_PACK_MAP[topKey] || null;
+  }
+  input.value = topField || '';
 
   // Build ranked alternatives from field_scores, then fill remaining from canonical list
   const scored = Object.entries(fieldScores || {})
