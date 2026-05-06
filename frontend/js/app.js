@@ -2014,7 +2014,7 @@ const showReviewModal = async (paperId) => {
           kwPayload.push({ id, category: st.category, include: st.include });
         }
       }
-      const field   = document.getElementById('rv-field-select')?.value.trim() || null;
+      const field   = document.getElementById('rv-field-input')?.value.trim() || null;
       const theme   = (document.getElementById('rv-tc-theme-input')?.value.trim())   || null;
       const concept = (document.getElementById('rv-tc-concept-input')?.value.trim()) || null;
       await apiFetch(`/papers/${paperId}/confirm`, {
@@ -2052,78 +2052,74 @@ const _RV_FIELDS = [
   'Other',
 ];
 
+// Pack key → canonical display name (for field_scores ranking)
+const _FIELD_PACK_MAP = {
+  materials_science:       'Materials Science',
+  physics:                 'Physics',
+  chemistry:               'Chemistry',
+  biology:                 'Biology',
+  biomedical_engineering:  'Biomedical Engineering',
+  computer_science:        'Computer Science',
+  environmental_science:   'Environmental Science',
+  earth_science:           'Earth Science',
+  electrical_engineering:  'Electrical Engineering',
+  chemical_engineering:    'Chemical Engineering',
+  mechanical_engineering:  'Mechanical Engineering',
+  mathematics:             'Mathematics',
+  astronomy:               'Astronomy',
+  neuroscience:            'Neuroscience',
+  psychology:              'Psychology',
+  economics:               'Economics',
+};
+
 const _rvInitFieldSelect = (currentField, fieldConf, fieldScores) => {
-  const sel   = document.getElementById('rv-field-select');
-  const conf  = document.getElementById('rv-field-conf');
+  const input = document.getElementById('rv-field-input');
   const alts  = document.getElementById('rv-field-alts');
-  if (!sel) return;
+  if (!input) return;
 
-  // Populate options (keep fixed canonical list)
-  sel.innerHTML = '<option value="">— Select field —</option>';
-  _RV_FIELDS.forEach(f => {
-    const opt = document.createElement('option');
-    opt.value = f;
-    opt.textContent = f;
-    if (f === currentField) opt.selected = true;
-    sel.appendChild(opt);
-  });
+  // Pre-fill with AI-detected field
+  input.value = currentField || '';
 
-  // If auto-detected field is not in canonical list, add it as extra option
-  if (currentField && !_RV_FIELDS.includes(currentField)) {
-    const opt = document.createElement('option');
-    opt.value = currentField;
-    opt.textContent = currentField;
-    opt.selected = true;
-    sel.insertBefore(opt, sel.children[1]);
-  }
+  // Build ranked alternatives from field_scores, then fill remaining from canonical list
+  const scored = Object.entries(fieldScores || {})
+    .map(([k, v]) => ({ name: _FIELD_PACK_MAP[k] || null, score: Math.round(v * 100) }))
+    .filter(r => r.name)
+    .sort((a, b) => b.score - a.score);
 
-  // Confidence badge
-  if (conf) {
-    if (currentField && fieldConf != null) {
-      conf.textContent = `AI: ${Math.round(fieldConf * 100)}% confidence`;
-      conf.style.display = '';
-    } else {
-      conf.style.display = 'none';
-    }
-  }
+  const scoredNames = scored.map(r => r.name);
+  const remaining = _RV_FIELDS.filter(f => !scoredNames.includes(f) && f !== 'Other');
+  const allRanked = [
+    ...scored,
+    ...remaining.map(f => ({ name: f, score: null })),
+  ];
 
-  // Alternative chips: other canonical fields not currently selected
-  if (alts) {
+  const renderFieldAlts = () => {
+    if (!alts) return;
     alts.innerHTML = '';
-    const others = _RV_FIELDS.filter(f => f !== currentField && f !== 'Other').slice(0, 5);
-    if (others.length) {
-      const label = document.createElement('span');
-      label.className = 'rv-tc-alts-label';
-      label.textContent = 'Other fields:';
-      alts.appendChild(label);
-      others.forEach(f => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'rv-tc-alt-chip';
-        chip.textContent = f;
-        chip.addEventListener('click', () => {
-          sel.value = f;
-          if (conf) conf.style.display = 'none';
-          // Refresh chips
-          const newOthers = _RV_FIELDS.filter(x => x !== f && x !== 'Other').slice(0, 5);
-          alts.innerHTML = '';
-          const lbl = document.createElement('span');
-          lbl.className = 'rv-tc-alts-label';
-          lbl.textContent = 'Other fields:';
-          alts.appendChild(lbl);
-          newOthers.forEach(x => {
-            const c2 = document.createElement('button');
-            c2.type = 'button';
-            c2.className = 'rv-tc-alt-chip';
-            c2.textContent = x;
-            c2.addEventListener('click', () => { sel.value = x; if (conf) conf.style.display = 'none'; });
-            alts.appendChild(c2);
-          });
-        });
-        alts.appendChild(chip);
+    const current = input.value.trim().toLowerCase();
+    const suggestions = allRanked.filter(r => r.name.toLowerCase() !== current).slice(0, 5);
+    if (!suggestions.length) return;
+    const label = document.createElement('span');
+    label.className = 'rv-tc-alts-label';
+    label.textContent = 'Other suggestions:';
+    alts.appendChild(label);
+    suggestions.forEach(r => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'rv-tc-alt-chip';
+      chip.innerHTML = r.score != null
+        ? `${escHtml(r.name)} <span class="rv-tc-alt-pct">${r.score}%</span>`
+        : escHtml(r.name);
+      chip.addEventListener('click', () => {
+        input.value = r.name;
+        renderFieldAlts();
       });
-    }
-  }
+      alts.appendChild(chip);
+    });
+  };
+
+  renderFieldAlts();
+  input.addEventListener('input', renderFieldAlts);
 };
 
 const _rvLoadRecommendations = async (paperId) => {

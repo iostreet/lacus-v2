@@ -1537,19 +1537,6 @@ a:hover { text-decoration: underline; }
 .rv-tc-alt-chip:hover { background: rgba(139,92,246,.2); color: var(--accent); border-color: rgba(139,92,246,.5); }
 .rv-tc-alt-pct { font-size: .65rem; color: var(--accent); font-weight: 700; }
 
-/* ── Field selector (review modal) ── */
-.rv-field-row { display: flex; align-items: center; gap: 10px; }
-.rv-field-select {
-  flex: 1; background: var(--bg3); border: 1px solid var(--border);
-  border-radius: 8px; color: var(--text-primary); font-family: inherit;
-  font-size: .88rem; font-weight: 500; padding: 7px 10px; outline: none; cursor: pointer;
-  appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 10px center;
-  padding-right: 28px;
-}
-.rv-field-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,92,246,.18); }
-.rv-field-select option { background: #111827; }
-.rv-field-conf { font-size: .72rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
 
 /* ── Paper panel (map-node-panel) new card format ── */
 .mnp-group-path {
