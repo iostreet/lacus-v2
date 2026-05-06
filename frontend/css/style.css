@@ -2669,6 +2669,7 @@ tr.row-dragging { opacity: 0.45; background: rgba(168,85,247,0.08); }
 }
 
 .rv-section { display: flex; flex-direction: column; gap: 10px; }
+#rv-field-section { margin-bottom: -8px; }
 .rv-section-label {
   font-size: 0.72rem; font-weight: 700; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: 0.06em;

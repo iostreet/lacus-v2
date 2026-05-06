@@ -2141,6 +2141,14 @@ const _rvLoadRecommendations = async (paperId) => {
     const conceptAlts  = document.getElementById('rv-tc-concept-alts');
     if (!themeInput || !conceptInput) return;
 
+    // Pre-fill field input if still empty (async detection from keywords)
+    const fieldInput = document.getElementById('rv-field-input');
+    if (fieldInput && !fieldInput.value && rec.field) {
+      fieldInput.value = rec.field;
+      // Re-initialize field alts with the now-available field_scores
+      _rvInitFieldSelect(rec.field, null, rec.field_scores || {});
+    }
+
     // Pre-fill with top recommendation if input is still empty
     const topTheme   = rec.themes?.[0];
     const topConcept = rec.concepts?.[0];

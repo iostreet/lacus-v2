@@ -1531,8 +1531,7 @@ def get_map_overview(user_id: str = Depends(get_current_user)):
 def recommend_theme_concept(paper_id: int, user_id: str = Depends(get_current_user)):
     """Score theme and concept candidates based on title + extracted keywords."""
     sb = _sb()
-    # Use only columns guaranteed to exist (no theme/concept — avoids missing-column errors)
-    paper = (sb.table("papers").select("id,title,user_id")
+    paper = (sb.table("papers").select("id,title,user_id,field,field_confidence,field_scores")
                .eq("id", paper_id).execute().data or [None])[0]
     if not paper or paper["user_id"] != user_id:
         raise HTTPException(404)
@@ -1544,7 +1543,7 @@ def recommend_theme_concept(paper_id: int, user_id: str = Depends(get_current_us
              .execute().data or [])
 
     if not kws and not paper.get("title"):
-        return {"paper_id": paper_id, "themes": [], "concepts": []}
+        return {"paper_id": paper_id, "themes": [], "concepts": [], "field": None}
 
     title    = (paper.get("title") or "").strip()
     title_low = title.lower()
@@ -1589,10 +1588,28 @@ def recommend_theme_concept(paper_id: int, user_id: str = Depends(get_current_us
         ranked = sorted(scores.items(), key=lambda x: -x[1])
         return [{"name": k, "score": min(99, round(v / mv * 100))} for k, v in ranked][:top]
 
+    # Field recommendation: use stored value, or re-detect from title + keywords
+    rec_field = paper.get("field") or None
+    rec_field_scores = paper.get("field_scores") or {}
+    if not rec_field:
+        sections = {
+            "title":           paper.get("title") or "",
+            "author_keywords": [kw.get("normalized_name") or kw.get("keyword_name") or "" for kw in kws],
+        }
+        try:
+            detected_name, detected_conf, detected_scores = detect_field(sections)
+            if detected_name and detected_name != "Unknown":
+                rec_field = detected_name
+                rec_field_scores = detected_scores
+        except Exception:
+            pass
+
     return {
-        "paper_id": paper_id,
-        "themes":   _normalize(theme_scores, 3),
-        "concepts": _normalize(concept_scores, 5),
+        "paper_id":    paper_id,
+        "themes":      _normalize(theme_scores, 3),
+        "concepts":    _normalize(concept_scores, 5),
+        "field":       rec_field,
+        "field_scores": rec_field_scores,
     }
 
 
