@@ -644,30 +644,29 @@ const loadOverviewDoiComments = async (doi) => {
 
   const renderComment = (c, num, numStr, isReply) => {
     const d = new Date(c.created_at);
-    const dateStr = d.toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'});
+    const dateStr = d.toLocaleDateString('en', {month:'short',day:'numeric'});
     const canEdit   = myId && c.user_id === myId;
     const canDelete = myId && (c.user_id === myId || isOperator);
 
     const wrap = document.createElement('div');
     wrap.style.cssText = isReply
-      ? 'background:rgba(255,255,255,0.02);border-radius:6px;padding:8px 10px;'
-      : 'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:10px 12px;';
+      ? 'padding:4px 0 4px 10px;border-left:2px solid rgba(168,85,247,0.2);'
+      : 'border-bottom:1px solid rgba(255,255,255,0.05);padding:6px 0;';
 
-    const editBtnHtml   = canEdit   ? `<button class="btn btn-sm ov-edit-btn"   data-id="${c.id}" style="padding:2px 7px;font-size:.7rem">Edit</button>` : '';
-    const deleteBtnHtml = canDelete ? `<button class="btn btn-sm ov-delete-btn" data-id="${c.id}" style="padding:2px 7px;font-size:.7rem;color:#f87171">Delete</button>` : '';
+    const editBtnHtml   = canEdit   ? `<button class="btn btn-sm ov-edit-btn"   style="padding:1px 6px;font-size:.68rem;margin-left:4px">Edit</button>` : '';
+    const deleteBtnHtml = canDelete ? `<button class="btn btn-sm ov-delete-btn" style="padding:1px 6px;font-size:.68rem;color:#f87171;margin-left:2px">Del</button>` : '';
+    const replyBtnHtml  = isReply   ? '' : `<button class="ov-reply-btn btn btn-sm" style="padding:1px 6px;font-size:.68rem;margin-left:4px">↩</button>`;
 
     wrap.innerHTML = `
-      <div style="font-size:.68rem;color:var(--accent);font-weight:700;margin-bottom:2px">#${numStr}</div>
-      <div style="font-size:${isReply?'.75rem':'.78rem'};font-weight:600;color:#c4b5fd;margin-bottom:3px">${_e(c.username||'Anonymous')}</div>
-      <div class="ov-cmt-body" style="font-size:${isReply?'.8rem':'.82rem'};color:var(--text-muted);line-height:1.5">${_e(c.content)}</div>
-      <div class="ov-edit-area" style="display:none;margin-top:6px"></div>
-      <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">
-        <span style="font-size:.68rem;color:var(--text-muted)">${dateStr}</span>
-        ${isReply ? '' : `<button class="ov-reply-btn btn btn-sm" data-parent="${c.id}" style="padding:2px 8px;font-size:.72rem">Reply</button>`}
-        ${editBtnHtml}${deleteBtnHtml}
+      <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;line-height:1.6">
+        <span style="font-size:.68rem;color:var(--accent);font-weight:700;flex-shrink:0">#${numStr}</span>
+        <span style="font-size:.75rem;font-weight:600;color:#c4b5fd;flex-shrink:0">${_e(c.username||'Anonymous')}</span>
+        <span class="ov-cmt-body" style="font-size:.82rem;color:var(--text-muted);flex:1;min-width:0">${_e(c.content)}</span>
+        <span style="font-size:.65rem;color:#334155;flex-shrink:0;white-space:nowrap">${dateStr}${replyBtnHtml}${editBtnHtml}${deleteBtnHtml}</span>
       </div>
-      ${isReply ? '' : `<div class="ov-reply-form" style="display:none;margin-top:6px"></div>`}
-      ${isReply ? '' : `<div class="ov-reply-list" style="display:flex;flex-direction:column;gap:5px;margin-top:6px;padding-left:12px;border-left:2px solid rgba(168,85,247,0.2)"></div>`}`;
+      <div class="ov-edit-area" style="display:none;margin-top:5px"></div>
+      ${isReply ? '' : `<div class="ov-reply-form" style="display:none;margin-top:5px"></div>`}
+      ${isReply ? '' : `<div class="ov-reply-list" style="display:flex;flex-direction:column;gap:2px;margin-top:4px"></div>`}`;
 
     // Edit
     wrap.querySelector('.ov-edit-btn')?.addEventListener('click', () => {
