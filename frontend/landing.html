@@ -213,8 +213,8 @@
       background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px 12px;
       font-size: 0.82rem;
     }
-    .detail-comment-user { font-weight: 600; color: #c4b5fd; margin-bottom: 3px; font-size: 0.78rem; }
-    .detail-comment-body { color: var(--gray2); line-height: 1.5; }
+    .detail-comment-user { font-weight: 600; color: #c4b5fd; font-size: 0.78rem; flex-shrink: 0; }
+    .detail-comment-body { color: var(--gray2); line-height: 1.5; flex: 1; min-width: 0; }
     .detail-comment-date { font-size: 0.68rem; color: var(--gray3); margin-top: 4px; }
     .detail-comment-empty { padding: 20px; text-align: center; font-size: 0.8rem; color: var(--gray3); }
 
@@ -241,8 +241,9 @@
     .detail-comment-signup a { color: var(--accent); cursor: pointer; text-decoration: none; }
     /* ── Comment threading ── */
     .detail-comment { display: flex; flex-direction: column; }
-    .dcp-header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    .dcp-inline { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; margin-bottom: 4px; }
     .dcp-num { font-size: .68rem; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+    .dcp-re { font-size: .68rem; color: #818cf8; font-weight: 700; flex-shrink: 0; }
     .dcp-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
     .dcp-reply-btn { background: none; border: none; color: var(--accent); font-size: .72rem; cursor: pointer; padding: 0; font-family: inherit; }
     .dcp-reply-btn:hover { text-decoration: underline; }
@@ -1048,7 +1049,6 @@
         window._user_id && (window._user_id === commentUserId || window._user_email === 'iostreet7@gmail.com');
 
       const buildCommentEl = (c, num, isReply, parentNum) => {
-        const label = isReply ? `#${parentNum}.${num}` : `#${num}`;
         const d = new Date(c.created_at);
         const dateStr = d.toLocaleDateString('en', {month:'short', day:'numeric', year:'numeric'});
         const replies = isReply ? [] : (byParent[c.id] || []);
@@ -1057,11 +1057,13 @@
         const el = document.createElement('div');
         el.className = 'detail-comment' + (isReply ? ' dcp-reply-item' : '');
         el.innerHTML = `
-          <div class="dcp-header">
-            <span class="dcp-num">${label}</span>
+          <div class="dcp-inline" id="dcb-${c.id}">
+            ${isReply
+              ? `<span class="dcp-re">re</span>`
+              : `<span class="dcp-num">#${num}</span>`}
             <span class="detail-comment-user">${esc(c.username||'Anonymous')}</span>
+            <span class="detail-comment-body">${esc(c.content)}</span>
           </div>
-          <div class="detail-comment-body" id="dcb-${c.id}">${esc(c.content)}</div>
           <div class="dcp-edit-form" id="def-${c.id}" style="display:none">
             <textarea class="dcp-reply-ta" rows="3">${esc(c.content)}</textarea>
             <div class="dcp-reply-actions">
