@@ -55,11 +55,10 @@
     <span class="site-nav-brand-name">Lacus</span>
   </a>
   <div class="site-nav-links">
-    <a href="/"          class="site-nav-link">Home</a>
-    <a href="/#features" class="site-nav-link">Features</a>
-    <a href="/#privacy"  class="site-nav-link">Privacy</a>
-    <a href="/board"     class="site-nav-link">Community</a>
-    <a href="/app"       class="site-nav-link active">Papers</a>
+    <a href="/"         class="site-nav-link">Home</a>
+    <a href="/features" class="site-nav-link">Feature</a>
+    <a href="/board"    class="site-nav-link">Community</a>
+    <a href="/app"      class="site-nav-link active">Papers</a>
   </div>
   <div class="site-nav-auth">
     <button id="header-username-btn" class="site-nav-username-btn" title="Account settings"></button>
@@ -200,6 +199,13 @@
             <div style="margin-top:6px">
               <button class="btn btn-sm btn-primary" id="save-memo-btn">Save Memo</button>
             </div>
+          </div>
+          <div class="overview-card" id="share-thoughts-card">
+            <h3>Share Thoughts</h3>
+            <div id="ov-doi-comments" style="display:flex;flex-direction:column;gap:8px;min-height:40px">
+              <div style="color:var(--text-muted);font-size:.82rem">Loading discussions…</div>
+            </div>
+            <div id="ov-doi-input" style="margin-top:10px"></div>
           </div>
         </div>
       </div>

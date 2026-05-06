@@ -126,6 +126,14 @@ def board_page():
     return {"message": "Board not found"}
 
 
+@app.get("/features")
+def features_page():
+    f = FRONTEND_DIR / "features.html"
+    if f.exists():
+        return FileResponse(str(f))
+    return {"message": "Features page not found"}
+
+
 @app.get("/api/status")
 def status():
     return {"grobid_available": check_grobid(), "version": "2.0.0"}

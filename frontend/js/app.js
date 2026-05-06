@@ -586,6 +586,143 @@ const loadOverview = async () => {
       toast('Memo saved.', 'ok');
     } catch (e) { toast('Save failed: ' + e.message, 'error'); }
   });
+
+  // Share Thoughts (DOI-based community discussion)
+  if (paper.doi) {
+    loadOverviewDoiComments(paper.doi);
+  } else {
+    const c = document.getElementById('ov-doi-comments');
+    if (c) c.innerHTML = '<div style="color:var(--text-muted);font-size:.82rem">No DOI — discussions unavailable.</div>';
+    document.getElementById('share-thoughts-card')?.style && (document.getElementById('share-thoughts-card').style.display = 'none');
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Share Thoughts — DOI comment section in Overview tab
+// ─────────────────────────────────────────────────────────────────────────────
+const _e = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+const loadOverviewDoiComments = async (doi) => {
+  const container = document.getElementById('ov-doi-comments');
+  const inputEl   = document.getElementById('ov-doi-input');
+  if (!container) return;
+
+  // Comment input (always shown since user is authenticated in /app)
+  if (inputEl) {
+    inputEl.innerHTML = `
+      <textarea id="ov-dcp-ta" rows="2" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text-primary);font-family:inherit;font-size:.82rem;padding:8px 10px;resize:none;outline:none" placeholder="Share your thoughts…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+        <button class="btn btn-sm btn-primary" id="ov-dcp-send">Post</button>
+        <span id="ov-dcp-msg" style="font-size:.75rem;color:var(--text-muted)"></span>
+      </div>`;
+    document.getElementById('ov-dcp-send')?.addEventListener('click', async () => {
+      const ta = document.getElementById('ov-dcp-ta');
+      const content = ta?.value?.trim();
+      if (!content) return;
+      const btn = document.getElementById('ov-dcp-send');
+      btn.disabled = true;
+      try {
+        const token = await getAuthToken();
+        const res = await fetch('/api/doi-comments', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+          body: JSON.stringify({ doi, content }),
+        });
+        if (res.ok) { ta.value=''; document.getElementById('ov-dcp-msg').textContent='Posted!'; loadOverviewDoiComments(doi); }
+        else document.getElementById('ov-dcp-msg').textContent='Failed.';
+      } catch { document.getElementById('ov-dcp-msg').textContent='Error.'; }
+      btn.disabled = false;
+    });
+  }
+
+  try {
+    const res = await fetch('/api/public/doi-comments/'+encodeURIComponent(doi));
+    const data = await res.json();
+    const all = data.comments || [];
+    if (!all.length) { container.innerHTML='<div style="color:var(--text-muted);font-size:.82rem">No comments yet.</div>'; return; }
+
+    const topLevel = all.filter(c => !c.parent_comment_id);
+    const byParent = {};
+    all.filter(c => c.parent_comment_id).forEach(r => {
+      (byParent[r.parent_comment_id]=byParent[r.parent_comment_id]||[]).push(r);
+    });
+
+    container.innerHTML = '';
+    topLevel.forEach((c, idx) => {
+      const num = idx + 1;
+      const replies = byParent[c.id] || [];
+      const d = new Date(c.created_at);
+      const dateStr = d.toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'});
+
+      const el = document.createElement('div');
+      el.style.cssText='background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:10px 12px;';
+      el.innerHTML=`
+        <div style="font-size:.68rem;color:var(--accent);font-weight:700;margin-bottom:2px">#${num}</div>
+        <div style="font-size:.78rem;font-weight:600;color:#c4b5fd;margin-bottom:3px">${_e(c.username||'Anonymous')}</div>
+        <div style="font-size:.82rem;color:var(--text-muted);line-height:1.5">${_e(c.content)}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap">
+          <span style="font-size:.68rem;color:var(--text-muted)">${dateStr}</span>
+          <button class="ov-reply-btn btn btn-sm" data-parent="${c.id}" style="padding:2px 8px;font-size:.72rem">Reply</button>
+          ${replies.length?`<span style="font-size:.7rem;color:var(--text-muted);cursor:default">${replies.length} repl${replies.length>1?'ies':'y'} (double-click)</span>`:''}
+        </div>
+        <div id="ov-drf-${c.id}" style="display:none;margin-top:6px"></div>
+        <div id="ov-drp-${c.id}" style="display:none;flex-direction:column;gap:5px;margin-top:6px;padding-left:12px;border-left:2px solid rgba(168,85,247,0.2)"></div>`;
+
+      // render replies
+      const rDiv = el.querySelector(`#ov-drp-${c.id}`);
+      replies.forEach((r, ri) => {
+        const rd = new Date(r.created_at);
+        const rDate = rd.toLocaleDateString('en', {month:'short',day:'numeric',year:'numeric'});
+        const re = document.createElement('div');
+        re.style.cssText='background:rgba(255,255,255,0.02);border-radius:6px;padding:8px 10px;';
+        re.innerHTML=`
+          <div style="font-size:.68rem;color:var(--accent);font-weight:700">#${num}.${ri+1}</div>
+          <div style="font-size:.75rem;font-weight:600;color:#c4b5fd">${_e(r.username||'Anonymous')}</div>
+          <div style="font-size:.8rem;color:var(--text-muted);line-height:1.5">${_e(r.content)}</div>
+          <div style="font-size:.68rem;color:var(--text-muted);margin-top:3px">${rDate}</div>`;
+        rDiv.appendChild(re);
+      });
+
+      // dblclick to show/hide replies
+      if (replies.length) {
+        el.addEventListener('dblclick', () => {
+          const rd2=document.getElementById(`ov-drp-${c.id}`);
+          rd2.style.display=rd2.style.display==='none'?'flex':'none';
+        });
+      }
+
+      // reply button
+      el.querySelector('.ov-reply-btn')?.addEventListener('click', () => {
+        const fEl = document.getElementById(`ov-drf-${c.id}`);
+        if (!fEl) return;
+        if (fEl.style.display!=='none') { fEl.style.display='none'; return; }
+        fEl.style.display='block';
+        fEl.innerHTML=`
+          <textarea class="ov-reply-ta" rows="2" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:.8rem;padding:7px 10px;resize:none;outline:none" placeholder="Write a reply…"></textarea>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <button class="btn btn-sm btn-primary ov-post-reply" data-parent="${c.id}">Post Reply</button>
+            <button class="btn btn-sm ov-cancel-reply">Cancel</button>
+          </div>`;
+        fEl.querySelector('.ov-cancel-reply').addEventListener('click', ()=>{fEl.style.display='none';});
+        fEl.querySelector('.ov-post-reply').addEventListener('click', async () => {
+          const ta=fEl.querySelector('.ov-reply-ta');
+          const content=ta?.value?.trim();
+          if (!content) return;
+          try {
+            const token=await getAuthToken();
+            await fetch('/api/doi-comments',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({doi,content,parent_comment_id:c.id})});
+            fEl.style.display='none';
+            loadOverviewDoiComments(doi);
+          } catch {}
+        });
+      });
+
+      container.appendChild(el);
+    });
+  } catch(e) {
+    const c2=document.getElementById('ov-doi-comments');
+    if (c2) c2.innerHTML='<div style="color:var(--text-muted);font-size:.82rem">Could not load.</div>';
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
