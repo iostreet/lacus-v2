@@ -794,12 +794,32 @@ def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
              .eq("paper_id", paper_id)
              .order("confidence", desc=True)
              .execute().data or [])
+
+    field_val    = paper.get("field")
+    field_conf   = paper.get("field_confidence")
+    field_scores = paper.get("field_scores") or {}
+
+    # If field was never detected (old papers) or returned "Unknown", re-detect now
+    if not field_val or field_val == "Unknown":
+        kw_names = [kw.get("normalized_name") or kw.get("keyword_name") or "" for kw in kws]
+        try:
+            f_name, f_conf, f_scores = detect_field({
+                "title":           paper.get("title") or "",
+                "author_keywords": kw_names,
+            })
+            if f_name and f_name != "Unknown":
+                field_val    = f_name
+                field_conf   = f_conf
+                field_scores = f_scores
+        except Exception:
+            pass
+
     return {
         "paper_id":         paper_id,
         "title":            paper.get("title") or "",
-        "field":            paper.get("field"),
-        "field_confidence": paper.get("field_confidence"),
-        "field_scores":     paper.get("field_scores") or {},
+        "field":            field_val,
+        "field_confidence": field_conf,
+        "field_scores":     field_scores,
         "keywords":         [_kw_to_dict(k) for k in kws],
         "theme":            paper.get("theme"),
         "concept":          paper.get("concept"),
