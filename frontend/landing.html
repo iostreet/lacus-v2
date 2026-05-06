@@ -31,9 +31,8 @@
 
     /* ── Hero ── */
     .hero {
-      min-height: 100vh;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      padding: 120px 24px 80px;
+      padding: 80px 24px 60px;
       text-align: center;
       background: radial-gradient(ellipse 80% 60% at 50% 20%, rgba(109,40,217,0.18) 0%, transparent 70%);
     }
@@ -69,7 +68,7 @@
     }
     .btn-ghost:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
     .hero-stats {
-      display: flex; gap: 40px; margin-top: 56px; flex-wrap: wrap; justify-content: center;
+      display: flex; gap: 40px; margin-top: 40px; flex-wrap: wrap; justify-content: center;
     }
     .hero-stat { text-align: center; }
     .hero-stat-n { font-size: 1.8rem; font-weight: 800; color: #fff; line-height: 1; }
@@ -82,12 +81,16 @@
     .section-desc  { font-size: 0.95rem; color: var(--gray2); max-width: 560px; line-height: 1.6; margin-bottom: 40px; }
 
     /* ── Live Map section ── */
-    .map-section { background: var(--bg2); padding: 72px 0 0; }
-    .map-section-header { text-align: center; padding: 0 24px 40px; }
-    .map-hint { font-size: 0.8rem; color: var(--gray3); margin-top: 8px; letter-spacing: 0.04em; }
+    .map-section {
+      background: var(--bg2);
+      height: 100vh; padding-top: 64px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .map-section-header { text-align: center; padding: 12px 24px 10px; flex-shrink: 0; }
+    .map-hint { font-size: 0.78rem; color: var(--gray3); margin-top: 4px; letter-spacing: 0.04em; }
 
     .map-layout {
-      display: flex; height: 580px;
+      display: flex; flex: 1; min-height: 0;
       border-top: 1px solid var(--border);
     }
     .map-left {
@@ -308,31 +311,11 @@
   <div class="site-nav-auth" id="nav-auth"></div>
 </nav>
 
-<!-- ── Hero ── -->
-<section class="hero" id="home">
-  <div class="hero-badge">DOI-based · Knowledge Structure · Open Discussion</div>
-  <h1>A living map of<br><em>scientific knowledge</em></h1>
-  <p class="hero-sub">
-    Explore how research papers connect through materials, structures,
-    methods, properties, and applications — not as PDFs, but as structured knowledge.
-  </p>
-  <div class="hero-btns">
-    <a href="#map-section" class="btn-primary">Explore the Map</a>
-    <button class="btn-ghost" onclick="openAuthModal('signup')">Create Your Knowledge Space</button>
-  </div>
-  <div class="hero-stats">
-    <div class="hero-stat"><div class="hero-stat-n" id="stat-papers">—</div><div class="hero-stat-l">Papers Structured</div></div>
-    <div class="hero-stat"><div class="hero-stat-n" id="stat-members">—</div><div class="hero-stat-l">Researchers</div></div>
-    <div class="hero-stat"><div class="hero-stat-n" id="stat-visitors">—</div><div class="hero-stat-l">Visits</div></div>
-  </div>
-</section>
-
 <!-- ── Live Knowledge Map ── -->
 <section class="map-section" id="map-section">
   <div class="map-section-header">
     <p class="section-label">Live Knowledge Map</p>
-    <h2 class="section-title">Built from papers registered by the community</h2>
-    <p class="map-hint">Right-click a node to expand · Click a Concept to see papers · Scroll to zoom · Drag to pan</p>
+    <p class="map-hint">Click a node to expand · Click Concept to see papers · Scroll to zoom · Drag to pan</p>
   </div>
   <div class="map-layout">
     <!-- SVG Map -->
@@ -365,6 +348,25 @@
         <div class="detail-empty-hint">Right-click a <strong>Field</strong> or <strong>Theme</strong> to expand.<br>Click a <strong>Concept</strong> to see the papers inside.</div>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- ── Hero ── -->
+<section class="hero" id="home">
+  <div class="hero-badge">DOI-based · Knowledge Structure · Open Discussion</div>
+  <h1>A living map of<br><em>scientific knowledge</em></h1>
+  <p class="hero-sub">
+    Explore how research papers connect through materials, structures,
+    methods, properties, and applications — not as PDFs, but as structured knowledge.
+  </p>
+  <div class="hero-btns">
+    <button class="btn-primary" onclick="openAuthModal('signup')">Create Your Knowledge Space</button>
+    <a href="/board" class="btn-ghost">Visit Community</a>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="hero-stat-n" id="stat-papers">—</div><div class="hero-stat-l">Papers Structured</div></div>
+    <div class="hero-stat"><div class="hero-stat-n" id="stat-members">—</div><div class="hero-stat-l">Researchers</div></div>
+    <div class="hero-stat"><div class="hero-stat-n" id="stat-visitors">—</div><div class="hero-stat-l">Visits</div></div>
   </div>
 </section>
 
