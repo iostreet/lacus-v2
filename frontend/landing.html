@@ -181,7 +181,8 @@
     }
     .detail-paper-card:hover { border-color: rgba(168,85,247,0.4); background: rgba(168,85,247,0.05); }
     .detail-paper-title { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; line-height: 1.4; margin-bottom: 4px; }
-    .detail-paper-sub   { font-size: 0.72rem; color: var(--gray3); display: flex; gap: 8px; }
+    .detail-paper-sub   { font-size: 0.72rem; color: var(--gray3); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .dp-member-badge    { font-size: 0.68rem; font-weight: 600; color: #a78bfa; background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.3); border-radius: 10px; padding: 1px 7px; margin-left: auto; }
 
     .detail-paper-view {
       display: flex; flex-direction: column; height: 100%;
@@ -966,11 +967,15 @@
     (concept.papers || []).forEach(p => {
       const card = document.createElement('div');
       card.className = 'detail-paper-card';
+      const memberBadge = p.member_count > 0
+        ? `<span class="dp-member-badge">${p.member_count} member${p.member_count>1?'s':''}</span>`
+        : '';
       card.innerHTML = `<div class="detail-paper-title">${esc(p.title||'Untitled')}</div>
         <div class="detail-paper-sub">
           ${p.year ? `<span>${esc(String(p.year))}</span>` : ''}
           ${p.journal ? `<span>${esc(p.journal)}</span>` : ''}
           ${p.doi ? `<span style="color:var(--accent)">DOI</span>` : ''}
+          ${memberBadge}
         </div>`;
       card.addEventListener('click', () => renderPaperPanel(p, node));
       list.appendChild(card);

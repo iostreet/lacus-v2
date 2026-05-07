@@ -195,7 +195,7 @@ def public_landing_map():
     """Aggregate all users' papers by field → theme → concept — no auth required."""
     try:
         papers = (_sa.table("papers")
-                    .select("id,title,year,doi,journal,authors,field,theme,concept")
+                    .select("id,title,year,doi,journal,authors,field,theme,concept,user_id")
                     .eq("status", "confirmed")
                     .execute().data or [])
     except Exception as e:
@@ -205,34 +205,54 @@ def public_landing_map():
         s = (s or "").strip()
         return s[0].upper() + s[1:] if s else s
 
+    # field → theme → concept → doi_key → {paper data + user_ids set}
     field_map: dict = {}
     for p in papers:
-        fname   = _cap(p.get("field")   or "") or "Other Research"
-        tname   = _cap(p.get("theme")   or "") or "General"
-        cname   = _cap(p.get("concept") or "") or "General"
-        doi     = (p.get("doi") or "").strip()
-        field_map.setdefault(fname, {}).setdefault(tname, {}).setdefault(cname, []).append({
-            "id":      p.get("id"),
-            "title":   _cap(p.get("title") or "") or "Untitled",
-            "year":    p.get("year"),
-            "doi":     doi,
-            "journal": (p.get("journal") or "").strip(),
-            "authors": p.get("authors") or [],
-        })
-
-    def _count(d):
-        return sum(len(v) for v in d.values()) if isinstance(list(d.values() or [{}])[0], list) else sum(_count(v) for v in d.values())
+        fname = _cap(p.get("field")   or "") or "Other Research"
+        tname = _cap(p.get("theme")   or "") or "General"
+        cname = _cap(p.get("concept") or "") or "General"
+        doi   = (p.get("doi") or "").strip()
+        # Use DOI as dedup key; fall back to paper id so no-DOI papers stay distinct
+        key   = doi if doi else f"__id_{p.get('id')}"
+        bucket = field_map.setdefault(fname, {}).setdefault(tname, {}).setdefault(cname, {})
+        if key not in bucket:
+            bucket[key] = {
+                "id":       p.get("id"),
+                "title":    _cap(p.get("title") or "") or "Untitled",
+                "year":     p.get("year"),
+                "doi":      doi,
+                "journal":  (p.get("journal") or "").strip(),
+                "authors":  p.get("authors") or [],
+                "user_ids": set(),
+            }
+        if p.get("user_id"):
+            bucket[key]["user_ids"].add(p["user_id"])
 
     result = []
     for fi, (fname, themes) in enumerate(sorted(field_map.items(), key=lambda x: -sum(
-        sum(len(ps) for ps in t.values()) for t in x[1].values()
+        sum(len(cs) for cs in t.values()) for t in x[1].values()
     ))):
         theme_list = []
-        for tname, concepts in sorted(themes.items(), key=lambda x: -sum(len(ps) for ps in x[1].values())):
-            concept_list = [
-                {"name": cn, "paper_count": len(ps), "papers": ps[:30]}
-                for cn, ps in sorted(concepts.items(), key=lambda x: -len(x[1]))
-            ]
+        for tname, concepts in sorted(themes.items(), key=lambda x: -sum(len(cs) for cs in x[1].values())):
+            concept_list = []
+            for cname, bucket in sorted(concepts.items(), key=lambda x: -len(x[1])):
+                papers_out = [
+                    {
+                        "id":           e["id"],
+                        "title":        e["title"],
+                        "year":         e["year"],
+                        "doi":          e["doi"],
+                        "journal":      e["journal"],
+                        "authors":      e["authors"],
+                        "member_count": len(e["user_ids"]),
+                    }
+                    for e in sorted(bucket.values(), key=lambda x: -len(x["user_ids"]))
+                ][:30]
+                concept_list.append({
+                    "name":        cname,
+                    "paper_count": len(bucket),
+                    "papers":      papers_out,
+                })
             theme_list.append({
                 "name":          tname,
                 "concept_count": len(concept_list),
