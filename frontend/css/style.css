@@ -1225,7 +1225,7 @@ a:hover { text-decoration: underline; }
 }
 
 .pg-edge { fill: none; stroke: rgba(255,255,255,.45); stroke-width: 1.8; transition: stroke .18s, opacity .18s; }
-.pg-edge.pg-edge-auto { stroke: rgba(255,255,255,.12); stroke-width: 1; stroke-dasharray: 4 4; }
+.pg-edge.pg-edge-auto { stroke: #818cf8; stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .6; }
 .pg-edge.pg-edge-active { stroke: #818cf8; stroke-width: 2.5; opacity: 1; }
 .pg-edge.pg-dim { opacity: .05; }
 .pg-edge-label { font-size: 9px; fill: rgba(200,210,255,.9); pointer-events: none; font-family: inherit; }
