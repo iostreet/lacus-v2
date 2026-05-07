@@ -1235,12 +1235,22 @@ const _updateMetBulkBar = () => {
 };
 
 const loadMetrics = async () => {
-  let metrics;
+  let metrics, keywords;
   try {
-    metrics = await apiFetch(`/papers/${activePaperId}/metrics`);
+    [metrics, keywords] = await Promise.all([
+      apiFetch(`/papers/${activePaperId}/metrics`),
+      apiFetch(`/papers/${activePaperId}/keywords`),
+    ]);
   } catch (e) {
     toast('Failed to load metrics: ' + e.message, 'error');
     return;
+  }
+
+  // Populate "Add Metric" modal keyword dropdown
+  const kwSelect = document.getElementById('amet-kw');
+  if (kwSelect) {
+    kwSelect.innerHTML = '<option value="">— none —</option>' +
+      keywords.map(k => `<option value="${k.id}">${escHtml(k.normalized_name || k.keyword_name)}</option>`).join('');
   }
 
   document.getElementById('met-count-label').textContent = `${metrics.length} metrics`;
@@ -1251,14 +1261,18 @@ const loadMetrics = async () => {
   tbody.innerHTML = '';
 
   if (metrics.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px">No metrics extracted. Use "+ Add Metric" to add manually.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No metrics extracted. Use "+ Add Metric" to add manually.</td></tr>';
     return;
   }
+
+  const kwOpts = '<option value="">— none —</option>' +
+    keywords.map(k => `<option value="${k.id}">${escHtml(k.normalized_name || k.keyword_name)}</option>`).join('');
 
   metrics.forEach(met => {
     const conf = met.confidence != null ? met.confidence : 0;
     const tr = document.createElement('tr');
     tr.dataset.id = met.id;
+    const kwSel = `<select class="cell-input met-kw-sel" data-id="${met.id}" style="min-width:100px">${kwOpts}</select>`;
     tr.innerHTML = `
       <td class="drag-handle" title="Drag to reorder">⠿</td>
       <td style="width:28px;text-align:center">
@@ -1268,6 +1282,7 @@ const loadMetrics = async () => {
       <td><input class="cell-input" value="${escHtml(met.value)}"        data-id="${met.id}" data-field="value"        style="min-width:60px"/></td>
       <td><input class="cell-input" value="${escHtml(met.unit || '')}"   data-id="${met.id}" data-field="unit"         style="min-width:60px"/></td>
       <td><input class="cell-input" value="${escHtml(met.condition || '')}" data-id="${met.id}" data-field="condition" style="min-width:100px"/></td>
+      <td>${kwSel}</td>
       <td style="font-size:0.75rem;color:var(--text-dim)">${(conf*100).toFixed(0)}%</td>
       <td>
         <div class="action-btns">
@@ -1277,6 +1292,9 @@ const loadMetrics = async () => {
       </td>
     `;
     tbody.appendChild(tr);
+    // Set current linked_keyword_id
+    const sel = tr.querySelector('.met-kw-sel');
+    if (sel && met.linked_keyword_id) sel.value = met.linked_keyword_id;
   });
 
   // Checkbox tracking
@@ -1308,9 +1326,11 @@ const loadMetrics = async () => {
       const row = btn.closest('tr');
       const payload = { confidence: 1.0 };
       row.querySelectorAll('[data-field]').forEach(el => { payload[el.dataset.field] = el.value; });
+      const kwSel = row.querySelector('.met-kw-sel');
+      if (kwSel) payload.linked_keyword_id = kwSel.value ? parseInt(kwSel.value) : null;
       try {
         await apiFetch(`/metrics/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-        const lbl = row.querySelector('td:nth-child(7)');
+        const lbl = row.querySelector('td:nth-child(8)');
         if (lbl) lbl.textContent = '100%';
         toast('Metric saved.', 'ok');
         await refreshStorymapIfActive();
@@ -1367,13 +1387,16 @@ document.getElementById('amet-save').addEventListener('click', async () => {
   const unit  = document.getElementById('amet-unit').value.trim();
   const cond  = document.getElementById('amet-cond').value.trim();
   if (!name || !value) { toast('Metric name and value are required.', 'warn'); return; }
+  const kwSel = document.getElementById('amet-kw');
+  const linkedKwId = kwSel && kwSel.value ? parseInt(kwSel.value) : null;
   try {
     await apiFetch(`/papers/${activePaperId}/metrics`, {
       method: 'POST',
-      body: JSON.stringify({ metric_name: name, value, unit, condition: cond }),
+      body: JSON.stringify({ metric_name: name, value, unit, condition: cond, linked_keyword_id: linkedKwId }),
     });
     document.getElementById('add-met-modal').classList.add('hidden');
     ['amet-name','amet-value','amet-unit','amet-cond'].forEach(id => { document.getElementById(id).value = ''; });
+    if (kwSel) kwSel.value = '';
     toast('Metric added.', 'ok');
     await loadMetrics();
     await refreshStorymapIfActive();
@@ -1895,6 +1918,13 @@ document.getElementById('refresh-graph-btn').addEventListener('click', async () 
   _storymapDirty = false;
   _updateStorymapTabBadge();
   await loadStoryMap();
+});
+document.getElementById('sm-repair-btn').addEventListener('click', async () => {
+  try {
+    await apiFetch(`/papers/${activePaperId}/repair-links`, { method: 'POST' });
+    toast('Links repaired.', 'ok');
+    await loadStoryMap();
+  } catch (e) { toast('Repair failed: ' + e.message, 'error'); }
 });
 document.getElementById('sm-add-rel-btn').addEventListener('click', () => {
   document.getElementById('add-rel-modal').classList.remove('hidden');

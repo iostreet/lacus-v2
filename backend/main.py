@@ -442,11 +442,12 @@ class KeywordCreate(BaseModel):
     confidence:      float = 0.7
 
 class MetricCreate(BaseModel):
-    metric_name: str
-    value:       str
-    unit:        Optional[str] = ""
-    condition:   Optional[str] = ""
-    confidence:  float = 0.7
+    metric_name:       str
+    value:             str
+    unit:              Optional[str] = ""
+    condition:         Optional[str] = ""
+    confidence:        float = 0.7
+    linked_keyword_id: Optional[int] = None
 
 class RelationCreate(BaseModel):
     source_name:    str
@@ -464,11 +465,12 @@ class RelationUpdate(BaseModel):
     evidence_text: Optional[str]   = None
 
 class MetricUpdate(BaseModel):
-    metric_name: Optional[str]   = None
-    value:       Optional[str]   = None
-    unit:        Optional[str]   = None
-    condition:   Optional[str]   = None
-    confidence:  Optional[float] = None
+    metric_name:       Optional[str]   = None
+    value:             Optional[str]   = None
+    unit:              Optional[str]   = None
+    condition:         Optional[str]   = None
+    confidence:        Optional[float] = None
+    linked_keyword_id: Optional[int]   = None
 
 class PaperUpdate(BaseModel):
     title:            Optional[str]   = None
@@ -1105,12 +1107,13 @@ def reorder_metrics(paper_id: int, items: list[ReorderItem], user_id: str = Depe
 def create_metric(paper_id: int, data: MetricCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     _assert_paper_owner(paper_id, user_id)
     res = _sb().table("metrics").insert({
-        "paper_id":    paper_id,
-        "metric_name": data.metric_name,
-        "value":       data.value,
-        "unit":        data.unit or "",
-        "condition":   data.condition or "",
-        "confidence":  data.confidence,
+        "paper_id":          paper_id,
+        "metric_name":       data.metric_name,
+        "value":             data.value,
+        "unit":              data.unit or "",
+        "condition":         data.condition or "",
+        "confidence":        data.confidence,
+        "linked_keyword_id": data.linked_keyword_id,
     }).execute()
     return _met_to_dict(res.data[0])
 
@@ -1118,6 +1121,9 @@ def create_metric(paper_id: int, data: MetricCreate, user_id: str = Depends(get_
 @app.put("/api/metrics/{met_id}")
 def update_metric(met_id: int, data: MetricUpdate, user_id: str = Depends(get_current_user)):
     patch = {k: v for k, v in data.model_dump().items() if v is not None}
+    # Allow explicitly setting linked_keyword_id to null (to unlink)
+    if "linked_keyword_id" in data.model_fields_set:
+        patch["linked_keyword_id"] = data.linked_keyword_id
     _sb().table("metrics").update(patch).eq("id", met_id).execute()
     res = _sb().table("metrics").select("*").eq("id", met_id).execute()
     if not res.data:
@@ -1129,6 +1135,46 @@ def update_metric(met_id: int, data: MetricUpdate, user_id: str = Depends(get_cu
 def delete_metric(met_id: int, user_id: str = Depends(get_current_user)):
     _sb().table("metrics").delete().eq("id", met_id).execute()
     return {"deleted": met_id}
+
+
+@app.post("/api/papers/{paper_id}/repair-links")
+def repair_links(paper_id: int, user_id: str = Depends(get_current_user)):
+    _assert_paper_owner(paper_id, user_id)
+    sb = _sb()
+    keywords = sb.table("keywords").select("id, normalized_name, keyword_name").eq("paper_id", paper_id).execute().data or []
+
+    def fuzzy_kw_id(name: str) -> Optional[int]:
+        n = (name or "").lower().strip()
+        if not n:
+            return None
+        for kw in keywords:
+            kn = (kw.get("normalized_name") or kw.get("keyword_name") or "").lower()
+            if kn and (kn == n or kn in n or n in kn):
+                return kw["id"]
+        return None
+
+    relations = sb.table("relations").select("id, source_name, target_name, source_keyword_id, target_keyword_id").eq("paper_id", paper_id).execute().data or []
+    for rel in relations:
+        patch: dict = {}
+        if not rel.get("source_keyword_id"):
+            kid = fuzzy_kw_id(rel.get("source_name") or "")
+            if kid:
+                patch["source_keyword_id"] = kid
+        if not rel.get("target_keyword_id"):
+            kid = fuzzy_kw_id(rel.get("target_name") or "")
+            if kid:
+                patch["target_keyword_id"] = kid
+        if patch:
+            sb.table("relations").update(patch).eq("id", rel["id"]).execute()
+
+    metrics = sb.table("metrics").select("id, metric_name, linked_keyword_id").eq("paper_id", paper_id).execute().data or []
+    for met in metrics:
+        if not met.get("linked_keyword_id"):
+            kid = fuzzy_kw_id(met.get("metric_name") or "")
+            if kid:
+                sb.table("metrics").update({"linked_keyword_id": kid}).eq("id", met["id"]).execute()
+
+    return {"ok": True}
 
 
 # ── Summaries ─────────────────────────────────────────────────────────────────
