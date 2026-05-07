@@ -1442,6 +1442,17 @@ const _smRenderConceptPanel = () => {
     if (m.linked_keyword_id) {
       if (!kwMetricMap[m.linked_keyword_id]) kwMetricMap[m.linked_keyword_id] = [];
       kwMetricMap[m.linked_keyword_id].push(m);
+    } else {
+      // Fallback: match metric_name against keyword names when linked_keyword_id is null
+      const mname = (m.metric_name || '').toLowerCase().trim();
+      const matched = _smKeywords.find(k => {
+        const kn = (k.normalized_name || k.keyword_name || '').toLowerCase();
+        return kn === mname || kn.includes(mname) || mname.includes(kn);
+      });
+      if (matched) {
+        if (!kwMetricMap[matched.id]) kwMetricMap[matched.id] = [];
+        kwMetricMap[matched.id].push(m);
+      }
     }
   });
 
@@ -1595,6 +1606,16 @@ const _smBuildPipelineGraph = () => {
     if (m.linked_keyword_id) {
       if (!kwMetrics[m.linked_keyword_id]) kwMetrics[m.linked_keyword_id] = [];
       kwMetrics[m.linked_keyword_id].push(m);
+    } else {
+      const mname = (m.metric_name || '').toLowerCase().trim();
+      const matched = _smKeywords.find(k => {
+        const kn = (k.normalized_name || k.keyword_name || '').toLowerCase();
+        return kn === mname || kn.includes(mname) || mname.includes(kn);
+      });
+      if (matched) {
+        if (!kwMetrics[matched.id]) kwMetrics[matched.id] = [];
+        kwMetrics[matched.id].push(m);
+      }
     }
   });
 
