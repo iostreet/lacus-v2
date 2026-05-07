@@ -1435,11 +1435,22 @@ const loadStoryMap = async () => {
 const _smRenderConceptPanel = () => {
   const scroll = document.getElementById('sm-concept-scroll');
   if (!scroll) return;
+
+  // Build kwId → metrics map for value+unit display
+  const kwMetricMap = {};
+  _smMetrics.forEach(m => {
+    if (m.linked_keyword_id) {
+      if (!kwMetricMap[m.linked_keyword_id]) kwMetricMap[m.linked_keyword_id] = [];
+      kwMetricMap[m.linked_keyword_id].push(m);
+    }
+  });
+
   let html = '';
   for (const group of _SM_CONCEPT_GROUPS) {
     const kws = _smKeywords.filter(k => group.cats.includes(k.category));
     if (!kws.length) continue;
     const dotColor = _SM_CAT_COLORS[group.cats[0]] || '#64748b';
+    const isMetric = group.cats.includes('Metric');
     html += `<div class="sm-concept-section">
       <div class="sm-concept-section-title">
         <span class="sm-concept-section-dot" style="background:${dotColor}"></span>
@@ -1449,7 +1460,14 @@ const _smRenderConceptPanel = () => {
         ${kws.map(kw => {
           const pct = Math.round((kw.confidence || 0) * 100);
           const col = _SM_CAT_COLORS[kw.category] || '#64748b';
-          return `<span class="sm-kw-chip" data-kwid="${kw.id}" style="--kw-color:${col}" title="Click to highlight · Double-click to edit">${escHtml(kw.normalized_name || kw.keyword_name)}<span class="sm-kw-chip-conf">${pct}%</span></span>`;
+          const linkedMets = kwMetricMap[kw.id] || [];
+          const metVal = linkedMets.length
+            ? linkedMets.map(m => {
+                const v = (m.value || '') + (m.unit ? ' ' + m.unit : '');
+                return `<span class="sm-met-val">${escHtml(v)}</span>`;
+              }).join('')
+            : '';
+          return `<span class="sm-kw-chip" data-kwid="${kw.id}" style="--kw-color:${col}" title="Click to highlight · Double-click to edit"><span class="sm-kw-chip-row">${escHtml(kw.normalized_name || kw.keyword_name)}<span class="sm-kw-chip-conf">${pct}%</span></span>${metVal}</span>`;
         }).join('')}
       </div>
     </div>`;
@@ -1590,8 +1608,13 @@ const _smBuildPipelineGraph = () => {
   });
 
   _smRelations.forEach(rel => {
-    const srcKw = _smFindKw(rel.source_name);
-    const tgtKw = _smFindKw(rel.target_name);
+    // Prefer ID-based lookup — name matching breaks after manual keyword rename
+    let srcKw = rel.source_keyword_id != null
+      ? _smKeywords.find(k => k.id === rel.source_keyword_id) : null;
+    if (!srcKw) srcKw = _smFindKw(rel.source_name);
+    let tgtKw = rel.target_keyword_id != null
+      ? _smKeywords.find(k => k.id === rel.target_keyword_id) : null;
+    if (!tgtKw) tgtKw = _smFindKw(rel.target_name);
     if (srcKw && tgtKw && srcKw.id !== tgtKw.id) {
       edges.push({ id:`er_${rel.id}`, fromNid:`kw_${srcKw.id}`, toNid:`kw_${tgtKw.id}`,
                    relType: rel.relation_type||'related_to' });
