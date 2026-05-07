@@ -1606,10 +1606,33 @@ const _PG_CAT_COLORS = {
 };
 const _PG_W    = 152;
 const _PG_KH   = 64;
-const _PG_COL_X = [24, 222, 420, 618];
+const _PG_COL_X = [24, 260, 496, 732];
 const _PG_VGAP  = 14;
 
 const _pgNodeH = n => _PG_KH + ((n.metrics||[]).length * 19);
+
+// Port Y: spread multiple connections evenly within node height
+const _pgPortY = (node, idx, total) => {
+  const h = _pgNodeH(node);
+  const mid = node.y + h / 2;
+  if (total <= 1) return mid;
+  const spread = Math.min(h * 0.65, (total - 1) * 18);
+  return mid - spread / 2 + idx * spread / (total - 1);
+};
+
+// Compute bezier path + midpoint for an edge (uses stored port indices)
+const _pgEdgePath = (edge, nodes) => {
+  const from = nodes.get(edge.fromNid);
+  const to   = nodes.get(edge.toNid);
+  if (!from || !to) return null;
+  const x1 = from.x + _PG_W;
+  const y1 = _pgPortY(from, edge.outIdx || 0, edge.outTotal || 1);
+  const x2 = to.x - (edge.kind === 'auto' ? 0 : 8);
+  const y2 = _pgPortY(to,   edge.inIdx  || 0, edge.inTotal  || 1);
+  const cx = (x1 + x2) / 2;
+  return { d: `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`,
+           mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
+};
 
 const _smFindKw = name => {
   const n = (name || '').toLowerCase().trim();
@@ -1716,6 +1739,22 @@ const _smBuildPipelineGraph = () => {
   const finalEdges = edges.filter(e =>
     e.kind === 'explicit' || !explicitPairs.has(`${e.fromNid}→${e.toNid}`)
   );
+
+  // Compute fanout port indices (spread edges from/to same node)
+  const outCount = {}, inCount = {};
+  finalEdges.forEach(e => {
+    outCount[e.fromNid] = (outCount[e.fromNid] || 0) + 1;
+    inCount[e.toNid]    = (inCount[e.toNid]    || 0) + 1;
+  });
+  const outIdx = {}, inIdx = {};
+  finalEdges.forEach(e => {
+    if (outIdx[e.fromNid] == null) outIdx[e.fromNid] = 0;
+    if (inIdx[e.toNid]    == null) inIdx[e.toNid]    = 0;
+    e.outIdx   = outIdx[e.fromNid]++;
+    e.outTotal = outCount[e.fromNid];
+    e.inIdx    = inIdx[e.toNid]++;
+    e.inTotal  = inCount[e.toNid];
+  });
 
   return { nodes, edges: finalEdges };
 };
@@ -1855,13 +1894,24 @@ const _pgRedrawAllEdges = () => {
   const svgEl = document.getElementById('sm-pg-svg');
   if (!svgEl) return;
   svgEl.querySelectorAll('.pg-edge').forEach(path => {
-    const from = _smGraph.nodes.get(path.dataset.fromNid);
-    const to   = _smGraph.nodes.get(path.dataset.toNid);
-    if (!from || !to) return;
-    const x1 = from.x + _PG_W, y1 = from.y + _pgNodeH(from) / 2;
-    const x2 = to.x,           y2 = to.y   + _pgNodeH(to)   / 2;
-    const cx = (x1 + x2) / 2;
-    path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
+    const edge = _smGraph.edges.find(e => e.id === path.dataset.eid);
+    if (!edge) return;
+    const result = _pgEdgePath(edge, _smGraph.nodes);
+    if (!result) return;
+    path.setAttribute('d', result.d);
+    // Move relation label with edge
+    const lbl = svgEl.querySelector(`.pg-edge-label[data-eid="${edge.id}"]`);
+    if (lbl) { lbl.setAttribute('x', result.mx); lbl.setAttribute('y', result.my); }
+    // Move label background
+    const bg = svgEl.querySelector(`.pg-edge-label-bg[data-eid="${edge.id}"]`);
+    if (bg && lbl) {
+      try {
+        const bb = lbl.getBBox();
+        const pad = 3;
+        bg.setAttribute('x', bb.x - pad); bg.setAttribute('y', bb.y - pad);
+        bg.setAttribute('width', bb.width + pad*2); bg.setAttribute('height', bb.height + pad*2);
+      } catch (_) {}
+    }
   });
 };
 
@@ -1947,19 +1997,16 @@ const _smRenderRelationsPanel = () => {
     </marker>`;
   svgEl.appendChild(defs);
 
-  // Edges: auto (dashed, faint) first, then explicit (solid, labeled) on top
+  // Edges: auto (dashed) first, then explicit (solid+labeled) on top
   const sortedEdges = [...edges].sort((a,b) => (a.kind==='auto'?0:1) - (b.kind==='auto'?0:1));
 
   sortedEdges.forEach(edge => {
-    const from = nodes.get(edge.fromNid);
-    const to   = nodes.get(edge.toNid);
-    if (!from || !to) return;
+    const result = _pgEdgePath(edge, nodes);
+    if (!result) return;
     const isAuto = edge.kind === 'auto';
-    const x1 = from.x + _PG_W, y1 = from.y + _pgNodeH(from) / 2;
-    const x2 = to.x - (isAuto ? 0 : 8), y2 = to.y + _pgNodeH(to) / 2;
-    const cx = (x1 + x2) / 2;
+
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
+    path.setAttribute('d', result.d);
     path.setAttribute('class', isAuto ? 'pg-edge pg-edge-auto' : 'pg-edge');
     if (!isAuto) path.setAttribute('marker-end', 'url(#pg-arrow)');
     path.dataset.fromNid = edge.fromNid;
@@ -1967,33 +2014,33 @@ const _smRenderRelationsPanel = () => {
     path.dataset.eid     = edge.id;
     svgEl.appendChild(path);
 
-    // Only show label on explicit (Relations tab) edges
+    // Relation-type label only on explicit edges
     const label = isAuto ? '' : (edge.relType || '').replace(/_/g, ' ');
     if (label) {
-      const mx = (x1 + x2) / 2;
-      const my = (y1 + y2) / 2;
       const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      bg.setAttribute('class', 'pg-edge-label-bg');
+      bg.setAttribute('data-eid', edge.id);
+      bg.setAttribute('rx', 3);
+      bg.setAttribute('fill', 'rgba(15,23,42,0.85)');
+
       const textEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      textEl.setAttribute('x', mx);
-      textEl.setAttribute('y', my);
+      textEl.setAttribute('x', result.mx);
+      textEl.setAttribute('y', result.my);
       textEl.setAttribute('class', 'pg-edge-label');
+      textEl.setAttribute('data-eid', edge.id);
       textEl.setAttribute('text-anchor', 'middle');
       textEl.setAttribute('dominant-baseline', 'central');
       textEl.textContent = label;
-      // Background pill behind text
+
       svgEl.appendChild(bg);
       svgEl.appendChild(textEl);
-      // Size background after append (getBBox needs DOM)
+
       requestAnimationFrame(() => {
         try {
           const bb = textEl.getBBox();
           const pad = 3;
-          bg.setAttribute('x',      bb.x - pad);
-          bg.setAttribute('y',      bb.y - pad);
-          bg.setAttribute('width',  bb.width  + pad * 2);
-          bg.setAttribute('height', bb.height + pad * 2);
-          bg.setAttribute('rx', 3);
-          bg.setAttribute('fill', 'rgba(15,23,42,0.85)');
+          bg.setAttribute('x', bb.x - pad); bg.setAttribute('y', bb.y - pad);
+          bg.setAttribute('width', bb.width + pad*2); bg.setAttribute('height', bb.height + pad*2);
         } catch (_) {}
       });
     }
