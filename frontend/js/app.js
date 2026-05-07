@@ -1651,20 +1651,28 @@ const _smBuildPipelineGraph = () => {
                      kwId: kw.id, confidence: kw.confidence, col, metrics, x:0, y:0 });
   });
 
+  const kwNames = _smKeywords.map(k => k.normalized_name || k.keyword_name);
+  console.log('[StoryMap] keywords:', kwNames);
+  console.log('[StoryMap] relations:', _smRelations.map(r => ({
+    id: r.id, src: r.source_name, srcId: r.source_keyword_id,
+    tgt: r.target_name, tgtId: r.target_keyword_id,
+  })));
+
   _smRelations.forEach(rel => {
-    // Prefer ID-based lookup — name matching breaks after manual keyword rename
     let srcKw = rel.source_keyword_id != null
       ? _smKeywords.find(k => k.id === rel.source_keyword_id) : null;
     if (!srcKw) srcKw = _smFindKw(rel.source_name);
     let tgtKw = rel.target_keyword_id != null
       ? _smKeywords.find(k => k.id === rel.target_keyword_id) : null;
     if (!tgtKw) tgtKw = _smFindKw(rel.target_name);
+    console.log(`[StoryMap] rel ${rel.id}: "${rel.source_name}"→"${rel.target_name}" | srcFound=${!!srcKw} tgtFound=${!!tgtKw}`);
     if (srcKw && tgtKw && srcKw.id !== tgtKw.id) {
       edges.push({ id:`er_${rel.id}`, fromNid:`kw_${srcKw.id}`, toNid:`kw_${tgtKw.id}`,
                    relType: rel.relation_type||'related_to' });
     }
   });
 
+  console.log('[StoryMap] edges built:', edges.length);
   return { nodes, edges };
 };
 

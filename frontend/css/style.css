@@ -1224,7 +1224,7 @@ a:hover { text-decoration: underline; }
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 
-.pg-edge { fill: none; stroke: rgba(255,255,255,.13); stroke-width: 1.5; transition: stroke .18s, opacity .18s; }
+.pg-edge { fill: none; stroke: rgba(255,255,255,.35); stroke-width: 1.5; transition: stroke .18s, opacity .18s; }
 .pg-edge.pg-edge-active { stroke: #818cf8; stroke-width: 2.5; opacity: 1; }
 .pg-edge.pg-dim { opacity: .05; }
 
