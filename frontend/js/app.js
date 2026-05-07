@@ -1720,7 +1720,20 @@ const _smBuildPipelineGraph = () => {
   return { nodes, edges: finalEdges };
 };
 
+const _smLayoutKey = () => `sm_layout_${activePaperId}`;
+
+const _smSaveLayout = () => {
+  const pos = {};
+  _smGraph.nodes.forEach(n => { pos[n.nid] = { x: Math.round(n.x), y: Math.round(n.y) }; });
+  try { localStorage.setItem(_smLayoutKey(), JSON.stringify(pos)); } catch (_) {}
+};
+
+const _smLoadLayout = () => {
+  try { return JSON.parse(localStorage.getItem(_smLayoutKey()) || '{}'); } catch { return {}; }
+};
+
 const _smLayoutPipelineGraph = graph => {
+  const saved = _smLoadLayout();
   const cols = [[],[],[],[]];
   graph.nodes.forEach(n => { if (n.col >= 0 && n.col <= 3) cols[n.col].push(n); });
   const rank = { Material:0, Structure:1, Method:2, Other:3, Property:4, Application:5, Metric:6, Transform:7 };
@@ -1730,7 +1743,15 @@ const _smLayoutPipelineGraph = graph => {
   }));
   cols.forEach((col, ci) => {
     let y = 20;
-    col.forEach(n => { n.x = _PG_COL_X[ci]; n.y = y; y += _pgNodeH(n) + _PG_VGAP; });
+    col.forEach(n => {
+      if (saved[n.nid] != null) {
+        n.x = saved[n.nid].x;
+        n.y = saved[n.nid].y;
+      } else {
+        n.x = _PG_COL_X[ci]; n.y = y;
+      }
+      y += _pgNodeH(n) + _PG_VGAP;
+    });
   });
 };
 
@@ -2000,6 +2021,7 @@ const _smRenderRelationsPanel = () => {
       };
       const onUp = () => {
         if (!_nDragged) _smHighlight(node.kwId);
+        else _smSaveLayout();
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
       };
@@ -2016,6 +2038,10 @@ const _smRenderRelationsPanel = () => {
 document.getElementById('refresh-graph-btn').addEventListener('click', async () => {
   _storymapDirty = false;
   _updateStorymapTabBadge();
+  await loadStoryMap();
+});
+document.getElementById('sm-reset-layout-btn').addEventListener('click', async () => {
+  try { localStorage.removeItem(_smLayoutKey()); } catch (_) {}
   await loadStoryMap();
 });
 document.getElementById('sm-repair-btn').addEventListener('click', async () => {
