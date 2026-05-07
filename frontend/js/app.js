@@ -1651,13 +1651,6 @@ const _smBuildPipelineGraph = () => {
                      kwId: kw.id, confidence: kw.confidence, col, metrics, x:0, y:0 });
   });
 
-  const kwNames = _smKeywords.map(k => k.normalized_name || k.keyword_name);
-  console.log('[StoryMap] keywords:', kwNames);
-  console.log('[StoryMap] relations:', _smRelations.map(r => ({
-    id: r.id, src: r.source_name, srcId: r.source_keyword_id,
-    tgt: r.target_name, tgtId: r.target_keyword_id,
-  })));
-
   _smRelations.forEach(rel => {
     let srcKw = rel.source_keyword_id != null
       ? _smKeywords.find(k => k.id === rel.source_keyword_id) : null;
@@ -1665,14 +1658,26 @@ const _smBuildPipelineGraph = () => {
     let tgtKw = rel.target_keyword_id != null
       ? _smKeywords.find(k => k.id === rel.target_keyword_id) : null;
     if (!tgtKw) tgtKw = _smFindKw(rel.target_name);
-    console.log(`[StoryMap] rel ${rel.id}: "${rel.source_name}"→"${rel.target_name}" | srcFound=${!!srcKw} tgtFound=${!!tgtKw}`);
-    if (srcKw && tgtKw && srcKw.id !== tgtKw.id) {
-      edges.push({ id:`er_${rel.id}`, fromNid:`kw_${srcKw.id}`, toNid:`kw_${tgtKw.id}`,
+
+    // If source/target not in keyword list, create orphan nodes so the edge is still visible
+    const srcNid = srcKw ? `kw_${srcKw.id}` : `orphan_src_${rel.id}`;
+    const tgtNid = tgtKw ? `kw_${tgtKw.id}` : `orphan_tgt_${rel.id}`;
+
+    if (!srcKw && rel.source_name && !nodes.has(srcNid)) {
+      nodes.set(srcNid, { nid: srcNid, kind:'orphan', type:'Other',
+        label: rel.source_name, kwId: null, confidence: 0.5, col: 0, metrics: [], x:0, y:0 });
+    }
+    if (!tgtKw && rel.target_name && !nodes.has(tgtNid)) {
+      nodes.set(tgtNid, { nid: tgtNid, kind:'orphan', type:'Other',
+        label: rel.target_name, kwId: null, confidence: 0.5, col: 3, metrics: [], x:0, y:0 });
+    }
+
+    if (srcNid !== tgtNid && (nodes.has(srcNid) || srcKw) && (nodes.has(tgtNid) || tgtKw)) {
+      edges.push({ id:`er_${rel.id}`, fromNid: srcNid, toNid: tgtNid,
                    relType: rel.relation_type||'related_to' });
     }
   });
 
-  console.log('[StoryMap] edges built:', edges.length);
   return { nodes, edges };
 };
 
@@ -1692,11 +1697,12 @@ const _smLayoutPipelineGraph = graph => {
 
 const _smCreateNodeEl = node => {
   const el  = document.createElement('div');
-  const col = _PG_CAT_COLORS[node.type] || '#64748b';
-  el.className = 'pg-node';
+  const isOrphan = node.kind === 'orphan';
+  const col = isOrphan ? '#64748b' : (_PG_CAT_COLORS[node.type] || '#64748b');
+  el.className = 'pg-node' + (isOrphan ? ' pg-node-orphan' : '');
   el.dataset.nid  = node.nid;
-  el.dataset.kwid = node.kwId;
-  el.style.cssText = `left:${node.x}px;top:${node.y}px;width:${_PG_W}px;border-color:${col}55;cursor:grab`;
+  el.dataset.kwid = node.kwId || '';
+  el.style.cssText = `left:${node.x}px;top:${node.y}px;width:${_PG_W}px;border-color:${col}55;cursor:grab` + (isOrphan ? ';border-style:dashed;opacity:0.7' : '');
 
   const metricsHtml = (node.metrics||[]).map(m => {
     const val = (m.value||'') + (m.unit ? ' '+m.unit : '');
