@@ -1622,8 +1622,10 @@ const _smFindKw = name => {
 const _smBuildPipelineGraph = () => {
   const nodes = new Map();
   const edges = [];
+  // Columns: 0=Material, 1=Structure/Method, 2=Property/Metric, 3=Application
   const CAT_COL = { Material:0, Structure:1, Method:1, Other:1, Property:2, Metric:2, Application:3 };
 
+  // ── Build kwMetrics map (with name fallback for manually added metrics) ───
   const kwMetrics = {};
   _smMetrics.forEach(m => {
     if (m.linked_keyword_id) {
@@ -1642,8 +1644,10 @@ const _smBuildPipelineGraph = () => {
     }
   });
 
+  // ── Add keyword nodes ───────────────────────────────────────────────────
   _smKeywords.forEach(kw => {
     const nid = `kw_${kw.id}`;
+    if (nodes.has(nid)) return; // skip duplicates (same keyword ID)
     const col = CAT_COL[kw.category] ?? 1;
     const metrics = kwMetrics[kw.id] || [];
     nodes.set(nid, { nid, kind:'kw', type: kw.category||'Other',
@@ -1651,7 +1655,35 @@ const _smBuildPipelineGraph = () => {
                      kwId: kw.id, confidence: kw.confidence, col, metrics, x:0, y:0 });
   });
 
+  // ── AUTO FLOW EDGES: Material→Property, Property→Metric, Metric/Property→Application ──
+  const bycat = cat => [...nodes.values()].filter(n => n.kind === 'kw' && n.type === cat);
+  const autoEdgeId = (a, b) => `auto_${a.nid}_${b.nid}`;
+
+  const addAutoEdges = (srcs, tgts, relType) => {
+    srcs.forEach(s => tgts.forEach(t => {
+      if (s.nid !== t.nid) {
+        edges.push({ id: autoEdgeId(s, t), fromNid: s.nid, toNid: t.nid,
+                     relType, kind: 'auto' });
+      }
+    }));
+  };
+
+  const materials   = bycat('Material');
+  const structures  = [...bycat('Structure'), ...bycat('Method')];
+  const properties  = bycat('Property');
+  const metrics     = bycat('Metric');
+  const applications = bycat('Application');
+
+  addAutoEdges(materials,  structures,  'uses');
+  addAutoEdges(materials,  properties,  'has property');
+  addAutoEdges(structures, properties,  'reveals');
+  addAutoEdges(properties, metrics,     'measured by');
+  addAutoEdges(metrics,    applications,'enables');
+  addAutoEdges(properties, applications,'applied to');
+
+  // ── EXPLICIT RELATION EDGES (from Relations tab) — override auto if same pair ──
   const _orphanNid = name => `orphan_${(name||'').toLowerCase().trim().replace(/\s+/g,'_')}`;
+  const explicitPairs = new Set();
 
   _smRelations.forEach(rel => {
     let srcKw = rel.source_keyword_id != null
@@ -1661,7 +1693,6 @@ const _smBuildPipelineGraph = () => {
       ? _smKeywords.find(k => k.id === rel.target_keyword_id) : null;
     if (!tgtKw) tgtKw = _smFindKw(rel.target_name);
 
-    // If source/target not in keyword list, create orphan nodes (deduplicated by name)
     const srcNid = srcKw ? `kw_${srcKw.id}` : _orphanNid(rel.source_name);
     const tgtNid = tgtKw ? `kw_${tgtKw.id}` : _orphanNid(rel.target_name);
 
@@ -1675,12 +1706,18 @@ const _smBuildPipelineGraph = () => {
     }
 
     if (srcNid !== tgtNid && nodes.has(srcNid) && nodes.has(tgtNid)) {
+      explicitPairs.add(`${srcNid}→${tgtNid}`);
       edges.push({ id:`er_${rel.id}`, fromNid: srcNid, toNid: tgtNid,
-                   relType: rel.relation_type||'related_to' });
+                   relType: rel.relation_type||'related_to', kind:'explicit' });
     }
   });
 
-  return { nodes, edges };
+  // Remove auto edges that duplicate an explicit relation
+  const finalEdges = edges.filter(e =>
+    e.kind === 'explicit' || !explicitPairs.has(`${e.fromNid}→${e.toNid}`)
+  );
+
+  return { nodes, edges: finalEdges };
 };
 
 const _smLayoutPipelineGraph = graph => {
@@ -1889,25 +1926,28 @@ const _smRenderRelationsPanel = () => {
     </marker>`;
   svgEl.appendChild(defs);
 
-  // Edges (rendered first — behind nodes)
-  edges.forEach(edge => {
+  // Edges: auto (dashed, faint) first, then explicit (solid, labeled) on top
+  const sortedEdges = [...edges].sort((a,b) => (a.kind==='auto'?0:1) - (b.kind==='auto'?0:1));
+
+  sortedEdges.forEach(edge => {
     const from = nodes.get(edge.fromNid);
     const to   = nodes.get(edge.toNid);
     if (!from || !to) return;
+    const isAuto = edge.kind === 'auto';
     const x1 = from.x + _PG_W, y1 = from.y + _pgNodeH(from) / 2;
-    const x2 = to.x - 8,       y2 = to.y   + _pgNodeH(to)   / 2; // leave room for arrowhead
+    const x2 = to.x - (isAuto ? 0 : 8), y2 = to.y + _pgNodeH(to) / 2;
     const cx = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
-    path.setAttribute('class', 'pg-edge');
-    path.setAttribute('marker-end', 'url(#pg-arrow)');
+    path.setAttribute('class', isAuto ? 'pg-edge pg-edge-auto' : 'pg-edge');
+    if (!isAuto) path.setAttribute('marker-end', 'url(#pg-arrow)');
     path.dataset.fromNid = edge.fromNid;
     path.dataset.toNid   = edge.toNid;
     path.dataset.eid     = edge.id;
     svgEl.appendChild(path);
 
-    // Relation type label at midpoint of bezier
-    const label = (edge.relType || '').replace(/_/g, ' ');
+    // Only show label on explicit (Relations tab) edges
+    const label = isAuto ? '' : (edge.relType || '').replace(/_/g, ' ');
     if (label) {
       const mx = (x1 + x2) / 2;
       const my = (y1 + y2) / 2;

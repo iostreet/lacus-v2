@@ -1224,10 +1224,11 @@ a:hover { text-decoration: underline; }
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 
-.pg-edge { fill: none; stroke: rgba(255,255,255,.35); stroke-width: 1.5; transition: stroke .18s, opacity .18s; }
+.pg-edge { fill: none; stroke: rgba(255,255,255,.45); stroke-width: 1.8; transition: stroke .18s, opacity .18s; }
+.pg-edge.pg-edge-auto { stroke: rgba(255,255,255,.12); stroke-width: 1; stroke-dasharray: 4 4; }
 .pg-edge.pg-edge-active { stroke: #818cf8; stroke-width: 2.5; opacity: 1; }
 .pg-edge.pg-dim { opacity: .05; }
-.pg-edge-label { font-size: 9px; fill: rgba(200,210,255,.8); pointer-events: none; font-family: inherit; }
+.pg-edge-label { font-size: 9px; fill: rgba(200,210,255,.9); pointer-events: none; font-family: inherit; }
 
 .pg-met-row {
   display: flex; justify-content: space-between; align-items: center;
