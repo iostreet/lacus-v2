@@ -1118,14 +1118,16 @@ a:hover { text-decoration: underline; }
 .sm-concept-section-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .sm-concept-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .sm-kw-chip {
-  display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px;
-  border-radius: 20px; font-size: .75rem; font-weight: 500; cursor: pointer;
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 4px 9px;
+  border-radius: 12px; font-size: .75rem; font-weight: 500; cursor: pointer;
   border: 1px solid var(--border); background: var(--bg3); color: var(--text);
   transition: border-color .12s, background .12s; position: relative; user-select: none;
 }
 .sm-kw-chip:hover { border-color: var(--kw-color, var(--accent)); }
 .sm-kw-chip.sm-highlighted { border-color: var(--kw-color, var(--accent)); background: rgba(168,85,247,.1); }
+.sm-kw-chip-row { display: flex; align-items: center; gap: 5px; }
 .sm-kw-chip-conf { font-size: .62rem; color: var(--text-muted); }
+.sm-met-val { font-size: .72rem; font-weight: 600; color: #2dd4bf; margin-top: 1px; }
 .sm-kw-edit-popup {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 60;
   background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -1222,9 +1224,11 @@ a:hover { text-decoration: underline; }
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 
-.pg-edge { fill: none; stroke: rgba(255,255,255,.13); stroke-width: 1.5; transition: stroke .18s, opacity .18s; }
+.pg-edge { fill: none; stroke: rgba(255,255,255,.45); stroke-width: 1.8; transition: stroke .18s, opacity .18s; }
+.pg-edge.pg-edge-auto { stroke: #818cf8; stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .6; }
 .pg-edge.pg-edge-active { stroke: #818cf8; stroke-width: 2.5; opacity: 1; }
 .pg-edge.pg-dim { opacity: .05; }
+.pg-edge-label { font-size: 9px; fill: rgba(200,210,255,.9); pointer-events: none; font-family: inherit; }
 
 .pg-met-row {
   display: flex; justify-content: space-between; align-items: center;

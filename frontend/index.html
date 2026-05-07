@@ -10,7 +10,7 @@
   <meta property="og:description" content="Your personal research knowledge space on Lacus." />
   <meta property="og:image" content="/static/og-image.png" />
   <link rel="icon" href="/static/favicon.ico" />
-  <link rel="stylesheet" href="/static/css/style.css?v=22" />
+  <link rel="stylesheet" href="/static/css/style.css?v=26" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -297,6 +297,7 @@
                 <th>Value</th>
                 <th>Unit</th>
                 <th>Condition</th>
+                <th>Keyword</th>
                 <th>Confidence</th>
                 <th>Actions</th>
               </tr>
@@ -319,6 +320,8 @@
               <span>Pipeline Graph</span>
               <div style="display:flex;gap:6px;align-items:center">
                 <button class="btn btn-sm btn-primary" id="refresh-graph-btn">↻ Refresh</button>
+                <button class="btn btn-sm" id="sm-reset-layout-btn" title="Reset node positions to default">⊠ Reset Layout</button>
+                <button class="btn btn-sm" id="sm-repair-btn" title="Auto-link relations and metrics to keywords by name">⚙ Repair Links</button>
                 <button class="btn btn-sm btn-primary" id="sm-add-rel-btn">+ Add Relation</button>
               </div>
             </div>
@@ -391,6 +394,7 @@
     <label>Value<input id="amet-value" class="mini-input" placeholder="e.g. 120"/></label>
     <label>Unit<input id="amet-unit" class="mini-input" placeholder="e.g. pm/V, °C"/></label>
     <label>Condition (optional)<input id="amet-cond" class="mini-input" placeholder="e.g. 10 nm wall thickness"/></label>
+    <label>Linked keyword (optional)<select id="amet-kw" class="mini-input"><option value="">— none —</option></select></label>
     <div class="mini-modal-actions">
       <button class="btn btn-sm" id="amet-cancel">Cancel</button>
       <button class="btn btn-sm btn-primary" id="amet-save">Add</button>
@@ -585,7 +589,7 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=10"></script>
-<script src="/static/js/app.js?v=17"></script>
+<script src="/static/js/app.js?v=25"></script>
 
 <script>
 // ── Welcome tutorial ─────────────────────────────────────────────────────────

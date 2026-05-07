@@ -1235,12 +1235,22 @@ const _updateMetBulkBar = () => {
 };
 
 const loadMetrics = async () => {
-  let metrics;
+  let metrics, keywords;
   try {
-    metrics = await apiFetch(`/papers/${activePaperId}/metrics`);
+    [metrics, keywords] = await Promise.all([
+      apiFetch(`/papers/${activePaperId}/metrics`),
+      apiFetch(`/papers/${activePaperId}/keywords`),
+    ]);
   } catch (e) {
     toast('Failed to load metrics: ' + e.message, 'error');
     return;
+  }
+
+  // Populate "Add Metric" modal keyword dropdown
+  const kwSelect = document.getElementById('amet-kw');
+  if (kwSelect) {
+    kwSelect.innerHTML = '<option value="">— none —</option>' +
+      keywords.map(k => `<option value="${k.id}">${escHtml(k.normalized_name || k.keyword_name)}</option>`).join('');
   }
 
   document.getElementById('met-count-label').textContent = `${metrics.length} metrics`;
@@ -1251,14 +1261,18 @@ const loadMetrics = async () => {
   tbody.innerHTML = '';
 
   if (metrics.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px">No metrics extracted. Use "+ Add Metric" to add manually.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No metrics extracted. Use "+ Add Metric" to add manually.</td></tr>';
     return;
   }
+
+  const kwOpts = '<option value="">— none —</option>' +
+    keywords.map(k => `<option value="${k.id}">${escHtml(k.normalized_name || k.keyword_name)}</option>`).join('');
 
   metrics.forEach(met => {
     const conf = met.confidence != null ? met.confidence : 0;
     const tr = document.createElement('tr');
     tr.dataset.id = met.id;
+    const kwSel = `<select class="cell-input met-kw-sel" data-id="${met.id}" style="min-width:100px">${kwOpts}</select>`;
     tr.innerHTML = `
       <td class="drag-handle" title="Drag to reorder">⠿</td>
       <td style="width:28px;text-align:center">
@@ -1268,6 +1282,7 @@ const loadMetrics = async () => {
       <td><input class="cell-input" value="${escHtml(met.value)}"        data-id="${met.id}" data-field="value"        style="min-width:60px"/></td>
       <td><input class="cell-input" value="${escHtml(met.unit || '')}"   data-id="${met.id}" data-field="unit"         style="min-width:60px"/></td>
       <td><input class="cell-input" value="${escHtml(met.condition || '')}" data-id="${met.id}" data-field="condition" style="min-width:100px"/></td>
+      <td>${kwSel}</td>
       <td style="font-size:0.75rem;color:var(--text-dim)">${(conf*100).toFixed(0)}%</td>
       <td>
         <div class="action-btns">
@@ -1277,6 +1292,9 @@ const loadMetrics = async () => {
       </td>
     `;
     tbody.appendChild(tr);
+    // Set current linked_keyword_id
+    const sel = tr.querySelector('.met-kw-sel');
+    if (sel && met.linked_keyword_id) sel.value = met.linked_keyword_id;
   });
 
   // Checkbox tracking
@@ -1308,9 +1326,11 @@ const loadMetrics = async () => {
       const row = btn.closest('tr');
       const payload = { confidence: 1.0 };
       row.querySelectorAll('[data-field]').forEach(el => { payload[el.dataset.field] = el.value; });
+      const kwSel = row.querySelector('.met-kw-sel');
+      if (kwSel) payload.linked_keyword_id = kwSel.value ? parseInt(kwSel.value) : null;
       try {
         await apiFetch(`/metrics/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-        const lbl = row.querySelector('td:nth-child(7)');
+        const lbl = row.querySelector('td:nth-child(8)');
         if (lbl) lbl.textContent = '100%';
         toast('Metric saved.', 'ok');
         await refreshStorymapIfActive();
@@ -1367,13 +1387,16 @@ document.getElementById('amet-save').addEventListener('click', async () => {
   const unit  = document.getElementById('amet-unit').value.trim();
   const cond  = document.getElementById('amet-cond').value.trim();
   if (!name || !value) { toast('Metric name and value are required.', 'warn'); return; }
+  const kwSel = document.getElementById('amet-kw');
+  const linkedKwId = kwSel && kwSel.value ? parseInt(kwSel.value) : null;
   try {
     await apiFetch(`/papers/${activePaperId}/metrics`, {
       method: 'POST',
-      body: JSON.stringify({ metric_name: name, value, unit, condition: cond }),
+      body: JSON.stringify({ metric_name: name, value, unit, condition: cond, linked_keyword_id: linkedKwId }),
     });
     document.getElementById('add-met-modal').classList.add('hidden');
     ['amet-name','amet-value','amet-unit','amet-cond'].forEach(id => { document.getElementById(id).value = ''; });
+    if (kwSel) kwSel.value = '';
     toast('Metric added.', 'ok');
     await loadMetrics();
     await refreshStorymapIfActive();
@@ -1435,11 +1458,33 @@ const loadStoryMap = async () => {
 const _smRenderConceptPanel = () => {
   const scroll = document.getElementById('sm-concept-scroll');
   if (!scroll) return;
+
+  // Build kwId → metrics map for value+unit display
+  const kwMetricMap = {};
+  _smMetrics.forEach(m => {
+    if (m.linked_keyword_id) {
+      if (!kwMetricMap[m.linked_keyword_id]) kwMetricMap[m.linked_keyword_id] = [];
+      kwMetricMap[m.linked_keyword_id].push(m);
+    } else {
+      // Fallback: match metric_name against keyword names when linked_keyword_id is null
+      const mname = (m.metric_name || '').toLowerCase().trim();
+      const matched = _smKeywords.find(k => {
+        const kn = (k.normalized_name || k.keyword_name || '').toLowerCase();
+        return kn === mname || kn.includes(mname) || mname.includes(kn);
+      });
+      if (matched) {
+        if (!kwMetricMap[matched.id]) kwMetricMap[matched.id] = [];
+        kwMetricMap[matched.id].push(m);
+      }
+    }
+  });
+
   let html = '';
   for (const group of _SM_CONCEPT_GROUPS) {
     const kws = _smKeywords.filter(k => group.cats.includes(k.category));
     if (!kws.length) continue;
     const dotColor = _SM_CAT_COLORS[group.cats[0]] || '#64748b';
+    const isMetric = group.cats.includes('Metric');
     html += `<div class="sm-concept-section">
       <div class="sm-concept-section-title">
         <span class="sm-concept-section-dot" style="background:${dotColor}"></span>
@@ -1449,7 +1494,14 @@ const _smRenderConceptPanel = () => {
         ${kws.map(kw => {
           const pct = Math.round((kw.confidence || 0) * 100);
           const col = _SM_CAT_COLORS[kw.category] || '#64748b';
-          return `<span class="sm-kw-chip" data-kwid="${kw.id}" style="--kw-color:${col}" title="Click to highlight · Double-click to edit">${escHtml(kw.normalized_name || kw.keyword_name)}<span class="sm-kw-chip-conf">${pct}%</span></span>`;
+          const linkedMets = kwMetricMap[kw.id] || [];
+          const metVal = linkedMets.length
+            ? linkedMets.map(m => {
+                const v = (m.value || '') + (m.unit ? ' ' + m.unit : '');
+                return `<span class="sm-met-val">${escHtml(v)}</span>`;
+              }).join('')
+            : '';
+          return `<span class="sm-kw-chip" data-kwid="${kw.id}" style="--kw-color:${col}" title="Click to highlight · Double-click to edit"><span class="sm-kw-chip-row">${escHtml(kw.normalized_name || kw.keyword_name)}<span class="sm-kw-chip-conf">${pct}%</span></span>${metVal}</span>`;
         }).join('')}
       </div>
     </div>`;
@@ -1554,10 +1606,33 @@ const _PG_CAT_COLORS = {
 };
 const _PG_W    = 152;
 const _PG_KH   = 64;
-const _PG_COL_X = [24, 222, 420, 618];
+const _PG_COL_X = [24, 260, 496, 732];
 const _PG_VGAP  = 14;
 
 const _pgNodeH = n => _PG_KH + ((n.metrics||[]).length * 19);
+
+// Port Y: spread multiple connections evenly within node height
+const _pgPortY = (node, idx, total) => {
+  const h = _pgNodeH(node);
+  const mid = node.y + h / 2;
+  if (total <= 1) return mid;
+  const spread = Math.min(h * 0.65, (total - 1) * 18);
+  return mid - spread / 2 + idx * spread / (total - 1);
+};
+
+// Compute bezier path + midpoint for an edge (uses stored port indices)
+const _pgEdgePath = (edge, nodes) => {
+  const from = nodes.get(edge.fromNid);
+  const to   = nodes.get(edge.toNid);
+  if (!from || !to) return null;
+  const x1 = from.x + _PG_W;
+  const y1 = _pgPortY(from, edge.outIdx || 0, edge.outTotal || 1);
+  const x2 = to.x - (edge.kind === 'auto' ? 0 : 8);
+  const y2 = _pgPortY(to,   edge.inIdx  || 0, edge.inTotal  || 1);
+  const cx = (x1 + x2) / 2;
+  return { d: `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`,
+           mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
+};
 
 const _smFindKw = name => {
   const n = (name || '').toLowerCase().trim();
@@ -1570,18 +1645,32 @@ const _smFindKw = name => {
 const _smBuildPipelineGraph = () => {
   const nodes = new Map();
   const edges = [];
+  // Columns: 0=Material, 1=Structure/Method, 2=Property/Metric, 3=Application
   const CAT_COL = { Material:0, Structure:1, Method:1, Other:1, Property:2, Metric:2, Application:3 };
 
+  // ── Build kwMetrics map (with name fallback for manually added metrics) ───
   const kwMetrics = {};
   _smMetrics.forEach(m => {
     if (m.linked_keyword_id) {
       if (!kwMetrics[m.linked_keyword_id]) kwMetrics[m.linked_keyword_id] = [];
       kwMetrics[m.linked_keyword_id].push(m);
+    } else {
+      const mname = (m.metric_name || '').toLowerCase().trim();
+      const matched = _smKeywords.find(k => {
+        const kn = (k.normalized_name || k.keyword_name || '').toLowerCase();
+        return kn === mname || kn.includes(mname) || mname.includes(kn);
+      });
+      if (matched) {
+        if (!kwMetrics[matched.id]) kwMetrics[matched.id] = [];
+        kwMetrics[matched.id].push(m);
+      }
     }
   });
 
+  // ── Add keyword nodes ───────────────────────────────────────────────────
   _smKeywords.forEach(kw => {
     const nid = `kw_${kw.id}`;
+    if (nodes.has(nid)) return; // skip duplicates (same keyword ID)
     const col = CAT_COL[kw.category] ?? 1;
     const metrics = kwMetrics[kw.id] || [];
     nodes.set(nid, { nid, kind:'kw', type: kw.category||'Other',
@@ -1589,19 +1678,101 @@ const _smBuildPipelineGraph = () => {
                      kwId: kw.id, confidence: kw.confidence, col, metrics, x:0, y:0 });
   });
 
+  // ── AUTO FLOW EDGES: Material→Property, Property→Metric, Metric/Property→Application ──
+  const bycat = cat => [...nodes.values()].filter(n => n.kind === 'kw' && n.type === cat);
+  const autoEdgeId = (a, b) => `auto_${a.nid}_${b.nid}`;
+
+  const addAutoEdges = (srcs, tgts, relType) => {
+    srcs.forEach(s => tgts.forEach(t => {
+      if (s.nid !== t.nid) {
+        edges.push({ id: autoEdgeId(s, t), fromNid: s.nid, toNid: t.nid,
+                     relType, kind: 'auto' });
+      }
+    }));
+  };
+
+  const materials   = bycat('Material');
+  const structures  = [...bycat('Structure'), ...bycat('Method')];
+  const properties  = bycat('Property');
+  const metrics     = bycat('Metric');
+  const applications = bycat('Application');
+
+  addAutoEdges(materials,  structures,  'uses');
+  addAutoEdges(materials,  properties,  'has property');
+  addAutoEdges(structures, properties,  'reveals');
+  addAutoEdges(properties, metrics,     'measured by');
+  addAutoEdges(metrics,    applications,'enables');
+  addAutoEdges(properties, applications,'applied to');
+
+  // ── EXPLICIT RELATION EDGES (from Relations tab) — override auto if same pair ──
+  const _orphanNid = name => `orphan_${(name||'').toLowerCase().trim().replace(/\s+/g,'_')}`;
+  const explicitPairs = new Set();
+
   _smRelations.forEach(rel => {
-    const srcKw = _smFindKw(rel.source_name);
-    const tgtKw = _smFindKw(rel.target_name);
-    if (srcKw && tgtKw && srcKw.id !== tgtKw.id) {
-      edges.push({ id:`er_${rel.id}`, fromNid:`kw_${srcKw.id}`, toNid:`kw_${tgtKw.id}`,
-                   relType: rel.relation_type||'related_to' });
+    let srcKw = rel.source_keyword_id != null
+      ? _smKeywords.find(k => k.id === rel.source_keyword_id) : null;
+    if (!srcKw) srcKw = _smFindKw(rel.source_name);
+    let tgtKw = rel.target_keyword_id != null
+      ? _smKeywords.find(k => k.id === rel.target_keyword_id) : null;
+    if (!tgtKw) tgtKw = _smFindKw(rel.target_name);
+
+    const srcNid = srcKw ? `kw_${srcKw.id}` : _orphanNid(rel.source_name);
+    const tgtNid = tgtKw ? `kw_${tgtKw.id}` : _orphanNid(rel.target_name);
+
+    if (!srcKw && rel.source_name && !nodes.has(srcNid)) {
+      nodes.set(srcNid, { nid: srcNid, kind:'orphan', type:'Other',
+        label: rel.source_name, kwId: null, confidence: 0.5, col: 1, metrics: [], x:0, y:0 });
+    }
+    if (!tgtKw && rel.target_name && !nodes.has(tgtNid)) {
+      nodes.set(tgtNid, { nid: tgtNid, kind:'orphan', type:'Other',
+        label: rel.target_name, kwId: null, confidence: 0.5, col: 2, metrics: [], x:0, y:0 });
+    }
+
+    if (srcNid !== tgtNid && nodes.has(srcNid) && nodes.has(tgtNid)) {
+      explicitPairs.add(`${srcNid}→${tgtNid}`);
+      edges.push({ id:`er_${rel.id}`, fromNid: srcNid, toNid: tgtNid,
+                   relType: rel.relation_type||'related_to', kind:'explicit' });
     }
   });
 
-  return { nodes, edges };
+  // Remove auto edges that duplicate an explicit relation
+  const finalEdges = edges.filter(e =>
+    e.kind === 'explicit' || !explicitPairs.has(`${e.fromNid}→${e.toNid}`)
+  );
+
+  // Compute fanout port indices (spread edges from/to same node)
+  const outCount = {}, inCount = {};
+  finalEdges.forEach(e => {
+    outCount[e.fromNid] = (outCount[e.fromNid] || 0) + 1;
+    inCount[e.toNid]    = (inCount[e.toNid]    || 0) + 1;
+  });
+  const outIdx = {}, inIdx = {};
+  finalEdges.forEach(e => {
+    if (outIdx[e.fromNid] == null) outIdx[e.fromNid] = 0;
+    if (inIdx[e.toNid]    == null) inIdx[e.toNid]    = 0;
+    e.outIdx   = outIdx[e.fromNid]++;
+    e.outTotal = outCount[e.fromNid];
+    e.inIdx    = inIdx[e.toNid]++;
+    e.inTotal  = inCount[e.toNid];
+  });
+
+  return { nodes, edges: finalEdges };
+};
+
+const _smLayoutKey = () => `sm_layout_${activePaperId}`;
+
+const _smSaveLayout = () => {
+  const pos = {};
+  _smGraph.nodes.forEach(n => { pos[n.nid] = { x: Math.round(n.x), y: Math.round(n.y) }; });
+  try { localStorage.setItem(_smLayoutKey(), JSON.stringify(pos)); } catch (_) {}
+};
+
+const _smLoadLayout = () => {
+  try { return JSON.parse(localStorage.getItem(_smLayoutKey()) || '{}'); } catch { return {}; }
 };
 
 const _smLayoutPipelineGraph = graph => {
+  const saved = _smLoadLayout();
   const cols = [[],[],[],[]];
   graph.nodes.forEach(n => { if (n.col >= 0 && n.col <= 3) cols[n.col].push(n); });
   const rank = { Material:0, Structure:1, Method:2, Other:3, Property:4, Application:5, Metric:6, Transform:7 };
@@ -1611,17 +1782,26 @@ const _smLayoutPipelineGraph = graph => {
   }));
   cols.forEach((col, ci) => {
     let y = 20;
-    col.forEach(n => { n.x = _PG_COL_X[ci]; n.y = y; y += _pgNodeH(n) + _PG_VGAP; });
+    col.forEach(n => {
+      if (saved[n.nid] != null) {
+        n.x = saved[n.nid].x;
+        n.y = saved[n.nid].y;
+      } else {
+        n.x = _PG_COL_X[ci]; n.y = y;
+      }
+      y += _pgNodeH(n) + _PG_VGAP;
+    });
   });
 };
 
 const _smCreateNodeEl = node => {
   const el  = document.createElement('div');
-  const col = _PG_CAT_COLORS[node.type] || '#64748b';
-  el.className = 'pg-node';
+  const isOrphan = node.kind === 'orphan';
+  const col = isOrphan ? '#64748b' : (_PG_CAT_COLORS[node.type] || '#64748b');
+  el.className = 'pg-node' + (isOrphan ? ' pg-node-orphan' : '');
   el.dataset.nid  = node.nid;
-  el.dataset.kwid = node.kwId;
-  el.style.cssText = `left:${node.x}px;top:${node.y}px;width:${_PG_W}px;border-color:${col}55;cursor:grab`;
+  el.dataset.kwid = node.kwId || '';
+  el.style.cssText = `left:${node.x}px;top:${node.y}px;width:${_PG_W}px;border-color:${col}55;cursor:grab` + (isOrphan ? ';border-style:dashed;opacity:0.7' : '');
 
   const metricsHtml = (node.metrics||[]).map(m => {
     const val = (m.value||'') + (m.unit ? ' '+m.unit : '');
@@ -1714,13 +1894,24 @@ const _pgRedrawAllEdges = () => {
   const svgEl = document.getElementById('sm-pg-svg');
   if (!svgEl) return;
   svgEl.querySelectorAll('.pg-edge').forEach(path => {
-    const from = _smGraph.nodes.get(path.dataset.fromNid);
-    const to   = _smGraph.nodes.get(path.dataset.toNid);
-    if (!from || !to) return;
-    const x1 = from.x + _PG_W, y1 = from.y + _pgNodeH(from) / 2;
-    const x2 = to.x,           y2 = to.y   + _pgNodeH(to)   / 2;
-    const cx = (x1 + x2) / 2;
-    path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
+    const edge = _smGraph.edges.find(e => e.id === path.dataset.eid);
+    if (!edge) return;
+    const result = _pgEdgePath(edge, _smGraph.nodes);
+    if (!result) return;
+    path.setAttribute('d', result.d);
+    // Move relation label with edge
+    const lbl = svgEl.querySelector(`.pg-edge-label[data-eid="${edge.id}"]`);
+    if (lbl) { lbl.setAttribute('x', result.mx); lbl.setAttribute('y', result.my); }
+    // Move label background
+    const bg = svgEl.querySelector(`.pg-edge-label-bg[data-eid="${edge.id}"]`);
+    if (bg && lbl) {
+      try {
+        const bb = lbl.getBBox();
+        const pad = 3;
+        bg.setAttribute('x', bb.x - pad); bg.setAttribute('y', bb.y - pad);
+        bg.setAttribute('width', bb.width + pad*2); bg.setAttribute('height', bb.height + pad*2);
+      } catch (_) {}
+    }
   });
 };
 
@@ -1795,21 +1986,64 @@ const _smRenderRelationsPanel = () => {
   svgEl.setAttribute('width', maxX);
   svgEl.setAttribute('height', maxY);
 
-  // Edges (rendered first — behind nodes)
-  edges.forEach(edge => {
-    const from = nodes.get(edge.fromNid);
-    const to   = nodes.get(edge.toNid);
-    if (!from || !to) return;
-    const x1 = from.x + _PG_W, y1 = from.y + _pgNodeH(from) / 2;
-    const x2 = to.x,           y2 = to.y   + _pgNodeH(to)   / 2;
-    const cx = (x1 + x2) / 2;
+  // Arrowhead marker definition
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.innerHTML = `
+    <marker id="pg-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="rgba(255,255,255,.45)"/>
+    </marker>
+    <marker id="pg-arrow-active" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#818cf8"/>
+    </marker>`;
+  svgEl.appendChild(defs);
+
+  // Edges: auto (dashed) first, then explicit (solid+labeled) on top
+  const sortedEdges = [...edges].sort((a,b) => (a.kind==='auto'?0:1) - (b.kind==='auto'?0:1));
+
+  sortedEdges.forEach(edge => {
+    const result = _pgEdgePath(edge, nodes);
+    if (!result) return;
+    const isAuto = edge.kind === 'auto';
+
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
-    path.setAttribute('class', 'pg-edge');
+    path.setAttribute('d', result.d);
+    path.setAttribute('class', isAuto ? 'pg-edge pg-edge-auto' : 'pg-edge');
+    if (!isAuto) path.setAttribute('marker-end', 'url(#pg-arrow)');
     path.dataset.fromNid = edge.fromNid;
     path.dataset.toNid   = edge.toNid;
     path.dataset.eid     = edge.id;
     svgEl.appendChild(path);
+
+    // Relation-type label only on explicit edges
+    const label = isAuto ? '' : (edge.relType || '').replace(/_/g, ' ');
+    if (label) {
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      bg.setAttribute('class', 'pg-edge-label-bg');
+      bg.setAttribute('data-eid', edge.id);
+      bg.setAttribute('rx', 3);
+      bg.setAttribute('fill', 'rgba(15,23,42,0.85)');
+
+      const textEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      textEl.setAttribute('x', result.mx);
+      textEl.setAttribute('y', result.my);
+      textEl.setAttribute('class', 'pg-edge-label');
+      textEl.setAttribute('data-eid', edge.id);
+      textEl.setAttribute('text-anchor', 'middle');
+      textEl.setAttribute('dominant-baseline', 'central');
+      textEl.textContent = label;
+
+      svgEl.appendChild(bg);
+      svgEl.appendChild(textEl);
+
+      requestAnimationFrame(() => {
+        try {
+          const bb = textEl.getBBox();
+          const pad = 3;
+          bg.setAttribute('x', bb.x - pad); bg.setAttribute('y', bb.y - pad);
+          bg.setAttribute('width', bb.width + pad*2); bg.setAttribute('height', bb.height + pad*2);
+        } catch (_) {}
+      });
+    }
   });
 
   // Nodes — drag to reposition, click to highlight
@@ -1834,6 +2068,7 @@ const _smRenderRelationsPanel = () => {
       };
       const onUp = () => {
         if (!_nDragged) _smHighlight(node.kwId);
+        else _smSaveLayout();
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
       };
@@ -1851,6 +2086,17 @@ document.getElementById('refresh-graph-btn').addEventListener('click', async () 
   _storymapDirty = false;
   _updateStorymapTabBadge();
   await loadStoryMap();
+});
+document.getElementById('sm-reset-layout-btn').addEventListener('click', async () => {
+  try { localStorage.removeItem(_smLayoutKey()); } catch (_) {}
+  await loadStoryMap();
+});
+document.getElementById('sm-repair-btn').addEventListener('click', async () => {
+  try {
+    await apiFetch(`/papers/${activePaperId}/repair-links`, { method: 'POST' });
+    toast('Links repaired.', 'ok');
+    await loadStoryMap();
+  } catch (e) { toast('Repair failed: ' + e.message, 'error'); }
 });
 document.getElementById('sm-add-rel-btn').addEventListener('click', () => {
   document.getElementById('add-rel-modal').classList.remove('hidden');

@@ -1,37 +1,93 @@
 # Lacus
 
-**Lacus** is a research intelligence tool that transforms academic papers (PDF) into an interactive knowledge graph — helping researchers discover connections, keywords, and patterns across their literature.
+**Lacus** is a paper-based knowledge community where researchers upload academic papers and collectively build a living knowledge graph — discovering connections, tracking research fields, and discussing papers together.
 
 > Built by a non-programmer for researchers who feel the lack of academic communication spaces online.
+
+**Live:** [https://lacus-v2-production.up.railway.app](https://lacus-v2-production.up.railway.app)
+
+---
+
+## What It Does
+
+1. **Upload a PDF** → GROBID extracts title, authors, keywords, abstract, and metrics automatically
+2. **Review & Save** → AI recommends a research field, theme, and concept; user confirms or edits
+3. **Knowledge Map** → Your confirmed papers appear as an interactive graph of keywords and relationships
+4. **Community Map** → The landing page shows all members' confirmed papers aggregated into a shared field → theme → concept knowledge graph, with member counts per paper
 
 ---
 
 ## Features
 
-- **PDF Upload & Analysis** — Upload academic papers and automatically extract titles, authors, keywords, abstracts, and metrics via GROBID
-- **Map View** — Visualize papers and their keyword relationships as an interactive node graph (Cytoscape.js)
-- **Story Map** — Create narrative sequences linking papers into a research story
-- **Board View** — Kanban-style board for organizing papers by status
-- **Member System** — Sign up, log in, and manage your own paper collection (Supabase Auth)
+### Landing Page — Live Knowledge Map
+- Public, no login required
+- Aggregates all confirmed papers across all members by **Field → Theme → Concept**
+- Click a concept node to see its papers; click a paper for metadata and discussion
+- Each paper card shows how many members have registered the same paper
+- Discussion threads per paper (comments + replies); authors and operators can edit/delete
+
+### Paper Analysis Pipeline
+- PDF upload → GROBID parsing → keyword extraction → field detection → metrics → relations → summaries
+- **Field detection** — scores paper text against ontology vocabularies (Materials Science, Physics, Chemistry, etc.) and stores the top field with confidence score
+- If a paper was uploaded before field detection was added, the field is re-detected on-demand from extracted keywords when the review modal opens
+
+### Review Modal (post-analysis)
+- **Research Field** — auto-detected from ontology matching; editable text input with ranked alternative suggestions
+- **Theme & Concept** — scored from title + keywords; editable inputs with AI-ranked chips
+- **Keywords** — grouped by category (Material, Method, Property, Application, etc.); toggleable and editable
+- Only confirmed (saved) papers appear on the public landing map; `pending_review` papers remain private
+
+### Personal Knowledge Map
+- Per-user interactive graph (Cytoscape.js) — papers as nodes, keywords as connected nodes
+- Multiple layout modes; node position saving
+- Custom nodes, cross-paper keyword edges, map groups
+- Right-click context menu; keyword filtering
+
+### Member System
+- Sign-up / login via Supabase Auth (email + password)
+- Each user owns their paper collection; RLS enforced at the database level
+- Welcome modal on first login showing the field → theme → concept hierarchy
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
+|---|---|
 | Backend | FastAPI (Python) |
 | Frontend | Vanilla JS, HTML/CSS |
-| Database | Supabase (PostgreSQL) |
+| Database | Supabase (PostgreSQL + RLS) |
+| Auth | Supabase Auth |
 | PDF Parsing | GROBID |
 | Graph UI | Cytoscape.js |
 | Deployment | Railway |
 
 ---
 
-## Live Demo
+## Project Structure
 
-[https://lacus-v2-production.up.railway.app](https://lacus-v2-production.up.railway.app)
+```
+lacus-v2/
+├── backend/
+│   ├── main.py                  # FastAPI app — all API routes
+│   ├── supabase_client.py
+│   └── processors/
+│       ├── grobid_client.py     # PDF → structured sections
+│       ├── keyword_extractor.py
+│       ├── metric_extractor.py
+│       ├── relation_extractor.py
+│       ├── summary_generator.py
+│       ├── field_classifier.py  # Ontology-based field detection
+│       └── ontology/
+│           └── materials_science.json
+└── frontend/
+    ├── landing.html             # Public landing page + knowledge map
+    ├── index.html               # Main app (requires login)
+    └── js/
+        ├── app.js               # Core app logic + review modal
+        ├── mapview.js           # Personal knowledge map
+        └── storymap.js
+```
 
 ---
 
@@ -41,16 +97,15 @@
 
 - Python 3.10+
 - [GROBID](https://grobid.readthedocs.io/) running on `localhost:8070` (optional — for PDF analysis)
-- Supabase account
+- Supabase project
 
 ### Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/iostreet/lacus-v2.git
 cd lacus-v2
 
-# Run setup (installs Python dependencies)
+# Install Python dependencies
 ./setup.sh        # macOS/Linux
 setup.bat         # Windows
 ```
@@ -85,9 +140,9 @@ Open [http://localhost:8000](http://localhost:8000)
 
 ---
 
-## Project Background
+## Background
 
-This project was created by someone with no formal programming background who noticed a gap in online spaces for academic communication. Lacus is an early-stage attempt to make research more visual, connected, and accessible.
+This project was created by someone with no formal programming background who noticed a gap in online spaces for academic communication. Lacus is an early-stage attempt to make research more visual, connected, and community-driven.
 
 If you are a researcher, developer, or someone interested in academic tools — collaboration and feedback are very welcome.
 
