@@ -11,7 +11,8 @@ import json
 import os
 import shutil
 import sys
-from collections import defaultdict
+import time
+from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Optional
 
@@ -31,12 +32,13 @@ UPLOADS_DIR  = PROJECT_DIR / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 sys.path.insert(0, str(BASE_DIR))
 
-from supabase_client import SUPABASE_URL, SUPABASE_ANON_KEY
+from supabase_client import SUPABASE_URL, SUPABASE_ANON_KEY, supabase_admin as _sa
 from processors.grobid_client     import extract_paper_info, check_grobid
 from processors.keyword_extractor import extract_keywords
 from processors.metric_extractor  import extract_metrics
 from processors.relation_extractor import extract_relations
 from processors.summary_generator  import generate_summaries
+from processors.field_classifier   import detect_field
 
 # ── In-memory progress tracker ───────────────────────────────────────────────
 _progress: dict[int, dict] = {}
@@ -86,12 +88,20 @@ def _set_progress(paper_id: int, step: str, pct: int, error: str | None = None):
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="Lacus API", version="2.0.0")
 
+# ALLOWED_ORIGINS env var: comma-separated list of allowed origins.
+# Set in Railway: https://lacus-v2-develop.up.railway.app,https://yourdomain.com
+_raw_origins = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8000,http://127.0.0.1:8000",
+)
+_ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 if FRONTEND_DIR.exists():
@@ -125,6 +135,30 @@ def board_page():
     return {"message": "Board not found"}
 
 
+@app.get("/features")
+def features_page():
+    f = FRONTEND_DIR / "features.html"
+    if f.exists():
+        return FileResponse(str(f))
+    return {"message": "Features page not found"}
+
+
+@app.get("/privacy")
+def privacy_page():
+    f = FRONTEND_DIR / "privacy.html"
+    if f.exists():
+        return FileResponse(str(f))
+    return {"message": "Privacy page not found"}
+
+
+@app.get("/reset-password")
+def reset_password_page():
+    f = FRONTEND_DIR / "reset-password.html"
+    if f.exists():
+        return FileResponse(str(f))
+    return {"message": "Reset password page not found"}
+
+
 @app.get("/api/status")
 def status():
     return {"grobid_available": check_grobid(), "version": "2.0.0"}
@@ -153,6 +187,113 @@ def public_stats():
     return {"visitors": visitor_count, "papers": paper_count, "members": member_count}
 
 
+_LANDING_COLORS = ['#7c3aed','#0891b2','#059669','#d97706',
+                   '#dc2626','#db2777','#2563eb','#65a30d']
+
+@app.get("/api/public/landing-map")
+def public_landing_map():
+    """Aggregate all users' papers by field → theme → concept — no auth required."""
+    try:
+        papers = (_sa.table("papers")
+                    .select("id,title,year,doi,journal,authors,field,theme,concept,user_id")
+                    .eq("status", "confirmed")
+                    .execute().data or [])
+    except Exception as e:
+        return {"fields": [], "error": str(e)}
+
+    def _cap(s: str) -> str:
+        s = (s or "").strip()
+        return s[0].upper() + s[1:] if s else s
+
+    # field → theme → concept → doi_key → {paper data + user_ids set}
+    field_map: dict = {}
+    for p in papers:
+        fname = _cap(p.get("field")   or "") or "Other Research"
+        tname = _cap(p.get("theme")   or "") or "General"
+        cname = _cap(p.get("concept") or "") or "General"
+        doi   = (p.get("doi") or "").strip()
+        # Use DOI as dedup key; fall back to paper id so no-DOI papers stay distinct
+        key   = doi if doi else f"__id_{p.get('id')}"
+        bucket = field_map.setdefault(fname, {}).setdefault(tname, {}).setdefault(cname, {})
+        if key not in bucket:
+            bucket[key] = {
+                "id":       p.get("id"),
+                "title":    _cap(p.get("title") or "") or "Untitled",
+                "year":     p.get("year"),
+                "doi":      doi,
+                "journal":  (p.get("journal") or "").strip(),
+                "authors":  p.get("authors") or [],
+                "user_ids": set(),
+            }
+        if p.get("user_id"):
+            bucket[key]["user_ids"].add(p["user_id"])
+
+    result = []
+    for fi, (fname, themes) in enumerate(sorted(field_map.items(), key=lambda x: -sum(
+        sum(len(cs) for cs in t.values()) for t in x[1].values()
+    ))):
+        theme_list = []
+        for tname, concepts in sorted(themes.items(), key=lambda x: -sum(len(cs) for cs in x[1].values())):
+            concept_list = []
+            for cname, bucket in sorted(concepts.items(), key=lambda x: -len(x[1])):
+                papers_out = [
+                    {
+                        "id":           e["id"],
+                        "title":        e["title"],
+                        "year":         e["year"],
+                        "doi":          e["doi"],
+                        "journal":      e["journal"],
+                        "authors":      e["authors"],
+                        "member_count": len(e["user_ids"]),
+                    }
+                    for e in sorted(bucket.values(), key=lambda x: -len(x["user_ids"]))
+                ][:30]
+                concept_list.append({
+                    "name":        cname,
+                    "paper_count": len(bucket),
+                    "papers":      papers_out,
+                })
+            theme_list.append({
+                "name":          tname,
+                "concept_count": len(concept_list),
+                "paper_count":   sum(c["paper_count"] for c in concept_list),
+                "concepts":      concept_list,
+            })
+        result.append({
+            "id":          fname.lower().replace(" ", "-"),
+            "name":        fname,
+            "paper_count": sum(t["paper_count"] for t in theme_list),
+            "theme_count": len(theme_list),
+            "themes":      theme_list,
+            "color":       _LANDING_COLORS[fi % len(_LANDING_COLORS)],
+        })
+    return {"fields": result}
+
+
+@app.get("/api/public/doi-comments/{doi:path}")
+def get_doi_comments(doi: str):
+    """Get comments for a DOI — public."""
+    try:
+        rows = (_sb_with('').table("doi_comments")
+                .select("id,doi,user_id,username,content,parent_comment_id,created_at")
+                .eq("doi", doi).order("created_at").execute().data or [])
+        return {"comments": rows}
+    except Exception as e:
+        return {"comments": [], "error": str(e)}
+
+
+@app.get("/api/public/recent-doi-comments")
+def recent_doi_comments():
+    """Latest 8 DOI comments for landing page."""
+    try:
+        rows = (_sb_with('').table("doi_comments")
+                .select("id,doi,username,content,created_at")
+                .order("created_at", desc=True).limit(8).execute().data or [])
+        return {"comments": rows}
+    except Exception as e:
+        return {"comments": [], "error": str(e)}
+
+
 # ── Auth dependency ──────────────────────────────────────────────────────────
 def get_current_user(authorization: str = Header(None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
@@ -173,6 +314,118 @@ def get_current_user(authorization: str = Header(None)) -> str:
     except Exception:
         pass
     raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# ── Rate limiting (in-memory, per user) ──────────────────────────────────────
+_rl_lock  = threading.Lock()
+_rl_store: dict[str, list[float]] = defaultdict(list)
+
+def _rl_check(key: str, max_calls: int, window: int) -> None:
+    now = time.time()
+    with _rl_lock:
+        _rl_store[key] = [t for t in _rl_store[key] if now - t < window]
+        if len(_rl_store[key]) >= max_calls:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests — please wait before trying again.",
+                headers={"Retry-After": str(window)},
+            )
+        _rl_store[key].append(now)
+
+def _rl_comment(uid: str = Depends(get_current_user)) -> None:
+    """10 per 60 s — DOI comment POST/PUT (anti-spam)."""
+    _rl_check(f"cmt:{uid}", 10, 60)
+
+def _rl_upload(uid: str = Depends(get_current_user)) -> None:
+    """5 per 60 s — paper upload & AI analysis (expensive)."""
+    _rl_check(f"upload:{uid}", 5, 60)
+
+def _rl_write(uid: str = Depends(get_current_user)) -> None:
+    """30 per 60 s — general write operations."""
+    _rl_check(f"write:{uid}", 30, 60)
+
+
+class DoiCommentCreate(BaseModel):
+    doi:               str
+    content:           str
+    parent_comment_id: Optional[str] = None
+
+
+@app.post("/api/doi-comments")
+def post_doi_comment(body: DoiCommentCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_comment)):
+    import httpx as _httpx
+    try:
+        resp = _httpx.get(
+            f"{_SUPABASE_URL_CONST}/auth/v1/user",
+            headers={"apikey": _SUPABASE_ANON_CONST,
+                     "Authorization": f"Bearer {getattr(_thread_local, 'auth_token', '')}"},
+            timeout=8,
+        )
+        u = resp.json() if resp.status_code == 200 else {}
+        meta = u.get("user_metadata") or {}
+        username = (meta.get("username") or meta.get("name") or meta.get("full_name")
+                   or (u.get("email", "").split("@")[0]) or "Anonymous")
+    except Exception:
+        username = "Anonymous"
+
+    sb = _sb()
+    row = sb.table("doi_comments").insert({
+        "doi":               body.doi.strip(),
+        "user_id":           user_id,
+        "username":          username,
+        "content":           body.content.strip(),
+        "parent_comment_id": body.parent_comment_id or None,
+    }).execute().data
+    return {"comment": row[0] if row else {}}
+
+
+class DoiCommentUpdate(BaseModel):
+    content: str
+
+
+_OPERATOR_EMAIL = "iostreet7@gmail.com"
+
+
+def _get_user_email(token: str) -> str:
+    try:
+        import httpx as _httpx
+        resp = _httpx.get(
+            f"{_SUPABASE_URL_CONST}/auth/v1/user",
+            headers={"apikey": _SUPABASE_ANON_CONST, "Authorization": f"Bearer {token}"},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("email", "")
+    except Exception:
+        pass
+    return ""
+
+
+@app.put("/api/doi-comments/{comment_id}")
+def edit_doi_comment(comment_id: str, body: DoiCommentUpdate, authorization: str = Header(None), user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_comment)):
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    token = (authorization or "")[7:]
+    email = _get_user_email(token)
+    is_operator = (email == _OPERATOR_EMAIL)
+    row = _sb().table("doi_comments").select("user_id").eq("id", comment_id).execute().data
+    if not row or (not is_operator and row[0]["user_id"] != user_id):
+        raise HTTPException(status_code=403, detail="Not your comment")
+    _sb().table("doi_comments").update({"content": content}).eq("id", comment_id).execute()
+    return {"ok": True}
+
+
+@app.delete("/api/doi-comments/{comment_id}")
+def delete_doi_comment(comment_id: str, authorization: str = Header(None), user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
+    token = (authorization or "")[7:]
+    email = _get_user_email(token)
+    is_operator = (email == _OPERATOR_EMAIL)
+    q = _sb().table("doi_comments").delete().eq("id", comment_id)
+    if not is_operator:
+        q = q.eq("user_id", user_id)
+    q.execute()
+    return {"ok": True}
 
 
 # ── Pydantic schemas ─────────────────────────────────────────────────────────
@@ -218,14 +471,16 @@ class MetricUpdate(BaseModel):
     confidence:  Optional[float] = None
 
 class PaperUpdate(BaseModel):
-    title:     Optional[str] = None
-    authors:   Optional[str] = None
-    doi:       Optional[str] = None
-    journal:   Optional[str] = None
-    year:      Optional[str] = None
-    abstract:  Optional[str] = None
-    relevance: Optional[int] = None
-    memo:      Optional[str] = None
+    title:            Optional[str]   = None
+    authors:          Optional[str]   = None
+    doi:              Optional[str]   = None
+    journal:          Optional[str]   = None
+    year:             Optional[str]   = None
+    abstract:         Optional[str]   = None
+    relevance:        Optional[int]   = None
+    memo:             Optional[str]   = None
+    field:            Optional[str]   = None
+    field_confidence: Optional[float] = None
 
 class ReorderItem(BaseModel):
     id:    int
@@ -266,6 +521,31 @@ class MapEdgeUpdate(BaseModel):
     relation_type: Optional[str] = None
     label:         Optional[str] = None
 
+class ConfirmReviewKw(BaseModel):
+    id:       int
+    category: str
+    include:  bool = True
+
+class ConfirmReview(BaseModel):
+    field:    Optional[str] = None
+    keywords: list[ConfirmReviewKw] = []
+    theme:    Optional[str] = None
+    concept:  Optional[str] = None
+
+class ThemeConceptBody(BaseModel):
+    theme:   Optional[str] = None
+    concept: Optional[str] = None
+
+class MapGroupCreate(BaseModel):
+    name:      str
+    color:     str        = '#334155'
+    paper_ids: list[int]  = []
+
+class MapGroupUpdate(BaseModel):
+    name:      Optional[str]       = None
+    color:     Optional[str]       = None
+    paper_ids: Optional[list[int]] = None
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _hash_file(path: Path) -> str:
@@ -284,18 +564,21 @@ def _paper_to_dict(p: dict) -> dict:
     except (json.JSONDecodeError, ValueError):
         authors = [a.strip() for a in (p.get("authors") or "").split(",") if a.strip()]
     return {
-        "id":         p["id"],
-        "title":      p.get("title")    or "",
-        "authors":    authors,
-        "doi":        p.get("doi")      or "",
-        "journal":    p.get("journal")  or "",
-        "year":       p.get("year")     or "",
-        "abstract":   p.get("abstract") or "",
-        "pdf_path":   p.get("pdf_path") or "",
-        "status":     p.get("status", "draft"),
-        "created_at": str(p.get("created_at", "")),
-        "relevance":  p.get("relevance") or 0,
-        "memo":       p.get("memo")      or "",
+        "id":               p["id"],
+        "title":            p.get("title")    or "",
+        "authors":          authors,
+        "doi":              p.get("doi")      or "",
+        "journal":          p.get("journal")  or "",
+        "year":             p.get("year")     or "",
+        "abstract":         p.get("abstract") or "",
+        "pdf_path":         p.get("pdf_path") or "",
+        "status":           p.get("status", "draft"),
+        "created_at":       str(p.get("created_at", "")),
+        "relevance":        p.get("relevance") or 0,
+        "memo":             p.get("memo")      or "",
+        "field":            p.get("field"),
+        "field_confidence": p.get("field_confidence"),
+        "field_scores":     p.get("field_scores") or {},
     }
 
 
@@ -407,7 +690,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
         }
 
         # Step 2 — Keywords
-        _set_progress(paper_id, "Extracting keywords…", 30)
+        _set_progress(paper_id, "Matching ontology dictionaries…", 30)
         kw_data = [kw for kw in extract_keywords(sections) if kw.get("confidence", 0) > 0.40]
         kw_id_map: dict[str, int] = {}
         for kw in kw_data:
@@ -422,8 +705,20 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
             if res.data:
                 kw_id_map[kw["normalized_name"].lower()] = res.data[0]["id"]
 
-        # Step 3 — Metrics
-        _set_progress(paper_id, "Extracting performance metrics…", 52)
+        # Step 3b — Field detection
+        _set_progress(paper_id, "Detecting research field…", 42)
+        try:
+            field_name, field_conf, field_scores = detect_field(sections)
+            sb.table("papers").update({
+                "field":            field_name,
+                "field_confidence": field_conf,
+                "field_scores":     field_scores,
+            }).eq("id", paper_id).execute()
+        except Exception:
+            pass  # non-critical — don't abort pipeline
+
+        # Step 4 — Metrics
+        _set_progress(paper_id, "Extracting metrics & classifying categories…", 52)
         for met in extract_metrics(sections):
             sb.table("metrics").insert({
                 "paper_id":    paper_id,
@@ -435,8 +730,8 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 "display_order": 0,
             }).execute()
 
-        # Step 4 — Relations
-        _set_progress(paper_id, "Building keyword relations…", 70)
+        # Step 5 — Relations
+        _set_progress(paper_id, "Calculating confidence scores…", 70)
         for rel in extract_relations(sections, kw_data):
             sb.table("relations").insert({
                 "paper_id":          paper_id,
@@ -451,7 +746,7 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 "display_order":     0,
             }).execute()
 
-        # Step 5 — Summaries
+        # Step 6 — Summaries
         _set_progress(paper_id, "Generating key findings…", 88)
         kws  = (sb.table("keywords").select("*").eq("paper_id", paper_id).execute().data or [])
         rels = (sb.table("relations").select("*").eq("paper_id", paper_id).execute().data or [])
@@ -465,13 +760,122 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
                 "confidence":   s["confidence"],
             }).execute()
 
-        sb.table("papers").update({"status": "confirmed"}).eq("id", paper_id).execute()
-        _set_progress(paper_id, "Analysis complete!", 100)
+        # Step 7 — Auto-assign Theme/Concept
+        try:
+            title_low = title.lower()
+            kw_text   = " ".join(
+                (kw.get("normalized_name") or kw.get("keyword_name") or "")
+                for kw in kw_data
+            ).lower()
+            # Use spaces between repetitions so multi-word patterns stay intact
+            text_low  = f"{title_low} {title_low} {title_low} {kw_text} {kw_text}"
+            t_scores: dict[str, int] = {}
+            for pattern, theme_name in _THEME_RULES.items():
+                if pattern in text_low:
+                    loc  = 5 if pattern in title_low else (4 if pattern in kw_text else 1)
+                    freq = min(4, text_low.count(pattern))
+                    t_scores[theme_name] = t_scores.get(theme_name, 0) + loc + freq
+            c_scores: dict[str, float] = {}
+            for kw in kw_data:
+                name = (kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
+                if len(name) >= 4 and not any(g == name.lower() for g in _GENERIC_WORDS):
+                    c_scores[name] = max(c_scores.get(name, 0.0), float(kw.get("confidence") or 0.5))
+            auto_update: dict = {}
+            if t_scores:
+                auto_update["theme"]   = max(t_scores, key=t_scores.get)  # type: ignore[arg-type]
+            if c_scores:
+                auto_update["concept"] = max(c_scores, key=c_scores.get)  # type: ignore[arg-type]
+            if auto_update:
+                sb.table("papers").update(auto_update).eq("id", paper_id).execute()
+        except Exception as step7_err:
+            # Log but don't abort — columns may not exist yet in the DB
+            print(f"[warn] Step 7 theme/concept auto-assign failed for paper {paper_id}: {step7_err}")
+
+        sb.table("papers").update({"status": "pending_review"}).eq("id", paper_id).execute()
+        _set_progress(paper_id, "Ready to review…", 100)
 
     except Exception as exc:
         with contextlib.suppress(Exception):
             sb.table("papers").update({"status": "error"}).eq("id", paper_id).execute()
         _set_progress(paper_id, f"Error: {exc}", -1, error=str(exc))
+
+
+# ── Review endpoints ──────────────────────────────────────────────────────────
+
+@app.get("/api/papers/{paper_id}/review")
+def get_review(paper_id: int, user_id: str = Depends(get_current_user)):
+    """Return field + extracted keywords for the post-analysis review modal."""
+    sb = _sb()
+    paper = (sb.table("papers")
+               .select("*")
+               .eq("id", paper_id).execute().data or [None])[0]
+    if not paper or paper["user_id"] != user_id:
+        raise HTTPException(404)
+    kws = (sb.table("keywords").select("*")
+             .eq("paper_id", paper_id)
+             .order("confidence", desc=True)
+             .execute().data or [])
+
+    field_val    = paper.get("field")
+    field_conf   = paper.get("field_confidence")
+    field_scores = paper.get("field_scores") or {}
+
+    # If field was never detected (old papers) or returned "Unknown", re-detect now
+    if not field_val or field_val == "Unknown":
+        kw_names = [kw.get("normalized_name") or kw.get("keyword_name") or "" for kw in kws]
+        try:
+            f_name, f_conf, f_scores = detect_field({
+                "title":           paper.get("title") or "",
+                "author_keywords": kw_names,
+            })
+            if f_name and f_name != "Unknown":
+                field_val    = f_name
+                field_conf   = f_conf
+                field_scores = f_scores
+        except Exception:
+            pass
+
+    return {
+        "paper_id":         paper_id,
+        "title":            paper.get("title") or "",
+        "field":            field_val,
+        "field_confidence": field_conf,
+        "field_scores":     field_scores,
+        "keywords":         [_kw_to_dict(k) for k in kws],
+        "theme":            paper.get("theme"),
+        "concept":          paper.get("concept"),
+    }
+
+
+@app.post("/api/papers/{paper_id}/confirm")
+def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_upload)):
+    """Apply user edits from the review modal and mark paper as confirmed."""
+    sb = _sb()
+    paper = (sb.table("papers").select("id, user_id")
+               .eq("id", paper_id).execute().data or [None])[0]
+    if not paper or paper["user_id"] != user_id:
+        raise HTTPException(404)
+
+    meta: dict = {}
+    if body.field   is not None: meta["field"]   = body.field
+    if body.theme   is not None: meta["theme"]   = body.theme
+    if body.concept is not None: meta["concept"] = body.concept
+    if meta:
+        sb.table("papers").update(meta).eq("id", paper_id).execute()
+
+    for kw in body.keywords:
+        if not kw.include:
+            with contextlib.suppress(Exception):
+                sb.table("relations").update({"source_keyword_id": None}).eq("source_keyword_id", kw.id).execute()
+            with contextlib.suppress(Exception):
+                sb.table("relations").update({"target_keyword_id": None}).eq("target_keyword_id", kw.id).execute()
+            with contextlib.suppress(Exception):
+                sb.table("keywords").delete().eq("id", kw.id).execute()
+        else:
+            sb.table("keywords").update({"category": kw.category}).eq("id", kw.id).execute()
+
+    sb.table("papers").update({"status": "confirmed"}).eq("id", paper_id).execute()
+    return {"ok": True}
 
 
 # ── Import (upload) endpoint ──────────────────────────────────────────────────
@@ -481,6 +885,7 @@ async def upload_paper(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
     authorization: str = Header(None),
+    _rl: None = Depends(_rl_upload),
 ):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are accepted.")
@@ -564,7 +969,7 @@ def update_paper(paper_id: int, data: PaperUpdate, user_id: str = Depends(get_cu
 
 
 @app.delete("/api/papers/{paper_id}")
-def delete_paper(paper_id: int, user_id: str = Depends(get_current_user)):
+def delete_paper(paper_id: int, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     res = _sb().table("papers").select("pdf_path").eq("id", paper_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(404, "Paper not found")
@@ -592,7 +997,7 @@ def reorder_keywords(paper_id: int, items: list[ReorderItem], user_id: str = Dep
 
 
 @app.post("/api/papers/{paper_id}/keywords")
-def create_keyword(paper_id: int, data: KeywordCreate, user_id: str = Depends(get_current_user)):
+def create_keyword(paper_id: int, data: KeywordCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     _assert_paper_owner(paper_id, user_id)
     res = _sb().table("keywords").insert({
         "paper_id":        paper_id,
@@ -637,7 +1042,7 @@ def reorder_relations(paper_id: int, items: list[ReorderItem], user_id: str = De
 
 
 @app.post("/api/papers/{paper_id}/relations")
-def create_relation(paper_id: int, data: RelationCreate, user_id: str = Depends(get_current_user)):
+def create_relation(paper_id: int, data: RelationCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     _assert_paper_owner(paper_id, user_id)
     res = _sb().table("relations").insert({
         "paper_id":          paper_id,
@@ -697,7 +1102,7 @@ def reorder_metrics(paper_id: int, items: list[ReorderItem], user_id: str = Depe
 
 
 @app.post("/api/papers/{paper_id}/metrics")
-def create_metric(paper_id: int, data: MetricCreate, user_id: str = Depends(get_current_user)):
+def create_metric(paper_id: int, data: MetricCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     _assert_paper_owner(paper_id, user_id)
     res = _sb().table("metrics").insert({
         "paper_id":    paper_id,
@@ -872,6 +1277,10 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
     positions_r  = (_sb().table("map_positions").select("*").eq("user_id", user_id).execute().data or [])
     custom_nodes = (_sb().table("map_custom_nodes").select("*").eq("user_id", user_id).execute().data or [])
     map_edges    = (_sb().table("map_edges").select("*").eq("user_id", user_id).execute().data or [])
+    try:
+        map_groups = (_sb().table("map_groups").select("*").eq("user_id", user_id).execute().data or [])
+    except Exception:
+        map_groups = []
 
     positions = {p["node_id"]: p for p in positions_r}
 
@@ -892,10 +1301,14 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
         for nm, v in norm_map.items() if len(v["paper_ids"]) >= 2
     ]
 
-    # Per-paper keyword norms map
+    # Per-paper keyword norms map + category map
     paper_kw_norms: dict[int, list[str]] = defaultdict(list)
+    paper_kw_cats:  dict[int, dict[str, str]] = defaultdict(dict)
     for kw in all_kws:
-        paper_kw_norms[kw["paper_id"]].append((kw.get("normalized_name") or "").lower())
+        norm = (kw.get("normalized_name") or "").lower()
+        paper_kw_norms[kw["paper_id"]].append(norm)
+        if norm:
+            paper_kw_cats[kw["paper_id"]][norm] = kw.get("category") or "Other"
 
     result_papers = []
     for paper in papers:
@@ -913,10 +1326,12 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
             "year":         paper.get("year"),
             "materials":    materials,
             "top_keywords": top_kws,
-            "keyword_norms": paper_kw_norms[paper["id"]],
+            "keyword_norms":      paper_kw_norms[paper["id"]],
+            "keyword_categories": dict(paper_kw_cats[paper["id"]]),
             "pos_x":        pos["pos_x"] if pos else None,
             "pos_y":        pos["pos_y"] if pos else None,
             "expanded":     expanded,
+            "field":        paper.get("field"),
         }
         if expanded:
             full_kws = (_sb().table("keywords").select("*").eq("paper_id", paper["id"]).execute().data or [])
@@ -941,6 +1356,8 @@ def get_map_canvas(user_id: str = Depends(get_current_user)):
                            "pos_x": cn["pos_x"], "pos_y": cn["pos_y"]} for cn in custom_nodes],
         "edges":         [{"id": e["id"], "source_id": e["source_id"], "target_id": e["target_id"],
                            "relation_type": e["relation_type"], "label": e["label"]} for e in map_edges],
+        "groups":        [{"id": str(g["id"]), "name": g["name"], "color": g["color"],
+                           "paper_ids": g.get("paper_ids") or []} for g in map_groups],
         "keyword_stats": keyword_stats,
         "category_colors": CATEGORY_COLORS,
     }
@@ -958,7 +1375,7 @@ def save_map_positions(items: list[MapPositionItem], user_id: str = Depends(get_
 
 
 @app.post("/api/map-custom-nodes")
-def create_custom_node(data: CustomNodeCreate, user_id: str = Depends(get_current_user)):
+def create_custom_node(data: CustomNodeCreate, user_id: str = Depends(get_current_user), _rl: None = Depends(_rl_write)):
     res = _sb().table("map_custom_nodes").insert({
         "user_id": user_id, "label": data.label, "category": data.category,
         "description": data.description, "color": data.color, "pos_x": data.pos_x, "pos_y": data.pos_y,
@@ -1001,3 +1418,284 @@ def update_map_edge(edge_id: int, data: MapEdgeUpdate, user_id: str = Depends(ge
 def delete_map_edge(edge_id: int, user_id: str = Depends(get_current_user)):
     _sb().table("map_edges").delete().eq("id", edge_id).eq("user_id", user_id).execute()
     return {"deleted": edge_id}
+
+
+# ── Map Overview (Theme → Concept hierarchy) ─────────────────────────────────
+# Supabase migration required:
+#   ALTER TABLE papers ADD COLUMN IF NOT EXISTS theme text;
+#   ALTER TABLE papers ADD COLUMN IF NOT EXISTS concept text;
+
+_THEME_COLORS = [
+    "#8b5cf6", "#3b82f6", "#06b6d4", "#22c55e",
+    "#f59e0b", "#f97316", "#ec4899", "#14b8a6",
+    "#a855f7", "#84cc16",
+]
+
+_THEME_RULES: dict[str, str] = {
+    "ferroelectric":       "Ferroelectric Materials",
+    "piezoelectric":       "Piezoelectric Materials",
+    "nanogenerator":       "Energy Harvesting",
+    "triboelectric":       "Energy Harvesting",
+    "energy harvesting":   "Energy Harvesting",
+    "energy storage":      "Energy Storage",
+    "li-ion":              "Energy Storage",
+    "lithium ion":         "Energy Storage",
+    "battery":             "Energy Storage",
+    "supercapacitor":      "Energy Storage",
+    "sensor":              "Sensors & Actuators",
+    "actuator":            "Sensors & Actuators",
+    "photovoltaic":        "Solar Energy",
+    "solar cell":          "Solar Energy",
+    "perovskite solar":    "Solar Energy",
+    "catalyst":            "Catalysis",
+    "photocatalyst":       "Catalysis",
+    "electrocatalyst":     "Catalysis",
+    "graphene":            "Carbon-based Materials",
+    "carbon nanotube":     "Carbon-based Materials",
+    "nanomaterial":        "Nanomaterials",
+    "nanoparticle":        "Nanomaterials",
+    "quantum dot":         "Quantum Materials",
+    "quantum well":        "Quantum Materials",
+    "superconductor":      "Superconductivity",
+    "superconducting":     "Superconductivity",
+    "ferromagnetic":       "Magnetic Materials",
+    "magnetic material":   "Magnetic Materials",
+    "spintronic":          "Spintronics",
+    "spin transport":      "Spintronics",
+    "dielectric":          "Dielectrics",
+    "polymer":             "Polymer Materials",
+    "composite material":  "Composite Materials",
+    "interface engineering": "Interface Physics",
+    "heterointerface":     "Interface Physics",
+    "thin film":           "Thin Film Technology",
+    "two-dimensional":     "2D Materials",
+    "2d material":         "2D Materials",
+    "heterostructure":     "2D Materials",
+    "photonic":            "Photonics",
+    "optical waveguide":   "Photonics",
+    "drug delivery":       "Biomedical Applications",
+    "bioimaging":          "Biomedical Applications",
+    "semiconductor":       "Semiconductor Devices",
+    "transistor":          "Semiconductor Devices",
+    "neuromorphic":        "Neuromorphic Computing",
+    "memristor":           "Neuromorphic Computing",
+}
+
+_GENERIC_WORDS = frozenset({
+    "study", "effect", "property", "properties", "performance", "material",
+    "materials", "method", "methods", "result", "results", "analysis",
+    "investigation", "behavior", "structure", "structures", "based", "using",
+    "novel", "high", "new", "improved", "enhanced", "synthesis", "fabrication",
+    "preparation", "characterization", "measurement", "experimental",
+    "theoretical", "review", "recent", "advanced", "via", "toward", "highly",
+    "efficient", "large", "small", "first", "various", "different", "application",
+})
+
+@app.get("/api/map-overview")
+def get_map_overview(user_id: str = Depends(get_current_user)):
+    sb = _sb()
+    papers = (sb.table("papers")
+                .select("id,title,year,field,theme,concept")
+                .eq("user_id", user_id).execute().data or [])
+    if not papers:
+        return {"themes": []}
+
+    paper_ids = [p["id"] for p in papers]
+    all_kws = (sb.table("keywords")
+                 .select("paper_id,keyword_name,normalized_name,confidence")
+                 .in_("paper_id", paper_ids).execute().data or [])
+    all_mets = (sb.table("metrics")
+                  .select("paper_id,metric_name,value,unit")
+                  .in_("paper_id", paper_ids).execute().data or [])
+
+    kws_by: dict = defaultdict(list)
+    for kw in all_kws:
+        kws_by[kw["paper_id"]].append(kw)
+    mets_by: dict = defaultdict(list)
+    for m in all_mets:
+        mets_by[m["paper_id"]].append(m)
+
+    def _cap(s: str) -> str:
+        s = (s or "").strip()
+        return s[0].upper() + s[1:] if s else s
+
+    theme_map: dict[str, dict] = {}
+    for paper in papers:
+        # Use lowercase key so "ferroelectric" and "Ferroelectric" merge into one node
+        theme_raw   = (paper.get("theme")   or "").strip()
+        concept_raw = (paper.get("concept") or "").strip()
+        theme_key   = theme_raw.lower()   or "uncategorized"
+        concept_key = concept_raw.lower() or "general"
+        theme_name  = _cap(theme_raw)   or "Uncategorized"
+        concept_name = _cap(concept_raw) or "General"
+
+        if theme_key not in theme_map:
+            theme_map[theme_key] = {"name": theme_name, "papers": [], "conceptMap": {}}
+
+        kws  = kws_by[paper["id"]]
+        mets = mets_by[paper["id"]]
+        top_kws = [_cap((kw.get("keyword_name") or kw.get("normalized_name") or "").strip())
+                   for kw in sorted(kws, key=lambda k: -(k.get("confidence") or 0))
+                   if kw.get("normalized_name") or kw.get("keyword_name")][:6]
+        top_mets = [{"name": m.get("metric_name", ""), "value": m.get("value", ""), "unit": m.get("unit", "")}
+                    for m in mets if m.get("metric_name")][:4]
+
+        entry = {
+            "id":      paper["id"],
+            "title":   (paper.get("title") or "Untitled").strip(),
+            "year":    paper.get("year"),
+            "field":   paper.get("field"),
+            "theme":   theme_name,
+            "concept": concept_name,
+            "keywords": top_kws,
+            "metrics":  top_mets,
+        }
+        theme_map[theme_key]["papers"].append(entry)
+        theme_map[theme_key]["conceptMap"].setdefault(concept_key, {"name": concept_name, "papers": []})["papers"].append(entry)
+
+    result = []
+    for i, (theme_name, td) in enumerate(sorted(theme_map.items(), key=lambda x: -len(x[1]["papers"]))):
+        concepts = [
+            {"name": cn, "paper_count": len(cd["papers"]), "papers": cd["papers"]}
+            for cn, cd in sorted(td["conceptMap"].items(), key=lambda x: -len(x[1]["papers"]))
+        ]
+        result.append({
+            "name":        theme_name,
+            "color":       _THEME_COLORS[i % len(_THEME_COLORS)],
+            "paper_count": len(td["papers"]),
+            "concepts":    concepts,
+        })
+    return {"themes": result}
+
+
+@app.get("/api/papers/{paper_id}/recommend-theme-concept")
+def recommend_theme_concept(paper_id: int, user_id: str = Depends(get_current_user)):
+    """Score theme and concept candidates based on title + extracted keywords."""
+    sb = _sb()
+    paper = (sb.table("papers").select("id,title,user_id,field,field_confidence,field_scores")
+               .eq("id", paper_id).execute().data or [None])[0]
+    if not paper or paper["user_id"] != user_id:
+        raise HTTPException(404)
+
+    kws = (sb.table("keywords")
+             .select("keyword_name,normalized_name,category,confidence")
+             .eq("paper_id", paper_id)
+             .order("confidence", desc=True)
+             .execute().data or [])
+
+    if not kws and not paper.get("title"):
+        return {"paper_id": paper_id, "themes": [], "concepts": [], "field": None}
+
+    title    = (paper.get("title") or "").strip()
+    title_low = title.lower()
+    kw_names = [
+        (kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
+        for kw in kws
+    ]
+    kw_text  = " ".join(kw_names).lower()
+
+    # Spaces between repetitions so multi-word patterns aren't broken
+    text_low = f"{title_low} {title_low} {title_low} {kw_text} {kw_text}"
+
+    # ── Score themes ──────────────────────────────────────────────────────────
+    theme_scores: dict[str, float] = {}
+    for pattern, theme_name in _THEME_RULES.items():
+        if pattern in text_low:
+            loc  = 5 if pattern in title_low else (4 if pattern in kw_text else 1)
+            freq = min(4, text_low.count(pattern))
+            theme_scores[theme_name] = theme_scores.get(theme_name, 0) + loc + freq
+
+    # ── Score concepts from extracted keywords ────────────────────────────────
+    concept_scores: dict[str, float] = {}
+    for kw in kws:
+        name = (kw.get("normalized_name") or kw.get("keyword_name") or "").strip()
+        if not name or len(name) < 4:
+            continue
+        name_low = name.lower()
+        # Skip pure generic words
+        if name_low in _GENERIC_WORDS:
+            continue
+        # Skip names that start with a generic word and are only 1 token
+        words = name_low.split()
+        if len(words) == 1 and words[0] in _GENERIC_WORDS:
+            continue
+        conf = float(kw.get("confidence") or 0.5)
+        concept_scores[name] = max(concept_scores.get(name, 0.0), conf)
+
+    def _normalize(scores: dict, top: int) -> list[dict]:
+        if not scores:
+            return []
+        mv = max(scores.values()) or 1.0
+        ranked = sorted(scores.items(), key=lambda x: -x[1])
+        return [{"name": k, "score": min(99, round(v / mv * 100))} for k, v in ranked][:top]
+
+    # Field recommendation: use stored value, or re-detect from title + keywords
+    rec_field = paper.get("field") or None
+    rec_field_scores = paper.get("field_scores") or {}
+    if not rec_field:
+        sections = {
+            "title":           paper.get("title") or "",
+            "author_keywords": [kw.get("normalized_name") or kw.get("keyword_name") or "" for kw in kws],
+        }
+        try:
+            detected_name, detected_conf, detected_scores = detect_field(sections)
+            if detected_name and detected_name != "Unknown":
+                rec_field = detected_name
+                rec_field_scores = detected_scores
+        except Exception:
+            pass
+
+    return {
+        "paper_id":    paper_id,
+        "themes":      _normalize(theme_scores, 3),
+        "concepts":    _normalize(concept_scores, 5),
+        "field":       rec_field,
+        "field_scores": rec_field_scores,
+    }
+
+
+@app.put("/api/papers/{paper_id}/theme-concept")
+def set_theme_concept(paper_id: int, body: ThemeConceptBody, user_id: str = Depends(get_current_user)):
+    paper = (_sb().table("papers").select("id,user_id")
+               .eq("id", paper_id).execute().data or [None])[0]
+    if not paper or paper["user_id"] != user_id:
+        raise HTTPException(404)
+    update: dict = {}
+    if body.theme   is not None: update["theme"]   = body.theme
+    if body.concept is not None: update["concept"] = body.concept
+    if update:
+        _sb().table("papers").update(update).eq("id", paper_id).execute()
+    return {"ok": True}
+
+
+# ── Map Groups ────────────────────────────────────────────────────────────────
+
+@app.get("/api/map-groups")
+def list_map_groups(user_id: str = Depends(get_current_user)):
+    rows = (_sb().table("map_groups").select("*").eq("user_id", user_id).execute().data or [])
+    return [{"id": str(r["id"]), "name": r["name"], "color": r["color"],
+             "paper_ids": r.get("paper_ids") or []} for r in rows]
+
+
+@app.post("/api/map-groups")
+def create_map_group(data: MapGroupCreate, user_id: str = Depends(get_current_user)):
+    res = _sb().table("map_groups").insert({
+        "user_id": user_id, "name": data.name,
+        "color": data.color, "paper_ids": data.paper_ids,
+    }).execute()
+    r = res.data[0]
+    return {"id": str(r["id"]), "name": r["name"], "color": r["color"],
+            "paper_ids": r.get("paper_ids") or []}
+
+
+@app.put("/api/map-groups/{group_id}")
+def update_map_group(group_id: str, data: MapGroupUpdate, user_id: str = Depends(get_current_user)):
+    patch = {k: v for k, v in data.model_dump().items() if v is not None}
+    _sb().table("map_groups").update(patch).eq("id", group_id).eq("user_id", user_id).execute()
+    return {"ok": True}
+
+
+@app.delete("/api/map-groups/{group_id}")
+def delete_map_group(group_id: str, user_id: str = Depends(get_current_user)):
+    _sb().table("map_groups").delete().eq("id", group_id).eq("user_id", user_id).execute()
+    return {"deleted": group_id}

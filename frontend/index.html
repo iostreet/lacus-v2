@@ -3,8 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lacus — Paper Analysis</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=5" />
+  <title>Lacus — My Papers</title>
+  <meta name="description" content="Manage your personal research knowledge space. Register papers, explore keyword connections, and build your research flow map with Lacus." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta property="og:title" content="Lacus — My Papers" />
+  <meta property="og:description" content="Your personal research knowledge space on Lacus." />
+  <meta property="og:image" content="/static/og-image.png" />
+  <link rel="icon" href="/static/favicon.ico" />
+  <link rel="stylesheet" href="/static/css/style.css?v=22" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -24,9 +30,14 @@
       } else {
         window._authToken = session.access_token;
         window._authUser  = session.user;
-        // Show user email in header
-        const emailEl = document.getElementById('header-user-email');
-        if (emailEl) emailEl.textContent = session.user.email || '';
+        const nameEl = document.getElementById('header-username-btn');
+        if (nameEl) {
+          const u = session.user;
+          nameEl.textContent = u.user_metadata?.username
+            || u.user_metadata?.name
+            || u.user_metadata?.full_name
+            || (u.email ? u.email.split('@')[0] : 'Account');
+        }
       }
     });
     window._sb.auth.onAuthStateChange((event, session) => {
@@ -50,14 +61,14 @@
     <span class="site-nav-brand-name">Lacus</span>
   </a>
   <div class="site-nav-links">
-    <a href="/"          class="site-nav-link">Home</a>
-    <a href="/#features" class="site-nav-link">Features</a>
-    <a href="/#privacy"  class="site-nav-link">Privacy</a>
-    <a href="/board"     class="site-nav-link">Community</a>
-    <a href="/app"       class="site-nav-link active">Papers</a>
+    <a href="/"         class="site-nav-link">Home</a>
+    <a href="/features" class="site-nav-link">Feature</a>
+    <a href="/privacy"  class="site-nav-link">Privacy</a>
+    <a href="/board"    class="site-nav-link">Community</a>
+    <a href="/app"      class="site-nav-link active">Papers</a>
   </div>
   <div class="site-nav-auth">
-    <span id="header-user-email" class="site-nav-email"></span>
+    <button id="header-username-btn" class="site-nav-username-btn" title="Account settings"></button>
     <button class="site-nav-link" id="header-signout-btn">Sign Out</button>
   </div>
 </nav>
@@ -104,7 +115,6 @@
           </div>
         </div>
         <span class="paper-count-badge" id="paper-count-badge">0 papers</span>
-        <input class="search-input" id="search-input" type="text" placeholder="Search papers..." />
         <div class="view-toggle" id="view-toggle">
           <button class="view-toggle-btn active" id="view-card-btn" title="Card View">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -128,16 +138,6 @@
     </div>
     <div class="papers-grid" id="papers-grid">
       <!-- Paper cards injected here -->
-    </div>
-    <!-- Keyword filter bar (Map View only) -->
-    <div class="kw-filter-bar hidden" id="kw-filter-bar">
-      <span class="kw-filter-label">Filter:</span>
-      <div class="kw-filter-chips" id="kw-filter-chips"></div>
-      <div class="kw-filter-custom-wrap">
-        <input type="text" class="kw-filter-input" id="kw-custom-input" placeholder="Add keyword…" />
-        <button class="btn btn-sm" id="kw-custom-add">+</button>
-      </div>
-      <button class="btn btn-sm kw-filter-clear" id="kw-filter-clear">Clear</button>
     </div>
     <!-- Map View container -->
     <div class="papers-map hidden" id="papers-map"></div>
@@ -207,6 +207,13 @@
               <button class="btn btn-sm btn-primary" id="save-memo-btn">Save Memo</button>
             </div>
           </div>
+          <div class="overview-card" id="share-thoughts-card">
+            <h3>Share Thoughts</h3>
+            <div id="ov-doi-comments" style="display:flex;flex-direction:column;min-height:40px;max-height:420px;overflow-y:auto;padding-right:4px;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:6px 10px">
+              <div style="color:var(--text-muted);font-size:.82rem">Loading discussions…</div>
+            </div>
+            <div id="ov-doi-input" style="margin-top:10px"></div>
+          </div>
         </div>
       </div>
 
@@ -214,6 +221,7 @@
       <div class="tab-pane" id="tab-keywords">
         <div class="table-toolbar">
           <span class="toolbar-label" id="kw-count-label">Keywords</span>
+          <button class="btn btn-sm btn-rereview" id="kw-rereview-btn">↺ Re-review</button>
         </div>
         <div class="table-bulk-bar hidden" id="kw-bulk-bar">
           <span id="kw-bulk-count">0 selected</span>
@@ -300,15 +308,32 @@
 
       <!-- Story Map tab -->
       <div class="tab-pane" id="tab-storymap">
-        <div class="storymap-toolbar">
-          <div class="legend" id="storymap-legend"></div>
-          <div class="storymap-btns">
-            <button class="btn btn-sm" id="fit-graph-btn">Fit</button>
-            <button class="btn btn-sm" id="reset-layout-btn">Re-layout</button>
-            <button class="btn btn-sm btn-primary" id="refresh-graph-btn" title="Reload graph from latest saved data">↻ Refresh</button>
+        <!-- Two-panel layout -->
+        <div class="sm-panels">
+          <div class="sm-concept-panel">
+            <div class="sm-panel-header">Concepts</div>
+            <div class="sm-concept-scroll" id="sm-concept-scroll"></div>
+          </div>
+          <div class="sm-rel-panel">
+            <div class="sm-panel-header">
+              <span>Pipeline Graph</span>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button class="btn btn-sm btn-primary" id="refresh-graph-btn">↻ Refresh</button>
+                <button class="btn btn-sm btn-primary" id="sm-add-rel-btn">+ Add Relation</button>
+              </div>
+            </div>
+            <div class="pg-canvas" id="sm-pg-canvas">
+              <div class="pg-viewport" id="sm-pg-viewport">
+                <svg class="pg-svg" id="sm-pg-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+              </div>
+              <div class="pg-controls">
+                <button class="pg-ctrl-btn" id="pg-zoom-in"  title="Zoom in">+</button>
+                <button class="pg-ctrl-btn" id="pg-zoom-out" title="Zoom out">−</button>
+                <button class="pg-ctrl-btn" id="pg-fit-btn"  title="Fit all">⊡</button>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="storymap-container" id="storymap-container"></div>
       </div>
 
       <!-- Summary tab -->
@@ -382,12 +407,43 @@
   <div class="map-node-panel-body" id="map-node-panel-body">
     <div style="color:var(--text-muted);font-size:0.8rem">Loading…</div>
   </div>
-  <div class="map-node-panel-footer">
-    <button class="btn btn-sm btn-primary" id="map-node-panel-open">논문 전체 보기 →</button>
+  <div class="map-node-panel-footer" id="map-node-panel-footer">
+    <button class="btn btn-sm btn-primary" id="map-node-panel-open">View Full Paper →</button>
   </div>
 </div>
 
 <div class="toast-container" id="toast-container"></div>
+
+<!-- ══════════════════ Welcome Tutorial Modal ══════════════════ -->
+<div id="wt-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.84);backdrop-filter:blur(10px);z-index:600;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#0d0d1a;border:1px solid rgba(168,85,247,0.3);border-radius:22px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.6)">
+
+    <!-- top progress bar -->
+    <div style="height:3px;background:rgba(255,255,255,0.06)">
+      <div id="wt-bar" style="height:100%;background:linear-gradient(90deg,#7c3aed,#a855f7);transition:width .35s ease;width:25%"></div>
+    </div>
+
+    <!-- step content -->
+    <div id="wt-body" style="padding:38px 40px 24px;min-height:300px"></div>
+
+    <!-- footer -->
+    <div style="padding:0 40px 30px;display:flex;align-items:center;justify-content:space-between">
+      <div id="wt-dots" style="display:flex;gap:7px"></div>
+      <div style="display:flex;gap:10px">
+        <button id="wt-prev-btn"
+          onclick="wtNav(-1)"
+          style="padding:9px 20px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#94a3b8;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;display:none">
+          ← Back
+        </button>
+        <button id="wt-next-btn"
+          onclick="wtNav(1)"
+          style="padding:9px 22px;background:#a855f7;border:none;border-radius:10px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;font-family:inherit">
+          Next →
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Admin overlay -->
 <div class="admin-overlay hidden" id="admin-overlay">
@@ -405,10 +461,317 @@
   </div>
 </div>
 
+<!-- ═══════════════════════ REVIEW MODAL ═══════════════════════ -->
+<div class="rv-overlay hidden" id="rv-overlay">
+  <div class="rv-box" id="rv-box">
+    <div class="rv-header">
+      <div>
+        <div class="rv-header-title">Analysis Complete — Review &amp; Save</div>
+        <div class="rv-paper-title" id="rv-paper-title"></div>
+      </div>
+      <button class="rv-close-btn" id="rv-close-btn" title="Later">✕</button>
+    </div>
+
+    <div class="rv-body">
+      <!-- Research Field — TOP MOST -->
+      <div class="rv-section" id="rv-field-section">
+        <div class="rv-section-label">Research Field
+          <span class="rv-tc-loading hidden" id="rv-field-loading">analysing…</span>
+        </div>
+        <input class="rv-tc-input" id="rv-field-input" placeholder="e.g. Materials Science" autocomplete="off" />
+        <div class="rv-tc-alts" id="rv-field-alts"></div>
+      </div>
+
+      <!-- Theme & Concept — TOP -->
+      <div class="rv-section" id="rv-tc-section">
+        <div class="rv-section-label">Theme &amp; Concept
+          <span class="rv-tc-loading hidden" id="rv-tc-loading">analysing…</span>
+        </div>
+        <div class="rv-tc-pair">
+          <div class="rv-tc-field">
+            <div class="rv-tc-sublabel">Theme</div>
+            <input class="rv-tc-input" id="rv-tc-theme-input" placeholder="e.g. Ferroelectric Materials" autocomplete="off" />
+            <div class="rv-tc-alts" id="rv-tc-theme-alts"></div>
+          </div>
+          <div class="rv-tc-field">
+            <div class="rv-tc-sublabel">Concept</div>
+            <input class="rv-tc-input" id="rv-tc-concept-input" placeholder="e.g. Nanostructures" autocomplete="off" />
+            <div class="rv-tc-alts" id="rv-tc-concept-alts"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keywords by category -->
+      <div class="rv-section">
+        <div class="rv-section-label">Keywords by Category
+          <span class="rv-kw-hint">Unchecked items will not be saved to DB</span>
+        </div>
+        <div id="rv-kw-groups"></div>
+        <div class="rv-add-kw-row">
+          <input class="mini-input" id="rv-new-kw-input" placeholder="Add keyword…" />
+          <select class="mini-input" id="rv-new-kw-cat">
+            <option value="Material">Material</option>
+            <option value="Structure">Structure</option>
+            <option value="Property">Property</option>
+            <option value="Method">Method</option>
+            <option value="Application">Application</option>
+            <option value="Metric">Metric</option>
+            <option value="Other">Other</option>
+          </select>
+          <button class="btn btn-sm" id="rv-add-kw-btn">+ Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="rv-footer">
+      <span class="rv-footer-hint" id="rv-footer-hint"></span>
+      <div class="rv-footer-btns">
+        <button class="btn btn-sm" id="rv-later-btn">Later</button>
+        <button class="btn btn-sm btn-primary" id="rv-save-btn">Save to DB →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ PROFILE MODAL ══════════════════════ -->
+<div class="prof-overlay hidden" id="prof-overlay">
+  <div class="prof-box" id="prof-box">
+    <div class="prof-header">
+      <div class="prof-avatar" id="prof-avatar">—</div>
+      <div class="prof-identity">
+        <div class="prof-display-name" id="prof-display-name"></div>
+        <div class="prof-email-label"  id="prof-email-label"></div>
+      </div>
+      <button class="prof-close" id="prof-close-btn" title="Close">✕</button>
+    </div>
+
+    <div class="prof-body">
+      <div class="prof-section">
+        <div class="prof-label">Username</div>
+        <div class="prof-row">
+          <input class="prof-input" id="prof-username-input" placeholder="Your username" autocomplete="off" />
+          <button class="btn btn-sm btn-primary" id="prof-save-username">Save</button>
+        </div>
+        <div class="prof-hint" id="prof-username-msg"></div>
+      </div>
+
+      <div class="prof-section">
+        <div class="prof-label">Email</div>
+        <div class="prof-row">
+          <input class="prof-input" id="prof-email-input" type="email" placeholder="New email address" autocomplete="off" />
+          <button class="btn btn-sm btn-primary" id="prof-save-email">Update</button>
+        </div>
+        <div class="prof-hint">A confirmation link will be sent to the new address.</div>
+        <div class="prof-hint" id="prof-email-msg"></div>
+      </div>
+
+      <div class="prof-section">
+        <div class="prof-label">Change Password</div>
+        <div class="prof-row">
+          <input class="prof-input" id="prof-pw-input" type="password" placeholder="New password (min 8 chars)" autocomplete="new-password" />
+          <button class="btn btn-sm btn-primary" id="prof-save-pw">Change</button>
+        </div>
+        <div class="prof-hint" id="prof-pw-msg"></div>
+      </div>
+
+      <div class="prof-section prof-section-danger">
+        <button class="btn btn-sm prof-signout-btn" id="prof-signout-btn">Sign Out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="hover-tooltip hidden" id="hover-tooltip"></div>
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
-<script src="/static/js/mapview.js?v=3"></script>
-<script src="/static/js/app.js?v=3"></script>
+<script src="/static/js/mapview.js?v=10"></script>
+<script src="/static/js/app.js?v=17"></script>
+
+<script>
+// ── Welcome tutorial ─────────────────────────────────────────────────────────
+(function () {
+  const ov = document.getElementById('wt-overlay');
+  const body = document.getElementById('wt-body');
+  const bar  = document.getElementById('wt-bar');
+  const dots = document.getElementById('wt-dots');
+  const prev = document.getElementById('wt-prev-btn');
+  const next = document.getElementById('wt-next-btn');
+
+  let step = 0;
+  const TOTAL = 4;
+
+  function steps(field, name) {
+    return [
+      // Step 0 — Welcome
+      {
+        icon: '👋',
+        title: `Welcome to Lacus, ${name}!`,
+        html: `
+          <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:18px">
+            Lacus is a <strong style="color:#e2d9f3">paper-based knowledge community</strong>
+            where your research takes shape as a living knowledge graph.
+          </p>
+          <div style="background:rgba(168,85,247,0.07);border:1px solid rgba(168,85,247,0.18);border-radius:12px;padding:16px 20px">
+            <div style="font-size:.72rem;color:#a855f7;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px">Your Knowledge Graph Structure</div>
+            <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;font-size:.83rem">
+              <span style="background:rgba(124,58,237,0.3);border:1px solid #7c3aed;border-radius:6px;padding:5px 12px;color:#c4b5fd;font-weight:700">Field</span>
+              <span style="color:#475569;padding:0 6px;font-size:1rem">→</span>
+              <span style="background:rgba(109,40,217,0.25);border:1px solid #9333ea;border-radius:6px;padding:5px 12px;color:#c4b5fd">Theme</span>
+              <span style="color:#475569;padding:0 6px;font-size:1rem">→</span>
+              <span style="background:rgba(139,92,246,0.2);border:1px solid #c084fc;border-radius:6px;padding:5px 12px;color:#c4b5fd">Concept</span>
+              <span style="color:#475569;padding:0 6px;font-size:1rem">→</span>
+              <span style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:5px 12px;color:#94a3b8">Papers</span>
+            </div>
+            <p style="font-size:.78rem;color:#475569;margin-top:10px;margin-bottom:0">
+              <strong style="color:#94a3b8">${field || 'Your Field'}</strong> is your top-level group — the Field you selected when you signed up.
+            </p>
+          </div>`,
+      },
+      // Step 1 — Add Paper
+      {
+        icon: '📄',
+        title: 'Add Your First Paper',
+        html: `
+          <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:16px">
+            Click <strong style="color:#e2d9f3">+ Add Paper</strong> in the top-right to upload a PDF.
+            Lacus analyzes it and automatically suggests Themes, Concepts, and Keywords.
+          </p>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            ${[
+              ['1', 'Upload PDF', 'Drag and drop or click the upload button'],
+              ['2', 'AI Analysis', 'Lacus extracts structure: themes, concepts, keywords'],
+              ['3', 'Review & Edit', 'Read the paper carefully — refine the suggested keywords to build an accurate knowledge graph'],
+              ['4', 'Save', 'Your paper joins the Field → Theme → Concept → Papers hierarchy'],
+            ].map(([n, t, d]) => `
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div style="width:22px;height:22px;border-radius:50%;background:rgba(168,85,247,0.2);border:1px solid rgba(168,85,247,0.4);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:#a855f7;margin-top:2px">${n}</div>
+                <div>
+                  <div style="font-size:.85rem;font-weight:600;color:#e2d9f3">${t}</div>
+                  <div style="font-size:.78rem;color:#64748b;margin-top:2px">${d}</div>
+                </div>
+              </div>`).join('')}
+          </div>`,
+      },
+      // Step 2 — Card View
+      {
+        icon: '🗂️',
+        title: 'Card View',
+        html: `
+          <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:18px">
+            Browse all your registered papers in a clean card layout.
+          </p>
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+            ${[
+              ['📌', 'Quick overview', 'Title, year, journal, and author at a glance'],
+              ['🏷️', 'Keyword summary', 'See Material / Method / Application keyword counts'],
+              ['📝', 'Personal notes', 'Your private memo and relevance rating per paper'],
+              ['🔍', 'Search & filter', 'Filter by keyword category or relevance score'],
+            ].map(([ic, t, d]) => `
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <span style="font-size:1.1rem;line-height:1.4">${ic}</span>
+                <div>
+                  <div style="font-size:.85rem;font-weight:600;color:#e2d9f3">${t}</div>
+                  <div style="font-size:.78rem;color:#64748b;margin-top:2px">${d}</div>
+                </div>
+              </div>`).join('')}
+          </div>`,
+      },
+      // Step 3 — Map View + Get Started
+      {
+        icon: '🗺️',
+        title: 'Map View',
+        html: `
+          <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:18px">
+            Switch to Map View to visualize your papers as an interactive knowledge graph.
+          </p>
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
+            ${[
+              ['🔗', 'Connected nodes', 'Papers linked by shared themes and concepts'],
+              ['📐', 'Research flow', 'See upstream → downstream research direction at a glance'],
+              ['🖱️', 'Interactive', 'Click nodes to expand, drag to pan, scroll to zoom'],
+            ].map(([ic, t, d]) => `
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <span style="font-size:1.1rem;line-height:1.4">${ic}</span>
+                <div>
+                  <div style="font-size:.85rem;font-weight:600;color:#e2d9f3">${t}</div>
+                  <div style="font-size:.78rem;color:#64748b;margin-top:2px">${d}</div>
+                </div>
+              </div>`).join('')}
+          </div>
+          <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:10px;padding:14px 18px;text-align:center">
+            <p style="font-size:.82rem;color:#c4b5fd;margin:0">
+              The more papers you add, the richer your knowledge graph becomes. 🚀
+            </p>
+          </div>`,
+      },
+    ];
+  }
+
+  function renderDots() {
+    dots.innerHTML = '';
+    for (let i = 0; i < TOTAL; i++) {
+      const d = document.createElement('div');
+      d.style.cssText = `width:${i===step?'20px':'7px'};height:7px;border-radius:4px;background:${i===step?'#a855f7':'rgba(255,255,255,0.15)'};transition:all .25s`;
+      dots.appendChild(d);
+    }
+  }
+
+  function render(field, name) {
+    const s = steps(field, name)[step];
+    bar.style.width = `${((step + 1) / TOTAL) * 100}%`;
+    prev.style.display = step === 0 ? 'none' : '';
+    next.textContent = step === TOTAL - 1 ? 'Get Started 🚀' : 'Next →';
+    next.style.background = step === TOTAL - 1 ? '#059669' : '#a855f7';
+
+    body.innerHTML = `
+      <div style="font-size:2.2rem;margin-bottom:14px;line-height:1">${s.icon}</div>
+      <h2 style="font-size:1.25rem;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:14px">${s.title}</h2>
+      ${s.html}`;
+    renderDots();
+  }
+
+  window.wtNav = function(dir) {
+    step += dir;
+    if (step >= TOTAL) {
+      closeWelcome();
+      // click the upload button to guide first action
+      document.getElementById('upload-header-btn')?.click();
+      return;
+    }
+    step = Math.max(0, step);
+    render(window._wtField, window._wtName);
+  };
+
+  function closeWelcome() {
+    ov.style.display = 'none';
+    if (window._authUser?.id) {
+      localStorage.setItem(`lacus_welcomed_${window._authUser.id}`, '1');
+    }
+  }
+
+  function maybeShow() {
+    const user = window._authUser;
+    if (!user) { setTimeout(maybeShow, 300); return; }
+    const key = `lacus_welcomed_${user.id}`;
+    if (localStorage.getItem(key)) return;
+
+    const meta  = user.user_metadata || {};
+    const field = meta.research_field || meta.researchField || '';
+    const name  = meta.username || meta.name || meta.full_name || user.email?.split('@')[0] || 'Researcher';
+
+    window._wtField = field;
+    window._wtName  = name;
+
+    step = 0;
+    render(field, name);
+    ov.style.display = 'flex';
+  }
+
+  // Close on backdrop click
+  ov.addEventListener('click', e => { if (e.target === ov) closeWelcome(); });
+
+  setTimeout(maybeShow, 600);
+})();
+</script>
 </body>
 </html>

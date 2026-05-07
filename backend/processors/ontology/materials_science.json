@@ -1,0 +1,85 @@
+{
+  "field": "Materials Science",
+  "version": "1.0",
+  "terms": {
+    "objects": [
+      "pzt", "batio3", "pvdf", "mxene", "graphene", "perovskite",
+      "ferroelectric", "piezoelectric", "multiferroic", "ceramic",
+      "polymer", "thin film", "nanocomposite", "nanoparticle",
+      "nanotube", "nanowire", "nanorod", "heterostructure", "core-shell",
+      "bfo", "bifeo3", "knn", "pmn-pt", "aln", "zno", "hfo2",
+      "hafnium oxide", "lead titanate", "barium titanate", "cnt",
+      "carbon nanotube", "mos2", "boron nitride", "srtio3",
+      "oxide", "nitride", "carbide", "silicide", "alloy", "composite",
+      "epitaxial", "polycrystalline", "amorphous", "single crystal",
+      "quantum dot", "two-dimensional material", "2d material"
+    ],
+    "methods": [
+      "sol-gel", "hydrothermal", "chemical vapor deposition", "cvd",
+      "sputtering", "atomic layer deposition", "ald", "sintering",
+      "annealing", "electrospinning", "pulsed laser deposition", "pld",
+      "molecular beam epitaxy", "mbe", "screen printing",
+      "xrd", "x-ray diffraction", "sem", "scanning electron microscopy",
+      "tem", "transmission electron microscopy", "pfm",
+      "piezoresponse force microscopy", "raman spectroscopy", "ftir",
+      "nanoindentation", "p-e loop", "finite element", "dft",
+      "density functional theory", "molecular dynamics",
+      "impedance spectroscopy", "photolithography", "etching",
+      "magnetron sputtering", "spin coating", "tape casting",
+      "hot pressing", "spark plasma sintering", "co-precipitation",
+      "electrodeposition", "chemical etching", "thermal evaporation",
+      "x-ray photoelectron spectroscopy", "xps", "edx", "eds",
+      "afm", "atomic force microscopy", "thermogravimetric", "tga",
+      "differential scanning calorimetry", "dsc"
+    ],
+    "properties": [
+      "piezoelectric coefficient", "dielectric constant", "curie temperature",
+      "remnant polarization", "coercive field", "electromechanical coupling",
+      "bandgap", "thermal conductivity", "electrical conductivity",
+      "morphotropic phase boundary", "phase transition", "leakage current",
+      "pyroelectric coefficient", "flexoelectric coefficient",
+      "elastic modulus", "fracture toughness", "epitaxial strain",
+      "dielectric loss", "breakdown voltage", "resistivity",
+      "magnetic permeability", "saturation magnetization",
+      "magnetostriction", "giant magnetoresistance", "coercivity",
+      "remanence", "exchange coupling", "spin-orbit coupling",
+      "charge carrier mobility", "carrier concentration",
+      "surface energy", "wettability", "hardness", "yield strength",
+      "tensile strength", "fatigue", "creep", "corrosion resistance",
+      "photovoltaic efficiency", "optical transmittance", "refractive index"
+    ],
+    "metrics": [
+      "d33", "d31", "d15", "k33", "k31", "kt", "kp", "tc",
+      "figure of merit", "sensitivity", "power density", "energy density",
+      "g33", "g31", "qm", "pr", "ec", "voc", "jsc", "pce",
+      "dielectric permittivity", "loss tangent", "coupling coefficient",
+      "quality factor", "resonance frequency"
+    ],
+    "applications": [
+      "sensor", "actuator", "energy harvesting", "nanogenerator",
+      "transducer", "mems", "wearable", "biomedical",
+      "pressure sensor", "strain sensor", "acoustic emission",
+      "self-powered", "vibration energy harvester",
+      "data storage", "memory", "capacitor", "transistor",
+      "fuel cell", "battery", "supercapacitor", "solar cell",
+      "photocatalysis", "water splitting", "hydrogen production",
+      "coating", "structural material", "heat management",
+      "electromagnetic shielding", "catalysis"
+    ]
+  },
+  "aliases": {
+    "lead zirconate titanate": "PZT",
+    "polyvinylidene fluoride": "PVDF",
+    "bismuth ferrite": "BiFeO3",
+    "morphotropic phase boundary": "MPB",
+    "piezoelectric nanogenerator": "PENG",
+    "triboelectric nanogenerator": "TENG",
+    "potassium sodium niobate": "KNN",
+    "lead magnesium niobate": "PMN-PT",
+    "aluminum nitride": "AlN",
+    "zinc oxide": "ZnO",
+    "hafnium oxide": "HfO2",
+    "strontium titanate": "SrTiO3",
+    "molybdenum disulfide": "MoS2"
+  }
+}

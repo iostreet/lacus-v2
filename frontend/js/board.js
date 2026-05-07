@@ -23,8 +23,11 @@
     const area = document.getElementById('nav-auth');
     if (!area) return;
     if (session && session.user) {
+      const u = session.user;
+      const name = u.user_metadata?.username || u.user_metadata?.name || u.user_metadata?.full_name
+                || (u.email ? u.email.split('@')[0] : 'Account');
       area.innerHTML =
-        `<span class="site-nav-email">${esc(session.user.email || '')}</span>` +
+        `<span class="site-nav-email">${esc(name)}</span>` +
         `<button class="site-nav-link" onclick="signOut()">Sign Out</button>`;
     } else {
       area.innerHTML = `<a class="site-nav-link" href="/?signin=1">Sign In</a>`;
