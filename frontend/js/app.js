@@ -1651,6 +1651,8 @@ const _smBuildPipelineGraph = () => {
                      kwId: kw.id, confidence: kw.confidence, col, metrics, x:0, y:0 });
   });
 
+  const _orphanNid = name => `orphan_${(name||'').toLowerCase().trim().replace(/\s+/g,'_')}`;
+
   _smRelations.forEach(rel => {
     let srcKw = rel.source_keyword_id != null
       ? _smKeywords.find(k => k.id === rel.source_keyword_id) : null;
@@ -1659,20 +1661,20 @@ const _smBuildPipelineGraph = () => {
       ? _smKeywords.find(k => k.id === rel.target_keyword_id) : null;
     if (!tgtKw) tgtKw = _smFindKw(rel.target_name);
 
-    // If source/target not in keyword list, create orphan nodes so the edge is still visible
-    const srcNid = srcKw ? `kw_${srcKw.id}` : `orphan_src_${rel.id}`;
-    const tgtNid = tgtKw ? `kw_${tgtKw.id}` : `orphan_tgt_${rel.id}`;
+    // If source/target not in keyword list, create orphan nodes (deduplicated by name)
+    const srcNid = srcKw ? `kw_${srcKw.id}` : _orphanNid(rel.source_name);
+    const tgtNid = tgtKw ? `kw_${tgtKw.id}` : _orphanNid(rel.target_name);
 
     if (!srcKw && rel.source_name && !nodes.has(srcNid)) {
       nodes.set(srcNid, { nid: srcNid, kind:'orphan', type:'Other',
-        label: rel.source_name, kwId: null, confidence: 0.5, col: 0, metrics: [], x:0, y:0 });
+        label: rel.source_name, kwId: null, confidence: 0.5, col: 1, metrics: [], x:0, y:0 });
     }
     if (!tgtKw && rel.target_name && !nodes.has(tgtNid)) {
       nodes.set(tgtNid, { nid: tgtNid, kind:'orphan', type:'Other',
-        label: rel.target_name, kwId: null, confidence: 0.5, col: 3, metrics: [], x:0, y:0 });
+        label: rel.target_name, kwId: null, confidence: 0.5, col: 2, metrics: [], x:0, y:0 });
     }
 
-    if (srcNid !== tgtNid && (nodes.has(srcNid) || srcKw) && (nodes.has(tgtNid) || tgtKw)) {
+    if (srcNid !== tgtNid && nodes.has(srcNid) && nodes.has(tgtNid)) {
       edges.push({ id:`er_${rel.id}`, fromNid: srcNid, toNid: tgtNid,
                    relType: rel.relation_type||'related_to' });
     }
@@ -1876,21 +1878,64 @@ const _smRenderRelationsPanel = () => {
   svgEl.setAttribute('width', maxX);
   svgEl.setAttribute('height', maxY);
 
+  // Arrowhead marker definition
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.innerHTML = `
+    <marker id="pg-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="rgba(255,255,255,.45)"/>
+    </marker>
+    <marker id="pg-arrow-active" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#818cf8"/>
+    </marker>`;
+  svgEl.appendChild(defs);
+
   // Edges (rendered first — behind nodes)
   edges.forEach(edge => {
     const from = nodes.get(edge.fromNid);
     const to   = nodes.get(edge.toNid);
     if (!from || !to) return;
     const x1 = from.x + _PG_W, y1 = from.y + _pgNodeH(from) / 2;
-    const x2 = to.x,           y2 = to.y   + _pgNodeH(to)   / 2;
+    const x2 = to.x - 8,       y2 = to.y   + _pgNodeH(to)   / 2; // leave room for arrowhead
     const cx = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
     path.setAttribute('class', 'pg-edge');
+    path.setAttribute('marker-end', 'url(#pg-arrow)');
     path.dataset.fromNid = edge.fromNid;
     path.dataset.toNid   = edge.toNid;
     path.dataset.eid     = edge.id;
     svgEl.appendChild(path);
+
+    // Relation type label at midpoint of bezier
+    const label = (edge.relType || '').replace(/_/g, ' ');
+    if (label) {
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      const textEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      textEl.setAttribute('x', mx);
+      textEl.setAttribute('y', my);
+      textEl.setAttribute('class', 'pg-edge-label');
+      textEl.setAttribute('text-anchor', 'middle');
+      textEl.setAttribute('dominant-baseline', 'central');
+      textEl.textContent = label;
+      // Background pill behind text
+      svgEl.appendChild(bg);
+      svgEl.appendChild(textEl);
+      // Size background after append (getBBox needs DOM)
+      requestAnimationFrame(() => {
+        try {
+          const bb = textEl.getBBox();
+          const pad = 3;
+          bg.setAttribute('x',      bb.x - pad);
+          bg.setAttribute('y',      bb.y - pad);
+          bg.setAttribute('width',  bb.width  + pad * 2);
+          bg.setAttribute('height', bb.height + pad * 2);
+          bg.setAttribute('rx', 3);
+          bg.setAttribute('fill', 'rgba(15,23,42,0.85)');
+        } catch (_) {}
+      });
+    }
   });
 
   // Nodes — drag to reposition, click to highlight
