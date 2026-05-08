@@ -1036,32 +1036,55 @@ async def save_my_orcid(
     user_id: str = Depends(get_current_user),
     authorization: str = Header(None),
 ):
-    upload_token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
-    sb = _sb_with(upload_token)
+    token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    import httpx
     try:
-        sb.table("profiles").upsert(
-            {"id": user_id, "orcid_id": body.orcid_id},
-            on_conflict="id",
-        ).execute()
+        resp = httpx.put(
+            f"{_SUPABASE_URL_CONST}/auth/v1/user",
+            headers={
+                "apikey":        _SUPABASE_ANON_CONST,
+                "Authorization": f"Bearer {token}",
+                "Content-Type":  "application/json",
+            },
+            json={"data": {"orcid_id": body.orcid_id}},
+            timeout=10,
+        )
+        resp.raise_for_status()
     except Exception as e:
         raise HTTPException(500, f"Failed to save ORCID iD: {e}")
     return {"ok": True, "orcid_id": body.orcid_id}
 
 
+def _get_orcid_from_token(token: str) -> str | None:
+    import httpx
+    try:
+        resp = httpx.get(
+            f"{_SUPABASE_URL_CONST}/auth/v1/user",
+            headers={"apikey": _SUPABASE_ANON_CONST, "Authorization": f"Bearer {token}"},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            return (resp.json().get("user_metadata") or {}).get("orcid_id")
+    except Exception:
+        pass
+    return None
+
+
 @app.get("/api/users/me/orcid")
-async def get_my_orcid(user_id: str = Depends(get_current_user)):
-    res = _sb().table("profiles").select("orcid_id").eq("id", user_id).execute()
-    orcid_id = res.data[0]["orcid_id"] if res.data else None
+async def get_my_orcid(user_id: str = Depends(get_current_user), authorization: str = Header(None)):
+    token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    orcid_id = _get_orcid_from_token(token)
     return {"orcid_id": orcid_id}
 
 
 @app.get("/api/orcid-works")
-async def get_orcid_works(user_id: str = Depends(get_current_user)):
-    res = _sb().table("profiles").select("orcid_id").eq("id", user_id).execute()
-    if not res.data or not res.data[0].get("orcid_id"):
+async def get_orcid_works(user_id: str = Depends(get_current_user), authorization: str = Header(None)):
+    token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    orcid_id = _get_orcid_from_token(token)
+    if not orcid_id:
         raise HTTPException(400, "No ORCID account connected. Please connect via ORCID OAuth first.")
     try:
-        return _orcid_fetch_works(res.data[0]["orcid_id"])
+        return _orcid_fetch_works(orcid_id)
     except Exception as e:
         raise HTTPException(502, f"ORCID fetch failed: {e}")
 
