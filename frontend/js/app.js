@@ -3168,7 +3168,7 @@ const setupAnalyzePdf = () => {
     const progressBar   = document.getElementById('modal-analyze-bar');
     const progressLabel = document.getElementById('modal-analyze-label');
 
-    if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
 
     try {
       const token = await getAuthToken();
