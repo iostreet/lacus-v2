@@ -10,7 +10,7 @@
   <meta property="og:description" content="Your personal research knowledge space on Lacus." />
   <meta property="og:image" content="/static/og-image.png" />
   <link rel="icon" href="/static/favicon.ico" />
-  <link rel="stylesheet" href="/static/css/style.css?v=27" />
+  <link rel="stylesheet" href="/static/css/style.css?v=28" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -629,14 +629,24 @@
     </button>
     <h3 class="type-choice-title">Import from ORCID</h3>
 
-    <!-- Step 1: ID input -->
+    <!-- Step 1: Connect ORCID -->
     <div id="orcid-step-1">
-      <p class="type-choice-sub">Enter your ORCID iD to fetch your publication list.</p>
-      <div class="orcid-input-row">
-        <input type="text" id="orcid-id-input" class="orcid-text-input" placeholder="0000-0000-0000-0000" maxlength="19" />
-        <button class="btn btn-sm btn-primary" id="orcid-fetch-btn">Fetch Papers</button>
+      <p class="type-choice-sub">Connect your ORCID account to verify authorship and import your publications.</p>
+      <div id="orcid-connected-info" class="hidden">
+        <div class="orcid-connected-badge">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Connected: <span id="orcid-connected-id"></span>
+        </div>
+        <button class="btn btn-sm btn-primary" id="orcid-fetch-btn">Fetch My Papers</button>
+        <button class="btn btn-sm orcid-reconnect-btn" id="orcid-reconnect-btn">Reconnect</button>
       </div>
-      <p class="orcid-hint">Your ORCID iD looks like: 0000-0002-1825-0097</p>
+      <div id="orcid-login-area">
+        <button class="orcid-oauth-btn" id="orcid-connect-btn">
+          <img src="https://orcid.org/sites/default/files/images/orcid_16x16.png" width="16" height="16" alt="ORCID" />
+          Sign in with ORCID
+        </button>
+        <p class="orcid-hint">A popup will open to verify your ORCID account. Only papers from <em>your</em> profile will be shown.</p>
+      </div>
     </div>
 
     <!-- Step 2: Paper list -->
@@ -655,7 +665,7 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=10"></script>
-<script src="/static/js/app.js?v=27"></script>
+<script src="/static/js/app.js?v=28"></script>
 
 <script>
 // ── Welcome tutorial ─────────────────────────────────────────────────────────

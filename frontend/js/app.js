@@ -274,66 +274,128 @@ const setupUpload = () => {
   // Pending paper type for the current upload session
   let _pendingPaperType = 'interesting_paper';
 
-  // ── ORCID modal (defined first so openOrcidModal is available below) ──────
-  const orcidModal   = document.getElementById('orcid-modal');
-  const orcidStep1   = document.getElementById('orcid-step-1');
-  const orcidStep2   = document.getElementById('orcid-step-2');
-  const orcidList    = document.getElementById('orcid-paper-list');
-  let _orcidWorks    = [];
+  // ── ORCID modal — OAuth flow (defined first so openOrcidModal is available) ─
+  const orcidModal        = document.getElementById('orcid-modal');
+  const orcidStep1        = document.getElementById('orcid-step-1');
+  const orcidStep2        = document.getElementById('orcid-step-2');
+  const orcidList         = document.getElementById('orcid-paper-list');
+  const orcidConnectedInfo = document.getElementById('orcid-connected-info');
+  const orcidLoginArea    = document.getElementById('orcid-login-area');
+  const orcidConnectedId  = document.getElementById('orcid-connected-id');
+  let _orcidWorks = [];
 
-  const openOrcidModal = () => {
+  const _renderOrcidWorks = (works) => {
+    orcidList.innerHTML = '';
+    if (works.length === 0) {
+      orcidList.innerHTML = '<p class="orcid-empty">No public works found on your ORCID profile.</p>';
+    } else {
+      works.forEach((w, i) => {
+        const row = document.createElement('label');
+        row.className = 'orcid-paper-row';
+        row.innerHTML = `
+          <input type="checkbox" class="orcid-paper-cb" data-idx="${i}" />
+          <div class="orcid-paper-info">
+            <div class="orcid-paper-title">${escHtml(w.title)}</div>
+            <div class="orcid-paper-meta">${[w.year, w.journal, w.doi ? 'DOI: ' + w.doi : ''].filter(Boolean).join(' · ')}</div>
+          </div>
+        `;
+        orcidList.appendChild(row);
+      });
+    }
+    orcidStep1.classList.add('hidden');
+    orcidStep2.classList.remove('hidden');
+  };
+
+  const openOrcidModal = async () => {
     orcidStep1.classList.remove('hidden');
     orcidStep2.classList.add('hidden');
-    document.getElementById('orcid-id-input').value = '';
     orcidList.innerHTML = '';
     _orcidWorks = [];
     orcidModal.classList.remove('hidden');
+
+    // Check if user already has ORCID connected
+    try {
+      const me = await apiFetch('/users/me/orcid');
+      if (me.orcid_id) {
+        orcidConnectedId.textContent = me.orcid_id;
+        orcidConnectedInfo.classList.remove('hidden');
+        orcidLoginArea.classList.add('hidden');
+      } else {
+        orcidConnectedInfo.classList.add('hidden');
+        orcidLoginArea.classList.remove('hidden');
+      }
+    } catch (_) {
+      orcidConnectedInfo.classList.add('hidden');
+      orcidLoginArea.classList.remove('hidden');
+    }
   };
 
+  // Close modal
   document.getElementById('orcid-close').addEventListener('click', () => orcidModal.classList.add('hidden'));
   orcidModal.addEventListener('click', (e) => { if (e.target === orcidModal) orcidModal.classList.add('hidden'); });
 
+  // Back to step 1
   document.getElementById('orcid-back-btn').addEventListener('click', () => {
     orcidStep2.classList.add('hidden');
     orcidStep1.classList.remove('hidden');
   });
 
+  // OAuth popup handler
+  const _startOrcidOAuth = async () => {
+    let authData;
+    try {
+      authData = await apiFetch('/orcid/auth-url');
+    } catch (e) {
+      toast('ORCID OAuth not configured: ' + e.message, 'error');
+      return;
+    }
+
+    const popup = window.open(authData.url, 'orcid_oauth', 'width=600,height=700,scrollbars=yes');
+    if (!popup) { toast('Popup blocked. Please allow popups for this site.', 'error'); return; }
+
+    await new Promise((resolve) => {
+      const onMsg = async (evt) => {
+        if (evt.source !== popup) return;
+        window.removeEventListener('message', onMsg);
+        if (evt.data?.error) {
+          toast('ORCID error: ' + evt.data.error, 'error');
+        } else if (evt.data?.orcid_id) {
+          orcidConnectedId.textContent = evt.data.orcid_id;
+          orcidConnectedInfo.classList.remove('hidden');
+          orcidLoginArea.classList.add('hidden');
+          toast('ORCID connected: ' + evt.data.orcid_id, 'ok');
+        }
+        resolve();
+      };
+      window.addEventListener('message', onMsg);
+      // Fallback if popup closes without posting
+      const poll = setInterval(() => {
+        if (popup.closed) { clearInterval(poll); window.removeEventListener('message', onMsg); resolve(); }
+      }, 500);
+    });
+  };
+
+  document.getElementById('orcid-connect-btn').addEventListener('click', _startOrcidOAuth);
+  document.getElementById('orcid-reconnect-btn').addEventListener('click', _startOrcidOAuth);
+
+  // Fetch papers (uses stored ORCID iD on backend)
   document.getElementById('orcid-fetch-btn').addEventListener('click', async () => {
-    const orcidId = document.getElementById('orcid-id-input').value.trim();
-    if (!orcidId) { toast('Please enter your ORCID iD.', 'error'); return; }
     const fetchBtn = document.getElementById('orcid-fetch-btn');
     fetchBtn.disabled = true;
     fetchBtn.textContent = 'Fetching…';
     try {
-      const works = await apiFetch(`/orcid-works?orcid_id=${encodeURIComponent(orcidId)}`);
+      const works = await apiFetch('/orcid-works');
       _orcidWorks = works;
-      orcidList.innerHTML = '';
-      if (works.length === 0) {
-        orcidList.innerHTML = '<p class="orcid-empty">No public works found for this ORCID iD.</p>';
-      } else {
-        works.forEach((w, i) => {
-          const row = document.createElement('label');
-          row.className = 'orcid-paper-row';
-          row.innerHTML = `
-            <input type="checkbox" class="orcid-paper-cb" data-idx="${i}" />
-            <div class="orcid-paper-info">
-              <div class="orcid-paper-title">${escHtml(w.title)}</div>
-              <div class="orcid-paper-meta">${[w.year, w.journal, w.doi ? 'DOI: ' + w.doi : ''].filter(Boolean).join(' · ')}</div>
-            </div>
-          `;
-          orcidList.appendChild(row);
-        });
-      }
-      orcidStep1.classList.add('hidden');
-      orcidStep2.classList.remove('hidden');
+      _renderOrcidWorks(works);
     } catch (e) {
       toast('ORCID fetch failed: ' + e.message, 'error');
     } finally {
       fetchBtn.disabled = false;
-      fetchBtn.textContent = 'Fetch Papers';
+      fetchBtn.textContent = 'Fetch My Papers';
     }
   });
 
+  // Import selected papers
   document.getElementById('orcid-import-btn').addEventListener('click', async () => {
     const selected = [...orcidList.querySelectorAll('.orcid-paper-cb:checked')].map(cb => _orcidWorks[parseInt(cb.dataset.idx)]);
     if (selected.length === 0) { toast('Select at least one paper.', 'error'); return; }
