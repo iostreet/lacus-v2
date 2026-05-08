@@ -107,7 +107,7 @@
             Add Paper
           </button>
           <div class="header-progress hidden" id="upload-progress">
-            <span id="progress-label" class="header-progress-label">Importing…</span>
+            <span id="progress-label" class="header-progress-label">Analyzing…</span>
             <div class="header-progress-bar-wrap">
               <div class="progress-bar" id="progress-bar"></div>
             </div>
@@ -603,18 +603,18 @@
       <button class="type-choice-card" id="choose-my-paper">
         <div class="type-choice-icon">✍</div>
         <div class="type-choice-label">My Paper</div>
-        <div class="type-choice-desc">A paper you authored — import via ORCID or upload PDF</div>
+        <div class="type-choice-desc">A paper you authored — import via ORCID or analyze a PDF</div>
         <div class="type-choice-actions">
           <span class="type-choice-pill" id="choose-my-orcid">Import via ORCID</span>
-          <span class="type-choice-pill" id="choose-my-pdf">Upload PDF</span>
+          <span class="type-choice-pill" id="choose-my-pdf">Analyze PDF</span>
         </div>
       </button>
       <button class="type-choice-card" id="choose-interesting-paper">
         <div class="type-choice-icon">🔍</div>
         <div class="type-choice-label">Interesting Paper</div>
-        <div class="type-choice-desc">A paper you're reading or tracking — upload PDF</div>
+        <div class="type-choice-desc">A paper you're reading or tracking — analyze a PDF</div>
         <div class="type-choice-actions">
-          <span class="type-choice-pill">Upload PDF</span>
+          <span class="type-choice-pill">Analyze PDF</span>
         </div>
       </button>
     </div>
@@ -655,7 +655,7 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=10"></script>
-<script src="/static/js/app.js?v=26"></script>
+<script src="/static/js/app.js?v=27"></script>
 
 <script>
 // ── Welcome tutorial ─────────────────────────────────────────────────────────
@@ -703,12 +703,12 @@
         title: 'Add Your First Paper',
         html: `
           <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:16px">
-            Click <strong style="color:#e2d9f3">+ Add Paper</strong> in the top-right to upload a PDF.
-            Lacus analyzes it and automatically suggests Themes, Concepts, and Keywords.
+            Click <strong style="color:#e2d9f3">+ Add Paper</strong> in the top-right to analyze a PDF.
+            Lacus extracts metadata and automatically suggests Themes, Concepts, and Keywords.
           </p>
           <div style="display:flex;flex-direction:column;gap:10px">
             ${[
-              ['1', 'Upload PDF', 'Drag and drop or click the upload button'],
+              ['1', 'Analyze PDF', 'Drag and drop or click the Add Paper button'],
               ['2', 'AI Analysis', 'Lacus extracts structure: themes, concepts, keywords'],
               ['3', 'Review & Edit', 'Read the paper carefully — refine the suggested keywords to build an accurate knowledge graph'],
               ['4', 'Save', 'Your paper joins the Field → Theme → Concept → Papers hierarchy'],

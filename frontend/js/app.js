@@ -425,7 +425,7 @@ const setupUpload = () => {
 
     progressWrap.classList.remove('hidden');
     progressBar.style.width = '5%';
-    progressLabel.textContent = `Importing ${file.name}…`;
+    progressLabel.textContent = `Analyzing ${file.name}…`;
     progressPct.textContent = '5%';
 
     const fd = new FormData();
