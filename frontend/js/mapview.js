@@ -88,6 +88,8 @@ window.MapView = (() => {
   };
 
   // ── Position persistence ───────────────────────────────────────────────────
+  const _POS_KEY = 'lacus_ov_pos_v2'; // bumped to clear stale positions from older versions
+
   const _savePositions = () => {
     const pos = {};
     const collect = n => {
@@ -95,11 +97,14 @@ window.MapView = (() => {
       n.children.forEach(collect);
     };
     _rootsCache.forEach(collect);
-    try { localStorage.setItem('lacus_ov_pos', JSON.stringify(pos)); } catch (_) {}
+    try { localStorage.setItem(_POS_KEY, JSON.stringify(pos)); } catch (_) {}
   };
 
   const _loadPositions = () => {
-    try { return JSON.parse(localStorage.getItem('lacus_ov_pos') || '{}'); } catch (_) { return {}; }
+    try {
+      localStorage.removeItem('lacus_ov_pos'); // clear old key
+      return JSON.parse(localStorage.getItem(_POS_KEY) || '{}');
+    } catch (_) { return {}; }
   };
 
   // ── Document-level mouse handlers ─────────────────────────────────────────
@@ -305,6 +310,22 @@ window.MapView = (() => {
       _layoutNodeLR(root, OV_PAD, sy + sh / 2);
       sy += sh + OV_VG;
     });
+
+    // ── Overlap resolution (handles saved drag positions that cause collisions)
+    // Group visible nodes by type (= column), sort by y, push overlapping ones down.
+    const _colNodes = { theme: [], concept: [], paper: [] };
+    const _collectVisible = n => {
+      if (_colNodes[n.type]) _colNodes[n.type].push(n);
+      if (!_collapsed.has(n.id)) n.children.forEach(_collectVisible);
+    };
+    roots.forEach(_collectVisible);
+    for (const nodes of Object.values(_colNodes)) {
+      nodes.sort((a, b) => a.y - b.y);
+      for (let i = 1; i < nodes.length; i++) {
+        const minY = nodes[i - 1].y + _nH(nodes[i - 1].type) + OV_VG;
+        if (nodes[i].y < minY) nodes[i].y = minY;
+      }
+    }
 
     // Compute bounding box after layout (accounts for saved drag positions)
     let bboxMaxX = 0, bboxMaxY = 0;
