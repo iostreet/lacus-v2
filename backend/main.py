@@ -665,9 +665,17 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
         info = extract_paper_info(pdf_path)
 
         if preserve_meta:
-            # Keep existing title/authors/doi/journal/year from DB (e.g. ORCID-imported papers)
-            p_row = sb.table("papers").select("title").eq("id", paper_id).execute().data
-            title = ((p_row[0]["title"] if p_row else "") or "").strip() or orig_filename.replace(".pdf", "")
+            # Keep existing non-empty fields from DB; fill in only blank ones from GROBID
+            p_row = sb.table("papers").select("title,doi,journal,year,authors").eq("id", paper_id).execute().data
+            existing = p_row[0] if p_row else {}
+            title = (existing.get("title") or "").strip() or (info.get("title") or "").strip() or orig_filename.replace(".pdf", "")
+            patch: dict = {}
+            if not existing.get("doi")     and info.get("doi"):     patch["doi"]     = info["doi"]
+            if not existing.get("journal") and info.get("journal"): patch["journal"] = info["journal"]
+            if not existing.get("year")    and info.get("year"):     patch["year"]    = info["year"]
+            if not existing.get("authors") and info.get("authors"):  patch["authors"] = json.dumps(info["authors"])
+            if patch:
+                sb.table("papers").update(patch).eq("id", paper_id).execute()
         else:
             title = (info.get("title") or "").strip() or orig_filename.replace(".pdf", "")
             update = {
