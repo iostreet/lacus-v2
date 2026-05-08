@@ -590,6 +590,7 @@ def _paper_to_dict(p: dict) -> dict:
         "field":            p.get("field"),
         "field_confidence": p.get("field_confidence"),
         "field_scores":     p.get("field_scores") or {},
+        "paper_type":       p.get("paper_type") or "interesting_paper",
     }
 
 
