@@ -10,7 +10,7 @@
   <meta property="og:description" content="Your personal research knowledge space on Lacus." />
   <meta property="og:image" content="/static/og-image.png" />
   <link rel="icon" href="/static/favicon.ico" />
-  <link rel="stylesheet" href="/static/css/style.css?v=29" />
+  <link rel="stylesheet" href="/static/css/style.css?v=30" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -168,6 +168,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
 
+    <input type="file" id="analyze-pdf-input" accept=".pdf" class="hidden">
     <div class="modal-header">
       <div class="modal-paper-meta">
         <h2 class="modal-title" id="modal-title">—</h2>
@@ -176,6 +177,12 @@
           <span class="meta-badge" id="modal-year"></span>
           <span class="meta-badge" id="modal-journal"></span>
           <a class="meta-badge meta-badge-link" id="modal-doi" href="#" target="_blank"></a>
+        </div>
+        <div id="modal-analyze-progress" class="hidden" style="margin-top:10px">
+          <div class="modal-analyze-bar-wrap">
+            <div class="modal-analyze-bar" id="modal-analyze-bar"></div>
+          </div>
+          <span class="modal-analyze-label" id="modal-analyze-label">Analyzing…</span>
         </div>
       </div>
     </div>
@@ -669,7 +676,7 @@
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=10"></script>
-<script src="/static/js/app.js?v=29"></script>
+<script src="/static/js/app.js?v=30"></script>
 
 <script>
 // ── Welcome tutorial ─────────────────────────────────────────────────────────

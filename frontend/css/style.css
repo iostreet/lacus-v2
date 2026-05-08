@@ -103,6 +103,20 @@ a:hover { text-decoration: underline; }
   background: rgba(139,92,246,.22); border-color: rgba(139,92,246,.55);
 }
 
+/* ── Analyze PDF inline progress (modal header) ── */
+.modal-analyze-bar-wrap {
+  height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px;
+  overflow: hidden; width: 100%; max-width: 320px;
+}
+.modal-analyze-bar {
+  height: 100%; width: 0; background: var(--accent);
+  border-radius: 2px; transition: width .3s ease;
+}
+.modal-analyze-label {
+  font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;
+  display: block;
+}
+
 /* ── Profile Modal ── */
 .prof-overlay {
   position: fixed; inset: 0; z-index: 9000;

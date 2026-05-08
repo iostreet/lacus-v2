@@ -633,6 +633,22 @@ const renderModalHeader = (paper) => {
   } else {
     doiEl.classList.add('hidden');
   }
+
+  // "Analyze PDF" button for papers imported without a PDF (e.g. ORCID imports)
+  document.getElementById('modal-analyze-btn')?.remove();
+  if (!paper.pdf_path) {
+    const btn = document.createElement('button');
+    btn.id = 'modal-analyze-btn';
+    btn.className = 'btn btn-sm btn-primary';
+    btn.style.cssText = 'margin-top:10px';
+    btn.textContent = 'Analyze PDF';
+    btn.addEventListener('click', () => {
+      const inp = document.getElementById('analyze-pdf-input');
+      inp.dataset.paperId = paper.id;
+      inp.click();
+    });
+    document.querySelector('.modal-paper-meta').appendChild(btn);
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3143,7 +3159,90 @@ document.getElementById('header-signout-btn')?.addEventListener('click', async (
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Analyze PDF for existing paper (ORCID imports without PDF)
+// ─────────────────────────────────────────────────────────────────────────────
+const setupAnalyzePdf = () => {
+  const inp = document.getElementById('analyze-pdf-input');
+  if (!inp) return;
+
+  inp.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const paperId = inp.dataset.paperId;
+    inp.value = ''; // reset so same file can be re-selected
+
+    const btn = document.getElementById('modal-analyze-btn');
+    const progressWrap  = document.getElementById('modal-analyze-progress');
+    const progressBar   = document.getElementById('modal-analyze-bar');
+    const progressLabel = document.getElementById('modal-analyze-label');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+
+    try {
+      const token = await getAuthToken();
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const result = await fetch(`${API}/papers/${paperId}/analyze-pdf`, {
+        method: 'POST',
+        body: fd,
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await result.json();
+      if (!result.ok) throw new Error(data.detail || 'Upload failed');
+
+      btn?.remove();
+      if (progressWrap) progressWrap.classList.remove('hidden');
+      if (progressBar)  progressBar.style.width = '5%';
+      if (progressLabel) progressLabel.textContent = 'Queued for analysis…';
+
+      let lastPct = 5;
+      let lastChange = Date.now();
+      const STALL_MS = 60000;
+      let pollTimer = null;
+      const stopPoll = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+
+      pollTimer = setInterval(async () => {
+        try {
+          const prog = await apiFetch(`/papers/${paperId}/progress`);
+          const pct = prog.pct ?? 0;
+
+          if (pct !== lastPct) { lastPct = pct; lastChange = Date.now(); }
+          else if (pct < 100 && pct !== -1 && Date.now() - lastChange > STALL_MS) {
+            stopPoll();
+            if (progressWrap) progressWrap.classList.add('hidden');
+            toast('Analysis stalled (>60 s). Please try again.', 'warn');
+            await loadPapers();
+            return;
+          }
+
+          if (progressBar)  progressBar.style.width = Math.max(pct, 0) + '%';
+          if (progressLabel) progressLabel.textContent = prog.step || 'Processing…';
+
+          if (pct === 100) {
+            stopPoll();
+            closeDetail();
+            await loadPapers();
+            showReviewModal(parseInt(paperId));
+          } else if (pct === -1) {
+            stopPoll();
+            if (progressWrap) progressWrap.classList.add('hidden');
+            toast('Analysis failed: ' + (prog.error || prog.step), 'error');
+            await loadPapers();
+          }
+        } catch (_) {}
+      }, 500);
+
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Analyze PDF'; }
+      toast(err.message, 'error');
+    }
+  });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
 loadPapers();
 setupUpload();
+setupAnalyzePdf();
