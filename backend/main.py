@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import secrets
 import threading
 import json
 import os
@@ -15,13 +16,14 @@ import time
 from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, File, Header, HTTPException, BackgroundTasks, UploadFile, Depends
+from fastapi import FastAPI, File, Form, Header, HTTPException, BackgroundTasks, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -42,6 +44,13 @@ from processors.field_classifier   import detect_field
 
 # ── In-memory progress tracker ───────────────────────────────────────────────
 _progress: dict[int, dict] = {}
+
+# ── ORCID OAuth config ────────────────────────────────────────────────────────
+_ORCID_CLIENT_ID     = os.environ.get("ORCID_CLIENT_ID", "")
+_ORCID_CLIENT_SECRET = os.environ.get("ORCID_CLIENT_SECRET", "")
+_ORCID_REDIRECT_URI  = os.environ.get("ORCID_REDIRECT_URI", "http://localhost:8000/api/orcid/callback")
+# state token → {user_id, expires}; cleared on use or expiry
+_orcid_states: dict[str, dict] = {}
 
 # ── Visitor counter (Supabase-backed) ────────────────────────────────────────
 _SUPABASE_URL_CONST = "https://pzodkufrnnjkbghyfwth.supabase.co"
@@ -885,6 +894,7 @@ def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(ge
 async def upload_paper(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    paper_type: str = Form("interesting_paper"),
     user_id: str = Depends(get_current_user),
     authorization: str = Header(None),
     _rl: None = Depends(_rl_upload),
@@ -908,11 +918,12 @@ async def upload_paper(
     shutil.move(str(tmp_path), str(final_path))
 
     res = _sb_with(upload_token).table("papers").insert({
-        "user_id":  user_id,
-        "title":    file.filename.replace(".pdf", ""),
-        "pdf_path": str(final_path),
-        "pdf_hash": pdf_hash,
-        "status":   "processing",
+        "user_id":    user_id,
+        "title":      file.filename.replace(".pdf", ""),
+        "pdf_path":   str(final_path),
+        "pdf_hash":   pdf_hash,
+        "status":     "processing",
+        "paper_type": paper_type if paper_type in ("my_paper", "interesting_paper") else "interesting_paper",
     }).execute()
 
     if not res.data:
@@ -923,6 +934,161 @@ async def upload_paper(
     _set_progress(paper_id, "Queued for analysis…", 5)
     background_tasks.add_task(_run_analysis, paper_id, user_id, str(final_path), file.filename, upload_token)
     return {"paper_id": paper_id, "status": "processing"}
+
+
+# ── ORCID OAuth ───────────────────────────────────────────────────────────────
+
+def _orcid_fetch_works(orcid_id: str) -> list:
+    import httpx
+    url = f"https://pub.orcid.org/v3.0/{orcid_id}/works"
+    resp = httpx.get(url, headers={"Accept": "application/json"}, timeout=15)
+    resp.raise_for_status()
+    works = []
+    for group in resp.json().get("group", []):
+        summaries = group.get("work-summary", [])
+        if not summaries:
+            continue
+        s = summaries[0]
+        title_val = ((s.get("title") or {}).get("title") or {}).get("value", "")
+        if not title_val:
+            continue
+        pub_date = s.get("publication-date") or {}
+        year = ((pub_date.get("year") or {}).get("value") or "")
+        journal = ((s.get("journal-title") or {}).get("value") or "")
+        doi = ""
+        for eid in ((s.get("external-ids") or {}).get("external-id") or []):
+            if eid.get("external-id-type") == "doi":
+                doi = eid.get("external-id-value", "")
+                break
+        works.append({"title": title_val, "year": year, "journal": journal, "doi": doi})
+    return works
+
+
+@app.get("/api/orcid/auth-url")
+async def orcid_auth_url(user_id: str = Depends(get_current_user)):
+    if not _ORCID_CLIENT_ID:
+        raise HTTPException(503, "ORCID OAuth not configured — set ORCID_CLIENT_ID and ORCID_CLIENT_SECRET environment variables.")
+    state = secrets.token_urlsafe(32)
+    _orcid_states[state] = {"user_id": user_id, "expires": time.time() + 600}
+    params = urlencode({
+        "client_id":     _ORCID_CLIENT_ID,
+        "response_type": "code",
+        "scope":         "/authenticate",
+        "redirect_uri":  _ORCID_REDIRECT_URI,
+        "state":         state,
+    })
+    return {"url": f"https://orcid.org/oauth/authorize?{params}"}
+
+
+@app.get("/api/orcid/callback")
+async def orcid_callback(code: str = "", state: str = "", error: str = ""):
+    def _close(msg: str, ok: bool = False) -> HTMLResponse:
+        if ok:
+            payload = f"{{orcid_id: '{msg}'}}"
+        else:
+            payload = f"{{error: {json.dumps(msg)}}}"
+        return HTMLResponse(f"""<!DOCTYPE html><html><body>
+<p style="font-family:sans-serif;color:#94a3b8;padding:24px">
+  {"ORCID connected! This window will close." if ok else "Error: " + msg}
+</p>
+<script>window.opener?.postMessage({payload}, '*'); window.close();</script>
+</body></html>""")
+
+    if error:
+        return _close(f"ORCID denied access: {error}")
+
+    state_data = _orcid_states.pop(state, None)
+    if not state_data or time.time() > state_data["expires"]:
+        return _close("Auth session expired. Please try again.")
+
+    import httpx
+    try:
+        token_resp = httpx.post(
+            "https://orcid.org/oauth/token",
+            data={
+                "client_id":     _ORCID_CLIENT_ID,
+                "client_secret": _ORCID_CLIENT_SECRET,
+                "grant_type":    "authorization_code",
+                "code":          code,
+                "redirect_uri":  _ORCID_REDIRECT_URI,
+            },
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        token_resp.raise_for_status()
+    except Exception as e:
+        return _close(f"Token exchange failed: {e}")
+
+    orcid_id = token_resp.json().get("orcid")
+    if not orcid_id:
+        return _close("Could not retrieve ORCID iD from token response.")
+
+    try:
+        _sa.table("profiles").upsert(
+            {"id": state_data["user_id"], "orcid_id": orcid_id},
+            on_conflict="id",
+        ).execute()
+    except Exception as e:
+        return _close(f"Failed to save ORCID iD: {e}")
+
+    return _close(orcid_id, ok=True)
+
+
+@app.get("/api/users/me/orcid")
+async def get_my_orcid(user_id: str = Depends(get_current_user)):
+    res = _sa.table("profiles").select("orcid_id").eq("id", user_id).execute()
+    orcid_id = res.data[0]["orcid_id"] if res.data else None
+    return {"orcid_id": orcid_id}
+
+
+@app.get("/api/orcid-works")
+async def get_orcid_works(user_id: str = Depends(get_current_user)):
+    res = _sa.table("profiles").select("orcid_id").eq("id", user_id).execute()
+    if not res.data or not res.data[0].get("orcid_id"):
+        raise HTTPException(400, "No ORCID account connected. Please connect via ORCID OAuth first.")
+    try:
+        return _orcid_fetch_works(res.data[0]["orcid_id"])
+    except Exception as e:
+        raise HTTPException(502, f"ORCID fetch failed: {e}")
+
+
+# ── Import paper from metadata (ORCID — no PDF) ───────────────────────────────
+class OrcidImportItem(BaseModel):
+    title:   str
+    year:    Optional[str] = None
+    journal: Optional[str] = None
+    doi:     Optional[str] = None
+    authors: Optional[list] = None
+
+@app.post("/api/papers/import-from-metadata")
+async def import_from_metadata(
+    data: OrcidImportItem,
+    user_id: str = Depends(get_current_user),
+    authorization: str = Header(None),
+):
+    upload_token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    sb = _sb_with(upload_token)
+
+    if data.doi:
+        dup = sb.table("papers").select("id").eq("user_id", user_id).eq("doi", data.doi).execute()
+        if dup.data:
+            raise HTTPException(409, f"Already in your library (paper id={dup.data[0]['id']}).")
+
+    res = sb.table("papers").insert({
+        "user_id":    user_id,
+        "title":      data.title,
+        "year":       data.year,
+        "journal":    data.journal,
+        "doi":        data.doi,
+        "authors":    data.authors or [],
+        "status":     "pending_review",
+        "paper_type": "my_paper",
+    }).execute()
+
+    if not res.data:
+        raise HTTPException(500, "DB insert failed")
+
+    return {"paper_id": res.data[0]["id"], "status": "pending_review"}
 
 
 @app.get("/api/papers/{paper_id}/progress")

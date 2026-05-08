@@ -10,7 +10,7 @@
   <meta property="og:description" content="Your personal research knowledge space on Lacus." />
   <meta property="og:image" content="/static/og-image.png" />
   <link rel="icon" href="/static/favicon.ico" />
-  <link rel="stylesheet" href="/static/css/style.css?v=26" />
+  <link rel="stylesheet" href="/static/css/style.css?v=28" />
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <!-- Cytoscape.js -->
@@ -107,7 +107,7 @@
             Add Paper
           </button>
           <div class="header-progress hidden" id="upload-progress">
-            <span id="progress-label" class="header-progress-label">Importing…</span>
+            <span id="progress-label" class="header-progress-label">Analyzing…</span>
             <div class="header-progress-bar-wrap">
               <div class="progress-bar" id="progress-bar"></div>
             </div>
@@ -130,6 +130,12 @@
           </button>
         </div>
       </div>
+    </div>
+    <!-- Paper type filter tabs -->
+    <div class="paper-type-tabs" id="paper-type-tabs">
+      <button class="ptype-tab active" data-type="all">All</button>
+      <button class="ptype-tab" data-type="my_paper">My Papers <span class="ptype-count" id="ptype-count-my">0</span></button>
+      <button class="ptype-tab" data-type="interesting_paper">Interesting <span class="ptype-count" id="ptype-count-interesting">0</span></button>
     </div>
     <div class="bulk-bar hidden" id="bulk-bar">
       <span id="bulk-count">0 selected</span>
@@ -585,11 +591,81 @@
   </div>
 </div>
 
+<!-- ══════════════════════ TYPE CHOICE MODAL ══════════════════════ -->
+<div class="mini-modal hidden" id="type-choice-modal">
+  <div class="type-choice-box">
+    <button class="modal-close" id="type-choice-close" title="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <h3 class="type-choice-title">Add Paper</h3>
+    <p class="type-choice-sub">What kind of paper are you adding?</p>
+    <div class="type-choice-cards">
+      <button class="type-choice-card" id="choose-my-paper">
+        <div class="type-choice-icon">✍</div>
+        <div class="type-choice-label">My Paper</div>
+        <div class="type-choice-desc">A paper you authored — import via ORCID or analyze a PDF</div>
+        <div class="type-choice-actions">
+          <span class="type-choice-pill" id="choose-my-orcid">Import via ORCID</span>
+          <span class="type-choice-pill" id="choose-my-pdf">Analyze PDF</span>
+        </div>
+      </button>
+      <button class="type-choice-card" id="choose-interesting-paper">
+        <div class="type-choice-icon">🔍</div>
+        <div class="type-choice-label">Interesting Paper</div>
+        <div class="type-choice-desc">A paper you're reading or tracking — analyze a PDF</div>
+        <div class="type-choice-actions">
+          <span class="type-choice-pill">Analyze PDF</span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ ORCID IMPORT MODAL ══════════════════════ -->
+<div class="mini-modal hidden" id="orcid-modal">
+  <div class="orcid-box">
+    <button class="modal-close" id="orcid-close" title="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <h3 class="type-choice-title">Import from ORCID</h3>
+
+    <!-- Step 1: Connect ORCID -->
+    <div id="orcid-step-1">
+      <p class="type-choice-sub">Connect your ORCID account to verify authorship and import your publications.</p>
+      <div id="orcid-connected-info" class="hidden">
+        <div class="orcid-connected-badge">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Connected: <span id="orcid-connected-id"></span>
+        </div>
+        <button class="btn btn-sm btn-primary" id="orcid-fetch-btn">Fetch My Papers</button>
+        <button class="btn btn-sm orcid-reconnect-btn" id="orcid-reconnect-btn">Reconnect</button>
+      </div>
+      <div id="orcid-login-area">
+        <button class="orcid-oauth-btn" id="orcid-connect-btn">
+          <img src="https://orcid.org/sites/default/files/images/orcid_16x16.png" width="16" height="16" alt="ORCID" />
+          Sign in with ORCID
+        </button>
+        <p class="orcid-hint">A popup will open to verify your ORCID account. Only papers from <em>your</em> profile will be shown.</p>
+      </div>
+    </div>
+
+    <!-- Step 2: Paper list -->
+    <div id="orcid-step-2" class="hidden">
+      <p class="type-choice-sub">Select papers to import as <strong>My Papers</strong>.</p>
+      <div class="orcid-paper-list" id="orcid-paper-list"></div>
+      <div class="orcid-footer">
+        <button class="btn btn-sm" id="orcid-back-btn">← Back</button>
+        <button class="btn btn-sm btn-primary" id="orcid-import-btn">Import Selected</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="hover-tooltip hidden" id="hover-tooltip"></div>
 <script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <script src="/static/js/storymap.js?v=3"></script>
 <script src="/static/js/mapview.js?v=10"></script>
-<script src="/static/js/app.js?v=25"></script>
+<script src="/static/js/app.js?v=28"></script>
 
 <script>
 // ── Welcome tutorial ─────────────────────────────────────────────────────────
@@ -637,12 +713,12 @@
         title: 'Add Your First Paper',
         html: `
           <p style="font-size:.9rem;color:#94a3b8;line-height:1.7;margin-bottom:16px">
-            Click <strong style="color:#e2d9f3">+ Add Paper</strong> in the top-right to upload a PDF.
-            Lacus analyzes it and automatically suggests Themes, Concepts, and Keywords.
+            Click <strong style="color:#e2d9f3">+ Add Paper</strong> in the top-right to analyze a PDF.
+            Lacus extracts metadata and automatically suggests Themes, Concepts, and Keywords.
           </p>
           <div style="display:flex;flex-direction:column;gap:10px">
             ${[
-              ['1', 'Upload PDF', 'Drag and drop or click the upload button'],
+              ['1', 'Analyze PDF', 'Drag and drop or click the Add Paper button'],
               ['2', 'AI Analysis', 'Lacus extracts structure: themes, concepts, keywords'],
               ['3', 'Review & Edit', 'Read the paper carefully — refine the suggested keywords to build an accurate knowledge graph'],
               ['4', 'Save', 'Your paper joins the Field → Theme → Concept → Papers hierarchy'],
