@@ -658,41 +658,46 @@ def _assert_paper_owner(paper_id: int, user_id: str):
 
 
 # ── Background analysis ───────────────────────────────────────────────────────
-def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str, token: str = ""):
+def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str, token: str = "", preserve_meta: bool = False):
     sb = _sb_with(token)
     try:
         _set_progress(paper_id, "Extracting text from PDF…", 10)
         info = extract_paper_info(pdf_path)
 
-        title = (info.get("title") or "").strip() or orig_filename.replace(".pdf", "")
-        update = {
-            "title":   title,
-            "authors": json.dumps(info.get("authors", [])),
-            "doi":     info.get("doi", ""),
-            "journal": info.get("journal", ""),
-            "year":    info.get("year", ""),
-        }
-        sb.table("papers").update(update).eq("id", paper_id).execute()
+        if preserve_meta:
+            # Keep existing title/authors/doi/journal/year from DB (e.g. ORCID-imported papers)
+            p_row = sb.table("papers").select("title").eq("id", paper_id).execute().data
+            title = ((p_row[0]["title"] if p_row else "") or "").strip() or orig_filename.replace(".pdf", "")
+        else:
+            title = (info.get("title") or "").strip() or orig_filename.replace(".pdf", "")
+            update = {
+                "title":   title,
+                "authors": json.dumps(info.get("authors", [])),
+                "doi":     info.get("doi", ""),
+                "journal": info.get("journal", ""),
+                "year":    info.get("year", ""),
+            }
+            sb.table("papers").update(update).eq("id", paper_id).execute()
 
-        if info.get("doi"):
-            _set_progress(paper_id, "Fetching metadata from web…", 20)
-            with contextlib.suppress(Exception):
-                from processors.doi_fetcher import fetch_doi_content
-                web = fetch_doi_content(info["doi"])
-                patch = {}
-                if web.get("abstract") and len(web["abstract"]) > len(info.get("abstract", "")):
-                    info["abstract"] = web["abstract"]
-                if web.get("title") and title == orig_filename.replace(".pdf", ""):
-                    patch["title"] = web["title"]
-                    title = web["title"]
-                if web.get("authors") and not json.loads(update["authors"]):
-                    patch["authors"] = json.dumps(web["authors"])
-                if web.get("journal") and not update["journal"]:
-                    patch["journal"] = web["journal"]
-                if web.get("year") and not update["year"]:
-                    patch["year"] = web["year"]
-                if patch:
-                    sb.table("papers").update(patch).eq("id", paper_id).execute()
+            if info.get("doi"):
+                _set_progress(paper_id, "Fetching metadata from web…", 20)
+                with contextlib.suppress(Exception):
+                    from processors.doi_fetcher import fetch_doi_content
+                    web = fetch_doi_content(info["doi"])
+                    patch = {}
+                    if web.get("abstract") and len(web["abstract"]) > len(info.get("abstract", "")):
+                        info["abstract"] = web["abstract"]
+                    if web.get("title") and title == orig_filename.replace(".pdf", ""):
+                        patch["title"] = web["title"]
+                        title = web["title"]
+                    if web.get("authors") and not json.loads(update["authors"]):
+                        patch["authors"] = json.dumps(web["authors"])
+                    if web.get("journal") and not update["journal"]:
+                        patch["journal"] = web["journal"]
+                    if web.get("year") and not update["year"]:
+                        patch["year"] = web["year"]
+                    if patch:
+                        sb.table("papers").update(patch).eq("id", paper_id).execute()
 
         sections = {
             **info.get("sections", {}),
@@ -934,6 +939,57 @@ async def upload_paper(
     paper_id = res.data[0]["id"]
     _set_progress(paper_id, "Queued for analysis…", 5)
     background_tasks.add_task(_run_analysis, paper_id, user_id, str(final_path), file.filename, upload_token)
+    return {"paper_id": paper_id, "status": "processing"}
+
+
+# ── Analyze PDF for existing paper (e.g. ORCID imports) ──────────────────────
+@app.post("/api/papers/{paper_id}/analyze-pdf")
+async def analyze_existing_paper_pdf(
+    paper_id: int,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user),
+    authorization: str = Header(None),
+    _rl: None = Depends(_rl_upload),
+):
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Only PDF files are accepted.")
+
+    token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    sb = _sb_with(token)
+
+    row = sb.table("papers").select("id, user_id").eq("id", paper_id).eq("user_id", user_id).execute().data
+    if not row:
+        raise HTTPException(404, "Paper not found")
+
+    tmp_path = UPLOADS_DIR / file.filename
+    with open(tmp_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    pdf_hash = _hash_file(tmp_path)
+    final_path = UPLOADS_DIR / f"{pdf_hash[:16]}.pdf"
+    shutil.move(str(tmp_path), str(final_path))
+
+    # Clear prior analysis so re-running doesn't double-insert
+    with contextlib.suppress(Exception):
+        sb.table("relations").delete().eq("paper_id", paper_id).execute()
+    with contextlib.suppress(Exception):
+        sb.table("metrics").delete().eq("paper_id", paper_id).execute()
+    with contextlib.suppress(Exception):
+        sb.table("summaries").delete().eq("paper_id", paper_id).execute()
+    with contextlib.suppress(Exception):
+        sb.table("keywords").delete().eq("paper_id", paper_id).execute()
+
+    sb.table("papers").update({
+        "pdf_path": str(final_path),
+        "pdf_hash": pdf_hash,
+        "status":   "processing",
+    }).eq("id", paper_id).execute()
+
+    _set_progress(paper_id, "Queued for analysis…", 5)
+    background_tasks.add_task(
+        _run_analysis, paper_id, user_id, str(final_path), file.filename, token, True
+    )
     return {"paper_id": paper_id, "status": "processing"}
 
 
