@@ -441,14 +441,6 @@ const setupUpload = () => {
   document.getElementById('type-choice-close').addEventListener('click', closeTypeModal);
   typeModal.addEventListener('click', (e) => { if (e.target === typeModal) closeTypeModal(); });
 
-  // My Paper — PDF
-  document.getElementById('choose-my-pdf').addEventListener('click', (e) => {
-    e.stopPropagation();
-    _pendingPaperType = 'my_paper';
-    closeTypeModal();
-    fileInput.click();
-  });
-
   // My Paper — ORCID
   document.getElementById('choose-my-orcid').addEventListener('click', (e) => {
     e.stopPropagation();
