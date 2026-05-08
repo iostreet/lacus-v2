@@ -360,10 +360,19 @@ const setupUpload = () => {
         if (evt.data?.error) {
           toast('ORCID error: ' + evt.data.error, 'error');
         } else if (evt.data?.orcid_id) {
-          orcidConnectedId.textContent = evt.data.orcid_id;
-          orcidConnectedInfo.classList.remove('hidden');
-          orcidLoginArea.classList.add('hidden');
-          toast('ORCID connected: ' + evt.data.orcid_id, 'ok');
+          const orcidId = evt.data.orcid_id;
+          try {
+            await apiFetch('/users/me/orcid', {
+              method: 'POST',
+              body: JSON.stringify({ orcid_id: orcidId }),
+            });
+            orcidConnectedId.textContent = orcidId;
+            orcidConnectedInfo.classList.remove('hidden');
+            orcidLoginArea.classList.add('hidden');
+            toast('ORCID connected: ' + orcidId, 'ok');
+          } catch (e) {
+            toast('Failed to save ORCID iD: ' + e.message, 'error');
+          }
         }
         resolve();
       };

@@ -1023,27 +1023,41 @@ async def orcid_callback(code: str = "", state: str = "", error: str = ""):
     if not orcid_id:
         return _close("Could not retrieve ORCID iD from token response.")
 
+    # Return orcid_id to the popup; the frontend saves it via an authenticated call.
+    return _close(orcid_id, ok=True)
+
+
+class OrcidSave(BaseModel):
+    orcid_id: str
+
+@app.post("/api/users/me/orcid")
+async def save_my_orcid(
+    body: OrcidSave,
+    user_id: str = Depends(get_current_user),
+    authorization: str = Header(None),
+):
+    upload_token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    sb = _sb_with(upload_token)
     try:
-        _sa.table("profiles").upsert(
-            {"id": state_data["user_id"], "orcid_id": orcid_id},
+        sb.table("profiles").upsert(
+            {"id": user_id, "orcid_id": body.orcid_id},
             on_conflict="id",
         ).execute()
     except Exception as e:
-        return _close(f"Failed to save ORCID iD: {e}")
-
-    return _close(orcid_id, ok=True)
+        raise HTTPException(500, f"Failed to save ORCID iD: {e}")
+    return {"ok": True, "orcid_id": body.orcid_id}
 
 
 @app.get("/api/users/me/orcid")
 async def get_my_orcid(user_id: str = Depends(get_current_user)):
-    res = _sa.table("profiles").select("orcid_id").eq("id", user_id).execute()
+    res = _sb().table("profiles").select("orcid_id").eq("id", user_id).execute()
     orcid_id = res.data[0]["orcid_id"] if res.data else None
     return {"orcid_id": orcid_id}
 
 
 @app.get("/api/orcid-works")
 async def get_orcid_works(user_id: str = Depends(get_current_user)):
-    res = _sa.table("profiles").select("orcid_id").eq("id", user_id).execute()
+    res = _sb().table("profiles").select("orcid_id").eq("id", user_id).execute()
     if not res.data or not res.data[0].get("orcid_id"):
         raise HTTPException(400, "No ORCID account connected. Please connect via ORCID OAuth first.")
     try:
