@@ -16,6 +16,7 @@ let selectedMetIds    = new Set();
 let selectedKwIds     = new Set();
 let _storymapDirty = false;
 let _viewMode = 'card'; // 'card' | 'map'
+let _paperTypeFilter = 'all'; // 'all' | 'my_paper' | 'interesting_paper'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Toast utility
@@ -131,31 +132,49 @@ const renderPaperCards = (list) => {
   const countBadge = document.getElementById('paper-count-badge');
   const sectionTitle = document.getElementById('section-title');
 
-  countBadge.textContent = `${list.length} paper${list.length !== 1 ? 's' : ''}`;
-  sectionTitle.textContent = `Papers (${list.length})`;
+  // Update type tab counts
+  const myCount = list.filter(p => p.paper_type === 'my_paper').length;
+  const intCount = list.filter(p => p.paper_type === 'interesting_paper' || !p.paper_type).length;
+  const myCountEl = document.getElementById('ptype-count-my');
+  const intCountEl = document.getElementById('ptype-count-interesting');
+  if (myCountEl) myCountEl.textContent = myCount;
+  if (intCountEl) intCountEl.textContent = intCount;
+
+  // Apply type filter
+  const filtered = _paperTypeFilter === 'all' ? list
+    : _paperTypeFilter === 'my_paper' ? list.filter(p => p.paper_type === 'my_paper')
+    : list.filter(p => p.paper_type === 'interesting_paper' || !p.paper_type);
+
+  countBadge.textContent = `${filtered.length} paper${filtered.length !== 1 ? 's' : ''}`;
+  sectionTitle.textContent = `Papers (${filtered.length})`;
 
   if (_viewMode === 'map') {
-    // In map mode: only update count badge, don't touch grid/empty-state
     return;
   }
 
+  const displayList = filtered;
+
   grid.innerHTML = '';
 
-  if (list.length === 0) {
+  if (displayList.length === 0) {
     empty.classList.remove('hidden');
     return;
   }
   empty.classList.add('hidden');
 
-  list.forEach(paper => {
+  displayList.forEach(paper => {
     const authors = Array.isArray(paper.authors)
       ? paper.authors.join(', ')
       : (paper.authors || '—');
     const shortAuthors = authors.length > 60 ? authors.substring(0, 60) + '…' : authors;
     const checked = selectedPaperIds.has(paper.id) ? 'checked' : '';
+    const isMyPaper = paper.paper_type === 'my_paper';
+    const typeBadge = isMyPaper
+      ? `<span class="card-tag tag-my-paper">My Paper</span>`
+      : `<span class="card-tag tag-interesting-paper">Interesting</span>`;
 
     const card = document.createElement('div');
-    card.className = 'paper-card';
+    card.className = `paper-card${isMyPaper ? ' paper-card-mine' : ''}`;
     card.innerHTML = `
       <div class="paper-card-checkbox">
         <input type="checkbox" class="paper-checkbox" data-id="${paper.id}" ${checked} />
@@ -163,6 +182,7 @@ const renderPaperCards = (list) => {
       </div>
       <div class="card-authors">${escHtml(shortAuthors)}</div>
       <div class="card-meta">
+        ${typeBadge}
         ${paper.year    ? `<span class="card-tag tag-year">${escHtml(paper.year)}</span>` : ''}
         ${paper.journal ? `<span class="card-tag tag-journal">${escHtml(paper.journal)}</span>` : ''}
         <span class="card-tag tag-status-${paper.status}">${paper.status}</span>
@@ -197,7 +217,7 @@ const renderPaperCards = (list) => {
 };
 
 const filterPapers = (query) => {
-  if (_viewMode === 'map') return; // map view shows all papers
+  if (_viewMode === 'map') return;
   const q = query.toLowerCase();
   const filtered = papers.filter(p =>
     (p.title || '').toLowerCase().includes(q) ||
@@ -251,10 +271,128 @@ const setupUpload = () => {
   const progressPct   = document.getElementById('progress-pct');
   const dropOverlay  = document.getElementById('drop-overlay');
 
-  // Header button click → open file picker
-  headerBtn.addEventListener('click', () => fileInput.click());
+  // Pending paper type for the current upload session
+  let _pendingPaperType = 'interesting_paper';
 
-  // Full-page drag-and-drop
+  // ── ORCID modal (defined first so openOrcidModal is available below) ──────
+  const orcidModal   = document.getElementById('orcid-modal');
+  const orcidStep1   = document.getElementById('orcid-step-1');
+  const orcidStep2   = document.getElementById('orcid-step-2');
+  const orcidList    = document.getElementById('orcid-paper-list');
+  let _orcidWorks    = [];
+
+  const openOrcidModal = () => {
+    orcidStep1.classList.remove('hidden');
+    orcidStep2.classList.add('hidden');
+    document.getElementById('orcid-id-input').value = '';
+    orcidList.innerHTML = '';
+    _orcidWorks = [];
+    orcidModal.classList.remove('hidden');
+  };
+
+  document.getElementById('orcid-close').addEventListener('click', () => orcidModal.classList.add('hidden'));
+  orcidModal.addEventListener('click', (e) => { if (e.target === orcidModal) orcidModal.classList.add('hidden'); });
+
+  document.getElementById('orcid-back-btn').addEventListener('click', () => {
+    orcidStep2.classList.add('hidden');
+    orcidStep1.classList.remove('hidden');
+  });
+
+  document.getElementById('orcid-fetch-btn').addEventListener('click', async () => {
+    const orcidId = document.getElementById('orcid-id-input').value.trim();
+    if (!orcidId) { toast('Please enter your ORCID iD.', 'error'); return; }
+    const fetchBtn = document.getElementById('orcid-fetch-btn');
+    fetchBtn.disabled = true;
+    fetchBtn.textContent = 'Fetching…';
+    try {
+      const works = await apiFetch(`/orcid-works?orcid_id=${encodeURIComponent(orcidId)}`);
+      _orcidWorks = works;
+      orcidList.innerHTML = '';
+      if (works.length === 0) {
+        orcidList.innerHTML = '<p class="orcid-empty">No public works found for this ORCID iD.</p>';
+      } else {
+        works.forEach((w, i) => {
+          const row = document.createElement('label');
+          row.className = 'orcid-paper-row';
+          row.innerHTML = `
+            <input type="checkbox" class="orcid-paper-cb" data-idx="${i}" />
+            <div class="orcid-paper-info">
+              <div class="orcid-paper-title">${escHtml(w.title)}</div>
+              <div class="orcid-paper-meta">${[w.year, w.journal, w.doi ? 'DOI: ' + w.doi : ''].filter(Boolean).join(' · ')}</div>
+            </div>
+          `;
+          orcidList.appendChild(row);
+        });
+      }
+      orcidStep1.classList.add('hidden');
+      orcidStep2.classList.remove('hidden');
+    } catch (e) {
+      toast('ORCID fetch failed: ' + e.message, 'error');
+    } finally {
+      fetchBtn.disabled = false;
+      fetchBtn.textContent = 'Fetch Papers';
+    }
+  });
+
+  document.getElementById('orcid-import-btn').addEventListener('click', async () => {
+    const selected = [...orcidList.querySelectorAll('.orcid-paper-cb:checked')].map(cb => _orcidWorks[parseInt(cb.dataset.idx)]);
+    if (selected.length === 0) { toast('Select at least one paper.', 'error'); return; }
+    const importBtn = document.getElementById('orcid-import-btn');
+    importBtn.disabled = true;
+    importBtn.textContent = 'Importing…';
+    let ok = 0, skipped = 0;
+    for (const w of selected) {
+      try {
+        await apiFetch('/papers/import-from-metadata', {
+          method: 'POST',
+          body: JSON.stringify({ title: w.title, year: w.year, journal: w.journal, doi: w.doi }),
+        });
+        ok++;
+      } catch (e) {
+        if (e.message.includes('Already')) skipped++;
+        else toast(`Failed: ${w.title.substring(0, 40)} — ${e.message}`, 'error');
+      }
+    }
+    importBtn.disabled = false;
+    importBtn.textContent = 'Import Selected';
+    orcidModal.classList.add('hidden');
+    await loadPapers();
+    const msg = skipped ? `Imported ${ok}, skipped ${skipped} duplicate(s).` : `Imported ${ok} paper(s) as My Papers.`;
+    toast(msg, 'ok');
+  });
+
+  // ── Type-choice modal ─────────────────────────────────────────────────────
+  const typeModal = document.getElementById('type-choice-modal');
+  const openTypeModal = () => typeModal.classList.remove('hidden');
+  const closeTypeModal = () => typeModal.classList.add('hidden');
+
+  headerBtn.addEventListener('click', openTypeModal);
+  document.getElementById('type-choice-close').addEventListener('click', closeTypeModal);
+  typeModal.addEventListener('click', (e) => { if (e.target === typeModal) closeTypeModal(); });
+
+  // My Paper — PDF
+  document.getElementById('choose-my-pdf').addEventListener('click', (e) => {
+    e.stopPropagation();
+    _pendingPaperType = 'my_paper';
+    closeTypeModal();
+    fileInput.click();
+  });
+
+  // My Paper — ORCID
+  document.getElementById('choose-my-orcid').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeTypeModal();
+    openOrcidModal();
+  });
+
+  // Interesting Paper card
+  document.getElementById('choose-interesting-paper').addEventListener('click', () => {
+    _pendingPaperType = 'interesting_paper';
+    closeTypeModal();
+    fileInput.click();
+  });
+
+  // ── Full-page drag-and-drop (defaults to interesting_paper) ───────────────
   let _dragCounter = 0;
   document.addEventListener('dragenter', (e) => {
     if (!e.dataTransfer.types.includes('Files')) return;
@@ -271,7 +409,7 @@ const setupUpload = () => {
     _dragCounter = 0;
     dropOverlay.classList.add('hidden');
     const file = e.dataTransfer.files[0];
-    if (file) uploadFile(file);
+    if (file) { _pendingPaperType = 'interesting_paper'; uploadFile(file); }
   });
 
   fileInput.addEventListener('change', () => {
@@ -292,6 +430,7 @@ const setupUpload = () => {
 
     const fd = new FormData();
     fd.append('file', file);
+    fd.append('paper_type', _pendingPaperType);
 
     let pollTimer = null;
     const stopPoll = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
@@ -318,7 +457,6 @@ const setupUpload = () => {
           const prog = await apiFetch(`/papers/${paperId}/progress`);
           const pct  = prog.pct ?? 0;
 
-          // Stall detection
           if (pct !== lastPct) {
             lastPct = pct;
             lastChange = Date.now();
@@ -354,6 +492,16 @@ const setupUpload = () => {
       toast(err.message, 'error');
     }
   };
+
+  // ── Type filter tabs ──────────────────────────────────────────────────────
+  document.querySelectorAll('.ptype-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.ptype-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      _paperTypeFilter = tab.dataset.type;
+      renderPaperCards(papers);
+    });
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

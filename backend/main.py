@@ -19,7 +19,7 @@ from typing import Optional
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, File, Header, HTTPException, BackgroundTasks, UploadFile, Depends
+from fastapi import FastAPI, File, Form, Header, HTTPException, BackgroundTasks, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -885,6 +885,7 @@ def confirm_review(paper_id: int, body: ConfirmReview, user_id: str = Depends(ge
 async def upload_paper(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    paper_type: str = Form("interesting_paper"),
     user_id: str = Depends(get_current_user),
     authorization: str = Header(None),
     _rl: None = Depends(_rl_upload),
@@ -908,11 +909,12 @@ async def upload_paper(
     shutil.move(str(tmp_path), str(final_path))
 
     res = _sb_with(upload_token).table("papers").insert({
-        "user_id":  user_id,
-        "title":    file.filename.replace(".pdf", ""),
-        "pdf_path": str(final_path),
-        "pdf_hash": pdf_hash,
-        "status":   "processing",
+        "user_id":    user_id,
+        "title":      file.filename.replace(".pdf", ""),
+        "pdf_path":   str(final_path),
+        "pdf_hash":   pdf_hash,
+        "status":     "processing",
+        "paper_type": paper_type if paper_type in ("my_paper", "interesting_paper") else "interesting_paper",
     }).execute()
 
     if not res.data:
@@ -923,6 +925,85 @@ async def upload_paper(
     _set_progress(paper_id, "Queued for analysis…", 5)
     background_tasks.add_task(_run_analysis, paper_id, user_id, str(final_path), file.filename, upload_token)
     return {"paper_id": paper_id, "status": "processing"}
+
+
+# ── ORCID works lookup ────────────────────────────────────────────────────────
+@app.get("/api/orcid-works")
+async def get_orcid_works(orcid_id: str, user_id: str = Depends(get_current_user)):
+    import httpx
+    orcid_id = orcid_id.strip()
+    url = f"https://pub.orcid.org/v3.0/{orcid_id}/works"
+    try:
+        resp = httpx.get(url, headers={"Accept": "application/json"}, timeout=15)
+        resp.raise_for_status()
+    except Exception as e:
+        raise HTTPException(502, f"ORCID fetch failed: {e}")
+
+    data = resp.json()
+    works = []
+    for group in data.get("group", []):
+        summaries = group.get("work-summary", [])
+        if not summaries:
+            continue
+        s = summaries[0]
+        title_val = ((s.get("title") or {}).get("title") or {}).get("value", "")
+        if not title_val:
+            continue
+        pub_date = s.get("publication-date") or {}
+        year = ((pub_date.get("year") or {}).get("value") or "")
+        journal = ((s.get("journal-title") or {}).get("value") or "")
+        doi = ""
+        for eid in ((s.get("external-ids") or {}).get("external-id") or []):
+            if eid.get("external-id-type") == "doi":
+                doi = eid.get("external-id-value", "")
+                break
+        works.append({
+            "title":          title_val,
+            "year":           year,
+            "journal":        journal,
+            "doi":            doi,
+            "put_code":       s.get("put-code"),
+        })
+    return works
+
+
+# ── Import paper from metadata (ORCID — no PDF) ───────────────────────────────
+class OrcidImportItem(BaseModel):
+    title:   str
+    year:    Optional[str] = None
+    journal: Optional[str] = None
+    doi:     Optional[str] = None
+    authors: Optional[list] = None
+
+@app.post("/api/papers/import-from-metadata")
+async def import_from_metadata(
+    data: OrcidImportItem,
+    user_id: str = Depends(get_current_user),
+    authorization: str = Header(None),
+):
+    upload_token = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+    sb = _sb_with(upload_token)
+
+    if data.doi:
+        dup = sb.table("papers").select("id").eq("user_id", user_id).eq("doi", data.doi).execute()
+        if dup.data:
+            raise HTTPException(409, f"Already in your library (paper id={dup.data[0]['id']}).")
+
+    res = sb.table("papers").insert({
+        "user_id":    user_id,
+        "title":      data.title,
+        "year":       data.year,
+        "journal":    data.journal,
+        "doi":        data.doi,
+        "authors":    data.authors or [],
+        "status":     "pending_review",
+        "paper_type": "my_paper",
+    }).execute()
+
+    if not res.data:
+        raise HTTPException(500, "DB insert failed")
+
+    return {"paper_id": res.data[0]["id"], "status": "pending_review"}
 
 
 @app.get("/api/papers/{paper_id}/progress")
