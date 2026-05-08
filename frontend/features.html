@@ -412,12 +412,16 @@
     btn.disabled = false; btn.textContent = 'Create Account';
   };
 
+  const _navBadge = u => u.user_metadata?.orcid_id
+    ? `<span class="orcid-verified-badge" title="ORCID verified: ${u.user_metadata.orcid_id}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>`
+    : '';
+
   sb.auth.onAuthStateChange((event, session) => {
     const area = document.getElementById('nav-auth');
     if (session?.user) {
       const u = session.user;
       const name = u.user_metadata?.username || u.user_metadata?.name || u.user_metadata?.full_name || (u.email ? u.email.split('@')[0] : 'Account');
-      area.innerHTML = `<span class="site-nav-email">${name}</span><button class="site-nav-link" onclick="sb.auth.signOut().then(()=>location.reload())">Sign Out</button>`;
+      area.innerHTML = `<span class="site-nav-email">${name}${_navBadge(u)}</span><button class="site-nav-link" onclick="sb.auth.signOut().then(()=>location.reload())">Sign Out</button>`;
     } else {
       area.innerHTML = `<button class="site-nav-link" onclick="openAuthModal('signin')">Sign In</button>`;
     }
@@ -429,7 +433,7 @@
     if (session?.user) {
       const u = session.user;
       const name = u.user_metadata?.username || u.user_metadata?.name || u.user_metadata?.full_name || (u.email ? u.email.split('@')[0] : 'Account');
-      area.innerHTML = `<span class="site-nav-email">${name}</span><button class="site-nav-link" onclick="sb.auth.signOut().then(()=>location.reload())">Sign Out</button>`;
+      area.innerHTML = `<span class="site-nav-email">${name}${_navBadge(u)}</span><button class="site-nav-link" onclick="sb.auth.signOut().then(()=>location.reload())">Sign Out</button>`;
     } else {
       area.innerHTML = `<button class="site-nav-link" onclick="openAuthModal('signin')">Sign In</button>`;
     }

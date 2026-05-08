@@ -26,8 +26,11 @@
       const u = session.user;
       const name = u.user_metadata?.username || u.user_metadata?.name || u.user_metadata?.full_name
                 || (u.email ? u.email.split('@')[0] : 'Account');
+      const orcidBadge = u.user_metadata?.orcid_id
+        ? `<span class="orcid-verified-badge" title="ORCID verified: ${u.user_metadata.orcid_id}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>`
+        : '';
       area.innerHTML =
-        `<span class="site-nav-email">${esc(name)}</span>` +
+        `<span class="site-nav-email">${esc(name)}${orcidBadge}</span>` +
         `<button class="site-nav-link" onclick="signOut()">Sign Out</button>`;
     } else {
       area.innerHTML = `<a class="site-nav-link" href="/?signin=1">Sign In</a>`;
