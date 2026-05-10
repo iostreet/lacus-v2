@@ -1446,11 +1446,67 @@ def repair_links(paper_id: int, user_id: str = Depends(get_current_user)):
 
 
 # ── Summaries ─────────────────────────────────────────────────────────────────
+def _backfill_missing_summary_rows(paper_id: int) -> list[dict]:
+    sb = _sb()
+    summaries = sb.table("summaries").select("*").eq("paper_id", paper_id).execute().data or []
+    existing_types = {s.get("summary_type") for s in summaries}
+
+    rows_to_insert: list[dict] = []
+
+    if "relation_based" not in existing_types:
+        relations = (
+            sb.table("relations")
+              .select("source_name,relation_type,target_name,confidence")
+              .eq("paper_id", paper_id)
+              .execute().data or []
+        )
+        ranked_relations = sorted(
+            [r for r in relations if r.get("source_name") and r.get("target_name")],
+            key=lambda r: (r.get("relation_type") == "related_to", -(r.get("confidence") or 0)),
+        )
+        for rel in ranked_relations[:6]:
+            tag = (rel.get("relation_type") or "related_to").replace("_", " ")
+            rows_to_insert.append({
+                "paper_id": paper_id,
+                "summary_text": f"{rel['source_name']} --{tag}--> {rel['target_name']}",
+                "summary_type": "relation_based",
+                "confidence": round(rel.get("confidence") or 0.5, 3),
+            })
+
+    if "metric_based" not in existing_types:
+        metrics = (
+            sb.table("metrics")
+              .select("metric_name,value,unit,condition,confidence")
+              .eq("paper_id", paper_id)
+              .order("display_order")
+              .order("id")
+              .execute().data or []
+        )
+        for met in metrics[:5]:
+            name = met.get("metric_name") or "Metric"
+            value = f"{met.get('value') or ''} {met.get('unit') or ''}".strip()
+            text = f"{name}: {value}".strip()
+            if met.get("condition"):
+                text += f" ({met['condition']})"
+            rows_to_insert.append({
+                "paper_id": paper_id,
+                "summary_text": text,
+                "summary_type": "metric_based",
+                "confidence": round(met.get("confidence") or 0.65, 3),
+            })
+
+    if rows_to_insert:
+        with contextlib.suppress(Exception):
+            inserted = sb.table("summaries").insert(rows_to_insert).execute().data or []
+            summaries.extend(inserted)
+
+    return summaries
+
+
 @app.get("/api/papers/{paper_id}/summaries")
 def get_summaries(paper_id: int, user_id: str = Depends(get_current_user)):
     _assert_paper_owner(paper_id, user_id)
-    res = _sb().table("summaries").select("*").eq("paper_id", paper_id).execute()
-    return [_sum_to_dict(s) for s in (res.data or [])]
+    return [_sum_to_dict(s) for s in _backfill_missing_summary_rows(paper_id)]
 
 
 @app.put("/api/summaries/{sum_id}")

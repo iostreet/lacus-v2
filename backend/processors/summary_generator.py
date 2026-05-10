@@ -1,5 +1,5 @@
 """
-Keyword-phrase summary generator (no subject-verb sentences).
+Keyword-phrase summary generator.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ def generate_summaries(paper_info: dict, keywords: list[dict], relations: list[d
     methods      = _pick(keywords, "Method", 2)
     applications = _pick(keywords, "Application", 2)
 
-    # Main: category-tagged keyword phrases, no subject-verb
+    # Main: category-tagged keyword phrases.
     parts = []
     if materials:    parts.append(f"Material: {' / '.join(materials[:2])}")
     if structures:   parts.append(f"Structure: {structures[0]}")
@@ -34,19 +34,34 @@ def generate_summaries(paper_info: dict, keywords: list[dict], relations: list[d
             "confidence": 0.80,
         })
 
-    # Relation-based: concise arrow notation
-    high_conf = [r for r in relations if r["confidence"] > 0.60 and r["relation_type"] != "related_to"]
-    for rel in high_conf[:6]:
-        tag = rel["relation_type"].replace("_", " ")
-        s   = f"{rel['source_name']}  →[{tag}]→  {rel['target_name']}"
-        summaries.append({"summary_text": s, "summary_type": "relation_based", "confidence": round(rel["confidence"], 3)})
+    # Relation-based: prefer explicit relation types, but still show related_to
+    # links when those are the only extracted links.
+    ranked_relations = sorted(
+        [
+            r for r in relations
+            if r.get("source_name") and r.get("target_name")
+        ],
+        key=lambda r: (r.get("relation_type") == "related_to", -(r.get("confidence") or 0)),
+    )
+    for rel in ranked_relations[:6]:
+        tag = (rel.get("relation_type") or "related_to").replace("_", " ")
+        s = f"{rel['source_name']} --{tag}--> {rel['target_name']}"
+        summaries.append({
+            "summary_text": s,
+            "summary_type": "relation_based",
+            "confidence": round(rel.get("confidence") or 0.5, 3),
+        })
 
-    # Metric-based: "name: value unit (condition)"
+    # Metric-based: "name: value unit (condition)".
     for met in metrics[:5]:
         val = f"{met['value']} {met.get('unit', '')}".strip()
-        s   = f"{met['metric_name']}: {val}"
+        s = f"{met['metric_name']}: {val}"
         if met.get("condition"):
-            s += f"  ({met['condition']})"
-        summaries.append({"summary_text": s, "summary_type": "metric_based", "confidence": round(met.get("confidence", 0.65), 3)})
+            s += f" ({met['condition']})"
+        summaries.append({
+            "summary_text": s,
+            "summary_type": "metric_based",
+            "confidence": round(met.get("confidence", 0.65), 3),
+        })
 
     return summaries
