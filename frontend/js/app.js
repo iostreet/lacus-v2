@@ -683,9 +683,7 @@ const loadTabContent = async (tab) => {
   if (!activePaperId) return;
   switch (tab) {
     case 'overview':  await loadOverview();  break;
-    case 'keywords':  await loadKeywords();  break;
-    case 'relations': await loadRelations(); break;
-    case 'metrics':   await loadMetrics();   break;
+    case 'analysis':  await loadAnalysis();  break;
     case 'storymap':  await loadStoryMap();  break;
     case 'summary':   await loadSummary();   break;
   }
@@ -1070,6 +1068,227 @@ const _setupDragReorder = (tbody, reorderEndpoint) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const CATEGORIES = ['Material','Structure','Property','Method','Application','Metric','Other'];
 
+const _normName = s => String(s || '').trim().toLowerCase();
+
+const _reloadAnalysisIfActive = async () => {
+  if (activeTab === 'analysis') await loadAnalysis();
+};
+
+const _analysisMetricMatches = (metric, keyword) => {
+  const kwName = _normName(keyword.normalized_name || keyword.keyword_name);
+  const metName = _normName(metric.metric_name);
+  return metric.linked_keyword_id === keyword.id || (kwName && metName && kwName === metName);
+};
+
+const _analysisRelationMatches = (relation, keyword) => {
+  const kwName = _normName(keyword.normalized_name || keyword.keyword_name);
+  return kwName && _normName(relation.source_name) === kwName;
+};
+
+const loadAnalysis = async () => {
+  let keywords, relations, metrics;
+  try {
+    [keywords, relations, metrics] = await Promise.all([
+      apiFetch(`/papers/${activePaperId}/keywords`),
+      apiFetch(`/papers/${activePaperId}/relations`),
+      apiFetch(`/papers/${activePaperId}/metrics`),
+    ]);
+  } catch (e) {
+    toast('Failed to load analysis: ' + e.message, 'error');
+    return;
+  }
+
+  const kwSelect = document.getElementById('amet-kw');
+  if (kwSelect) {
+    kwSelect.innerHTML = '<option value="">— none —</option>' +
+      keywords.map(k => `<option value="${k.id}">${escHtml(k.normalized_name || k.keyword_name)}</option>`).join('');
+  }
+
+  const label = document.getElementById('analysis-count-label');
+  if (label) label.textContent = `${keywords.length} keywords · ${relations.length} relations · ${metrics.length} metrics`;
+
+  const tbody = document.getElementById('analysis-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (!keywords.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No analysis items yet. Add a keyword to start building this paper graph.</td></tr>';
+    return;
+  }
+
+  const rows = keywords
+    .map(keyword => ({
+      keyword,
+      relations: relations.filter(rel => _analysisRelationMatches(rel, keyword)),
+      metrics: metrics.filter(metric => _analysisMetricMatches(metric, keyword)),
+    }))
+    .sort((a, b) => {
+      const ac = Math.max(a.keyword.confidence || 0, ...a.relations.map(r => r.confidence || 0), ...a.metrics.map(m => m.confidence || 0));
+      const bc = Math.max(b.keyword.confidence || 0, ...b.relations.map(r => r.confidence || 0), ...b.metrics.map(m => m.confidence || 0));
+      return bc - ac;
+    })
+    .slice(0, 24);
+
+  rows.forEach(({ keyword, relations: rels, metrics: mets }) => {
+    const conf = Math.max(keyword.confidence || 0, ...rels.map(r => r.confidence || 0), ...mets.map(m => m.confidence || 0));
+    const tr = document.createElement('tr');
+    tr.dataset.keywordId = keyword.id;
+
+    const relHtml = rels.length
+      ? rels.map(rel => `
+          <div class="analysis-subitem analysis-rel" data-rel-id="${rel.id}">
+            <select class="cell-input analysis-rel-type">${_relTypeOptions(rel.relation_type)}</select>
+            <input class="cell-input analysis-rel-target" value="${escHtml(rel.target_name || '')}" />
+            <button class="btn btn-sm save-analysis-rel" data-id="${rel.id}">Save</button>
+            <button class="icon-btn del del-analysis-rel" data-id="${rel.id}" title="Delete">×</button>
+          </div>
+        `).join('')
+      : '<span class="analysis-empty">—</span>';
+
+    const metric = mets[0];
+    tr.innerHTML = `
+      <td><input class="cell-input analysis-kw-name" value="${escHtml(keyword.keyword_name || '')}" /></td>
+      <td>
+        <select class="cat-select analysis-kw-category">
+          ${CATEGORIES.map(c => `<option${c === keyword.category ? ' selected' : ''}>${c}</option>`).join('')}
+        </select>
+      </td>
+      <td>${relHtml}</td>
+      <td><input class="cell-input analysis-met-value" value="${escHtml(metric?.value || '')}" data-id="${metric?.id || ''}" /></td>
+      <td><input class="cell-input analysis-met-unit" value="${escHtml(metric?.unit || '')}" data-id="${metric?.id || ''}" /></td>
+      <td><input class="cell-input analysis-met-condition" value="${escHtml(metric?.condition || '')}" data-id="${metric?.id || ''}" /></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="conf-bar-wrap"><div class="conf-bar" style="width:${Math.round(conf * 100)}%"></div></div>
+          <span class="conf-pct-label" style="font-size:0.75rem">${Math.round(conf * 100)}%</span>
+        </div>
+      </td>
+      <td>
+        <div class="action-btns">
+          <button class="btn btn-sm save-analysis-row" data-id="${keyword.id}" data-metric-id="${metric?.id || ''}">Save</button>
+          <button class="icon-btn del del-analysis-keyword" data-id="${keyword.id}" title="Delete">×</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('.save-analysis-row').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const row = btn.closest('tr');
+      const keywordId = btn.dataset.id;
+      const keywordName = row.querySelector('.analysis-kw-name').value.trim();
+      const category = row.querySelector('.analysis-kw-category').value;
+      const metricId = btn.dataset.metricId;
+      const value = row.querySelector('.analysis-met-value').value.trim();
+      const unit = row.querySelector('.analysis-met-unit').value.trim();
+      const condition = row.querySelector('.analysis-met-condition').value.trim();
+      try {
+        await apiFetch(`/keywords/${keywordId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ keyword_name: keywordName, normalized_name: keywordName, category, confidence: 1.0 }),
+        });
+        if (metricId) {
+          await apiFetch(`/metrics/${metricId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ metric_name: keywordName, value, unit, condition, linked_keyword_id: parseInt(keywordId), confidence: 1.0 }),
+          });
+        } else if (value) {
+          await apiFetch(`/papers/${activePaperId}/metrics`, {
+            method: 'POST',
+            body: JSON.stringify({ metric_name: keywordName, value, unit, condition, linked_keyword_id: parseInt(keywordId), confidence: 1.0 }),
+          });
+        }
+        toast('Analysis item saved.', 'ok');
+        await loadAnalysis();
+        await refreshStorymapIfActive();
+      } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+    });
+  });
+
+  tbody.querySelectorAll('.analysis-rel-type').forEach(sel => {
+    sel.addEventListener('change', () => {
+      if (sel.value !== '__custom__') return;
+      const name = prompt('New relation type name:');
+      if (name && name.trim()) {
+        const t = name.trim();
+        if (!RELATION_TYPES.includes(t) && !_customRelTypes.includes(t)) _customRelTypes.push(t);
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.text = t;
+        opt.selected = true;
+        sel.insertBefore(opt, sel.querySelector('[value="__custom__"]'));
+        sel.value = t;
+      } else {
+        sel.value = RELATION_TYPES[0];
+      }
+    });
+  });
+
+  tbody.querySelectorAll('.save-analysis-rel').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const wrap = btn.closest('.analysis-rel');
+      try {
+        await apiFetch(`/relations/${btn.dataset.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            relation_type: wrap.querySelector('.analysis-rel-type').value,
+            target_name: wrap.querySelector('.analysis-rel-target').value.trim(),
+            confidence: 1.0,
+          }),
+        });
+        toast('Relation saved.', 'ok');
+        await loadAnalysis();
+        await refreshStorymapIfActive();
+      } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+    });
+  });
+
+  tbody.querySelectorAll('.del-analysis-rel').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this relation?')) return;
+      try {
+        await apiFetch(`/relations/${btn.dataset.id}`, { method: 'DELETE' });
+        toast('Relation deleted.', 'ok');
+        await loadAnalysis();
+        await refreshStorymapIfActive();
+      } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+    });
+  });
+
+  tbody.querySelectorAll('.del-analysis-keyword').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this keyword? Related relation links may remain as text.')) return;
+      try {
+        await apiFetch(`/keywords/${btn.dataset.id}`, { method: 'DELETE' });
+        toast('Keyword deleted.', 'ok');
+        await loadAnalysis();
+        await refreshStorymapIfActive();
+      } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+    });
+  });
+};
+
+document.getElementById('add-analysis-keyword-btn')?.addEventListener('click', async () => {
+  const name = prompt('Keyword name:');
+  if (!name || !name.trim()) return;
+  const category = prompt(`Category (${CATEGORIES.join(', ')}):`, 'Other') || 'Other';
+  try {
+    await apiFetch(`/papers/${activePaperId}/keywords`, {
+      method: 'POST',
+      body: JSON.stringify({
+        keyword_name: name.trim(),
+        normalized_name: name.trim(),
+        category: CATEGORIES.includes(category) ? category : 'Other',
+        confidence: 1.0,
+      }),
+    });
+    toast('Keyword added.', 'ok');
+    await loadAnalysis();
+    await refreshStorymapIfActive();
+  } catch (e) { toast('Add failed: ' + e.message, 'error'); }
+});
+
 const _updateKwBulkBar = () => {
   const bar = document.getElementById('kw-bulk-bar');
   if (!bar) return;
@@ -1427,13 +1646,13 @@ document.getElementById('kw-bulk-clear-btn')?.addEventListener('click', () => {
 });
 
 // Add relation modal
-document.getElementById('add-relation-btn').addEventListener('click', () => {
+document.getElementById('add-relation-btn')?.addEventListener('click', () => {
   document.getElementById('add-rel-modal').classList.remove('hidden');
 });
-document.getElementById('arel-cancel').addEventListener('click', () => {
+document.getElementById('arel-cancel')?.addEventListener('click', () => {
   document.getElementById('add-rel-modal').classList.add('hidden');
 });
-document.getElementById('arel-type').addEventListener('change', (e) => {
+document.getElementById('arel-type')?.addEventListener('change', (e) => {
   const wrap = document.getElementById('arel-custom-wrap');
   if (e.target.value === '__custom__') {
     wrap.style.display = 'block';
@@ -1442,7 +1661,7 @@ document.getElementById('arel-type').addEventListener('change', (e) => {
     wrap.style.display = 'none';
   }
 });
-document.getElementById('arel-save').addEventListener('click', async () => {
+document.getElementById('arel-save')?.addEventListener('click', async () => {
   const src = document.getElementById('arel-source').value.trim();
   const selVal = document.getElementById('arel-type').value;
   let rel = selVal;
@@ -1463,7 +1682,7 @@ document.getElementById('arel-save').addEventListener('click', async () => {
     document.getElementById('add-rel-modal').classList.add('hidden');
     ['arel-source','arel-target','arel-evidence'].forEach(id => { document.getElementById(id).value = ''; });
     toast('Relation added.', 'ok');
-    await loadRelations();
+    await _reloadAnalysisIfActive();
     await refreshStorymapIfActive();
   } catch (e) { toast('Failed: ' + e.message, 'error'); }
 });
@@ -1624,13 +1843,13 @@ document.getElementById('met-bulk-clear-btn')?.addEventListener('click', () => {
 });
 
 // ── Add-metric modal ─────────────────────────────────────────────────────────
-document.getElementById('add-metric-btn').addEventListener('click', () => {
+document.getElementById('add-metric-btn')?.addEventListener('click', () => {
   document.getElementById('add-met-modal').classList.remove('hidden');
 });
-document.getElementById('amet-cancel').addEventListener('click', () => {
+document.getElementById('amet-cancel')?.addEventListener('click', () => {
   document.getElementById('add-met-modal').classList.add('hidden');
 });
-document.getElementById('amet-save').addEventListener('click', async () => {
+document.getElementById('amet-save')?.addEventListener('click', async () => {
   const name  = document.getElementById('amet-name').value.trim();
   const value = document.getElementById('amet-value').value.trim();
   const unit  = document.getElementById('amet-unit').value.trim();
@@ -1647,7 +1866,7 @@ document.getElementById('amet-save').addEventListener('click', async () => {
     ['amet-name','amet-value','amet-unit','amet-cond'].forEach(id => { document.getElementById(id).value = ''; });
     if (kwSel) kwSel.value = '';
     toast('Metric added.', 'ok');
-    await loadMetrics();
+    await _reloadAnalysisIfActive();
     await refreshStorymapIfActive();
   } catch (e) { toast('Failed: ' + e.message, 'error'); }
 });

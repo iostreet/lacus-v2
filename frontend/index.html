@@ -187,15 +187,13 @@
       </div>
     </div>
 
-    <!-- Tabs -->
-    <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="overview">Overview</button>
-      <button class="tab-btn" data-tab="keywords">Keywords</button>
-      <button class="tab-btn" data-tab="relations">Relations</button>
-      <button class="tab-btn" data-tab="metrics">Metrics</button>
-      <button class="tab-btn" data-tab="storymap">Story Map</button>
-      <button class="tab-btn" data-tab="summary">Summary</button>
-    </nav>
+      <!-- Tabs -->
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="analysis">Analysis</button>
+        <button class="tab-btn" data-tab="storymap">Story Map</button>
+        <button class="tab-btn" data-tab="summary">Summary</button>
+      </nav>
 
     <div class="tab-content">
 
@@ -234,92 +232,32 @@
         </div>
       </div>
 
-      <!-- Keywords tab -->
-      <div class="tab-pane" id="tab-keywords">
+      <!-- Analysis tab -->
+      <div class="tab-pane" id="tab-analysis">
         <div class="table-toolbar">
-          <span class="toolbar-label" id="kw-count-label">Keywords</span>
-          <button class="btn btn-sm btn-rereview" id="kw-rereview-btn">↺ Re-review</button>
-        </div>
-        <div class="table-bulk-bar hidden" id="kw-bulk-bar">
-          <span id="kw-bulk-count">0 selected</span>
-          <button class="btn btn-sm btn-danger" id="kw-bulk-delete-btn">Delete Selected</button>
-          <button class="btn btn-sm" id="kw-bulk-clear-btn">Clear</button>
+          <span class="toolbar-label" id="analysis-count-label">Analysis Items</span>
+          <div class="analysis-toolbar-actions">
+            <button class="btn btn-sm btn-rereview" id="kw-rereview-btn">↺ Re-review</button>
+            <button class="btn btn-sm btn-primary" id="add-analysis-keyword-btn">+ Add Keyword</button>
+            <button class="btn btn-sm btn-primary" id="add-relation-btn">+ Add Relation</button>
+            <button class="btn btn-sm btn-primary" id="add-metric-btn">+ Add Metric</button>
+          </div>
         </div>
         <div class="table-wrap">
-          <table class="data-table" id="keywords-table">
+          <table class="data-table analysis-table" id="analysis-table">
             <thead>
               <tr>
-                <th style="width:28px"></th>
-                <th style="width:28px"><input type="checkbox" id="kw-select-all" title="Select all" style="accent-color:var(--accent);cursor:pointer" /></th>
                 <th>Keyword</th>
-                <th>Normalized Name</th>
                 <th>Category</th>
-                <th>Confidence</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="keywords-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Relations tab -->
-      <div class="tab-pane" id="tab-relations">
-        <div class="table-toolbar">
-          <span class="toolbar-label" id="rel-count-label">Relations</span>
-          <button class="btn btn-sm btn-primary" id="add-relation-btn">+ Add Relation</button>
-        </div>
-        <div class="table-bulk-bar hidden" id="rel-bulk-bar">
-          <span id="rel-bulk-count">0 selected</span>
-          <button class="btn btn-sm btn-danger" id="rel-bulk-delete-btn">Delete Selected</button>
-          <button class="btn btn-sm" id="rel-bulk-clear-btn">Clear</button>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table" id="relations-table">
-            <thead>
-              <tr>
-                <th style="width:28px"></th>
-                <th style="width:28px"><input type="checkbox" id="rel-select-all" title="Select all" style="accent-color:var(--accent);cursor:pointer" /></th>
-                <th>Source</th>
-                <th>Relation</th>
-                <th>Target</th>
-                <th>Confidence</th>
-                <th>Section</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="relations-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Metrics tab -->
-      <div class="tab-pane" id="tab-metrics">
-        <div class="table-toolbar">
-          <span class="toolbar-label" id="met-count-label">Performance Metrics</span>
-          <button class="btn btn-sm btn-primary" id="add-metric-btn">+ Add Metric</button>
-        </div>
-        <div class="table-bulk-bar hidden" id="met-bulk-bar">
-          <span id="met-bulk-count">0 selected</span>
-          <button class="btn btn-sm btn-danger" id="met-bulk-delete-btn">Delete Selected</button>
-          <button class="btn btn-sm" id="met-bulk-clear-btn">Clear</button>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table" id="metrics-table">
-            <thead>
-              <tr>
-                <th style="width:28px"></th>
-                <th style="width:28px"><input type="checkbox" id="met-select-all" title="Select all" style="accent-color:var(--accent);cursor:pointer" /></th>
-                <th>Metric</th>
+                <th>Relations / Target</th>
                 <th>Value</th>
                 <th>Unit</th>
                 <th>Condition</th>
-                <th>Keyword</th>
                 <th>Confidence</th>
-                <th>Actions</th>
+                <th style="width:120px">Actions</th>
               </tr>
             </thead>
-            <tbody id="metrics-tbody"></tbody>
+            <tbody id="analysis-tbody"></tbody>
           </table>
         </div>
       </div>

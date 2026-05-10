@@ -972,6 +972,34 @@ a:hover { text-decoration: underline; }
 
 .action-btns { display: flex; gap: 6px; }
 
+.analysis-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.analysis-table td {
+  vertical-align: top;
+}
+
+.analysis-subitem {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(130px, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.analysis-subitem:last-child {
+  margin-bottom: 0;
+}
+
+.analysis-empty {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
 .icon-btn {
   width: 28px; height: 28px;
   border-radius: 4px;
