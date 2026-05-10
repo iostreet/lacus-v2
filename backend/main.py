@@ -41,6 +41,7 @@ from processors.metric_extractor  import extract_metrics
 from processors.relation_extractor import extract_relations
 from processors.summary_generator  import generate_summaries
 from processors.field_classifier   import detect_field
+from processors.landing_classifier import classify_landing
 
 # ── In-memory progress tracker ───────────────────────────────────────────────
 _progress: dict[int, dict] = {}
@@ -201,14 +202,21 @@ _LANDING_COLORS = ['#7c3aed','#0891b2','#059669','#d97706',
 
 @app.get("/api/public/landing-map")
 def public_landing_map():
-    """Aggregate all users' papers by field → theme → concept — no auth required."""
+    """Aggregate confirmed papers by program-generated landing labels."""
     try:
         papers = (_sa.table("papers")
-                    .select("id,title,year,doi,journal,authors,field,theme,concept,user_id")
+                    .select("id,title,year,doi,journal,authors,landing_field,landing_theme,landing_concept,user_id")
                     .eq("status", "confirmed")
                     .execute().data or [])
     except Exception as e:
-        return {"fields": [], "error": str(e)}
+        # Backward-compatible fallback while the landing_* migration is being applied.
+        try:
+            papers = (_sa.table("papers")
+                        .select("id,title,year,doi,journal,authors,user_id")
+                        .eq("status", "confirmed")
+                        .execute().data or [])
+        except Exception as e2:
+            return {"fields": [], "error": str(e2 or e)}
 
     def _cap(s: str) -> str:
         s = (s or "").strip()
@@ -217,9 +225,13 @@ def public_landing_map():
     # field → theme → concept → doi_key → {paper data + user_ids set}
     field_map: dict = {}
     for p in papers:
-        fname = _cap(p.get("field")   or "") or "Other Research"
-        tname = _cap(p.get("theme")   or "") or "General"
-        cname = _cap(p.get("concept") or "") or "General"
+        if not (p.get("landing_field") and p.get("landing_theme") and p.get("landing_concept")):
+            inferred = classify_landing({"title": p.get("title") or ""}, [])
+        else:
+            inferred = {}
+        fname = _cap(p.get("landing_field")   or inferred.get("landing_field")   or "") or "Other Research"
+        tname = _cap(p.get("landing_theme")   or inferred.get("landing_theme")   or "") or "General"
+        cname = _cap(p.get("landing_concept") or inferred.get("landing_concept") or "") or "General"
         doi   = (p.get("doi") or "").strip()
         # Use DOI as dedup key; fall back to paper id so no-DOI papers stay distinct
         key   = doi if doi else f"__id_{p.get('id')}"
@@ -590,6 +602,10 @@ def _paper_to_dict(p: dict) -> dict:
         "field":            p.get("field"),
         "field_confidence": p.get("field_confidence"),
         "field_scores":     p.get("field_scores") or {},
+        "landing_field":    p.get("landing_field"),
+        "landing_theme":    p.get("landing_theme"),
+        "landing_concept":  p.get("landing_concept"),
+        "landing_classification_confidence": p.get("landing_classification_confidence") or {},
         "paper_type":       p.get("paper_type") or "interesting_paper",
     }
 
@@ -741,6 +757,14 @@ def _run_analysis(paper_id: int, user_id: str, pdf_path: str, orig_filename: str
             }).eq("id", paper_id).execute()
         except Exception:
             pass  # non-critical — don't abort pipeline
+
+        # Landing-map classification is program-controlled and separate from
+        # user-editable field/theme/concept values used by personal maps.
+        try:
+            landing = classify_landing(sections, kw_data)
+            sb.table("papers").update(landing).eq("id", paper_id).execute()
+        except Exception as landing_err:
+            print(f"[warn] landing classification failed for paper {paper_id}: {landing_err}")
 
         # Step 4 — Metrics
         _set_progress(paper_id, "Extracting metrics & classifying categories…", 52)
@@ -1190,7 +1214,16 @@ async def import_from_metadata(
     if not res.data:
         raise HTTPException(500, "DB insert failed")
 
-    return {"paper_id": res.data[0]["id"], "status": "pending_review"}
+    paper_id = res.data[0]["id"]
+    with contextlib.suppress(Exception):
+        landing = classify_landing({
+            "title": data.title or "",
+            "abstract": "",
+            "author_keywords": [],
+        }, [])
+        sb.table("papers").update(landing).eq("id", paper_id).execute()
+
+    return {"paper_id": paper_id, "status": "pending_review"}
 
 
 @app.get("/api/papers/{paper_id}/progress")
@@ -1225,7 +1258,19 @@ def get_paper(paper_id: int, user_id: str = Depends(get_current_user)):
     res = _sb().table("papers").select("*").eq("id", paper_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(404, "Paper not found")
-    return _paper_to_dict(res.data[0])
+    paper_dict = _paper_to_dict(res.data[0])
+    if not (paper_dict.get("landing_field") and paper_dict.get("landing_theme") and paper_dict.get("landing_concept")):
+        with contextlib.suppress(Exception):
+            kws = (_sb().table("keywords")
+                   .select("keyword_name,normalized_name,category,confidence")
+                   .eq("paper_id", paper_id).execute().data or [])
+            inferred = classify_landing({
+                "title": paper_dict.get("title") or "",
+                "abstract": paper_dict.get("abstract") or "",
+                "author_keywords": [k.get("normalized_name") or k.get("keyword_name") or "" for k in kws],
+            }, kws)
+            paper_dict.update(inferred)
+    return paper_dict
 
 
 @app.put("/api/papers/{paper_id}")

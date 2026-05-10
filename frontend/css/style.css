@@ -725,6 +725,39 @@ a:hover { text-decoration: underline; }
   margin-top: 10px;
 }
 
+.landing-classification-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.landing-classification-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.landing-classification-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid rgba(168, 85, 247, 0.28);
+  border-radius: 5px;
+  background: rgba(168, 85, 247, 0.08);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.landing-classification-chip strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
 /* ════════════════════════ TABS ════════════════════════ */
 .tab-nav {
   display: flex;

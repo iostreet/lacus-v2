@@ -626,6 +626,28 @@ const renderModalHeader = (paper) => {
     doiEl.classList.add('hidden');
   }
 
+  document.getElementById('landing-classification-strip')?.remove();
+  const landingBits = [
+    ['Research Field', paper.landing_field],
+    ['Theme', paper.landing_theme],
+    ['Concept', paper.landing_concept],
+  ].filter(([, value]) => value);
+  if (landingBits.length) {
+    const strip = document.createElement('div');
+    strip.id = 'landing-classification-strip';
+    strip.className = 'landing-classification-strip';
+    strip.innerHTML = `
+      <span class="landing-classification-label">Landing Classification</span>
+      ${landingBits.map(([label, value]) => `
+        <span class="landing-classification-chip">
+          <span>${escHtml(label)}</span>
+          <strong>${escHtml(value)}</strong>
+        </span>
+      `).join('')}
+    `;
+    document.querySelector('.modal-paper-meta').appendChild(strip);
+  }
+
   // "Analyze PDF" button for papers imported without a PDF (e.g. ORCID imports)
   document.getElementById('modal-analyze-btn')?.remove();
   if (!paper.pdf_path) {
