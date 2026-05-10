@@ -1098,25 +1098,33 @@ const loadAnalysis = async () => {
     return;
   }
 
+  const visibleKeywords = keywords.filter(k =>
+    String(k.category || 'Other').trim().toLowerCase() !== 'other'
+  );
+  const hiddenOtherCount = keywords.length - visibleKeywords.length;
+
   const kwSelect = document.getElementById('amet-kw');
   if (kwSelect) {
     kwSelect.innerHTML = '<option value="">— none —</option>' +
-      keywords.map(k => `<option value="${k.id}">${escHtml(k.normalized_name || k.keyword_name)}</option>`).join('');
+      visibleKeywords.map(k => `<option value="${k.id}">${escHtml(k.normalized_name || k.keyword_name)}</option>`).join('');
   }
 
   const label = document.getElementById('analysis-count-label');
-  if (label) label.textContent = `${keywords.length} keywords · ${relations.length} relations · ${metrics.length} metrics`;
+  if (label) {
+    const hiddenText = hiddenOtherCount ? ` - ${hiddenOtherCount} other hidden` : '';
+    label.textContent = `${visibleKeywords.length} keywords${hiddenText} - ${relations.length} relations - ${metrics.length} metrics`;
+  }
 
   const tbody = document.getElementById('analysis-tbody');
   if (!tbody) return;
   tbody.innerHTML = '';
 
-  if (!keywords.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No analysis items yet. Add a keyword to start building this paper graph.</td></tr>';
+  if (!visibleKeywords.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No categorized analysis items yet. Other items are hidden.</td></tr>';
     return;
   }
 
-  const rows = keywords
+  const rows = visibleKeywords
     .map(keyword => ({
       keyword,
       relations: relations.filter(rel => _analysisRelationMatches(rel, keyword)),

@@ -26,7 +26,9 @@ _THEME_ANCHORS = [
     "dielectric", "multiferroic", "pyroelectric", "electrostrictive",
     "memory", "sensor", "actuator", "energy harvesting", "nanogenerator",
     "lead-free", "thin film", "nanomaterial", "polymer", "ceramic",
-    "semiconductor", "photonic", "neuromorphic",
+    "semiconductor", "photonic", "neuromorphic", "biosensor",
+    "microfluidic", "cancer detection", "hormone monitoring",
+    "wearable biosensor", "surface plasmon resonance",
 ]
 
 _CONCEPT_HINTS = [
@@ -35,6 +37,15 @@ _CONCEPT_HINTS = [
     "mechanical switching", "polarization switching", "defect dipole",
     "oxygen vacancy", "storage density", "energy harvesting",
     "biosignal detection", "neuromorphic", "self-powered",
+    "cancer detection", "stress hormone monitoring", "sweat sensing",
+    "microfluidic biosensor", "spr biosensor", "hela cells",
+]
+
+_BIOMEDICAL_TERMS = [
+    "biosensor", "bio sensor", "cancer", "hormone", "sweat", "cell",
+    "cells", "hela", "biomarker", "microfluidic", "clinical", "detection",
+    "wearable microfluidic", "stress hormones", "cortisol", "cytokine",
+    "glucose", "lactate", "surface plasmon resonance",
 ]
 
 _MATERIAL_RE = re.compile(
@@ -91,6 +102,11 @@ def _pick_theme(title: str, abstract: str, keywords: list[str]) -> tuple[str, fl
     boost("flexoelectric polarization", "flexoelectric", "polarization")
     boost("mechanical polarization switching", "mechanical", "polarization", "switching")
     boost("ferroelectric diode memory", "ferroelectric", "diode", "memory")
+    boost("wearable biosensing", "wearable", "biosensor")
+    boost("wearable biosensing", "sweat", "hormone")
+    boost("biomedical biosensing", "biosensor", "cancer")
+    boost("biomedical biosensing", "hela", "cells")
+    boost("microfluidic biosensing", "microfluidic", "biosensor")
 
     if scores:
         label, score = scores.most_common(1)[0]
@@ -123,6 +139,14 @@ def _pick_concept(title: str, abstract: str, keywords: list[str], theme: str) ->
         if hint not in material.lower():
             return _clean_label(f"{material} {hint}", lower=False), 0.86
 
+    if "stress" in text and ("hormone" in text or "sweat" in text):
+        return "stress hormone monitoring", 0.90
+    if "cancer" in text and ("biosensor" in text or "detection" in text):
+        if "spr" in text or "surface plasmon resonance" in text:
+            return "SPR cancer biosensor", 0.90
+        return "cancer detection", 0.86
+    if "microfluidic" in text and "biosensor" in text:
+        return "microfluidic biosensor", 0.84
     if "lead-free" in text:
         return "lead-free", 0.82
     if "nanomaterial" in text or "nanomaterials" in text or "nano" in title_low:
@@ -153,6 +177,12 @@ def classify_landing(sections: dict, keywords: list[dict] | list[str] | None = N
         "abstract": abstract,
         "author_keywords": keyword_names,
     })
+    text_low = f"{title} {abstract} {' '.join(keyword_names)}".lower()
+    biomedical_hits = sum(1 for term in _BIOMEDICAL_TERMS if term in text_low)
+    if biomedical_hits >= 2 or ("biosensor" in text_low and any(t in text_low for t in ("cancer", "hormone", "sweat", "cell", "hela"))):
+        field_name = "Biomedical Engineering"
+        field_conf = min(0.95, 0.72 + biomedical_hits * 0.04)
+        field_scores = {**field_scores, "biomedical_engineering": round(field_conf, 3)}
     if not field_name or field_name == "Unknown":
         field_name = "Other Research"
 
